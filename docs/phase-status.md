@@ -50,7 +50,8 @@ or a release artifact verified on a clean machine.
   setup-key recovery pass real API/PostgreSQL E2E.
 - The isolated 0007→0010 migration exercise preserved a seeded service, proved
   workspace/password schema objects exist, and passed twice. Fresh Compose install,
-  API, worker, and dead-letter E2E passed. Remote CI has not yet run on this change.
+  API, worker, and dead-letter E2E passed. GitHub CI migration connectivity was
+  corrected after local verification; the new remote run is pending.
 - Console status history now exposes clickable down reports, recovery observations,
   heartbeat bars, and UTC day details from the 100 most recent service timeline facts.
   It does not calculate uptime from missing or sparse data.
