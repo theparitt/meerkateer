@@ -132,6 +132,9 @@ jobs:
       - name: Exercise disposable fault scenarios
         run: make failure-lab
 
+      - name: Exercise API and database outage recovery
+        run: make control-plane-lab
+
   migration-and-api-integration:
     runs-on: ubuntu-latest
     timeout-minutes: 25

@@ -63,3 +63,18 @@ running `make failure-lab` on the same port.
 worker and abuse-control suite before this lab. The lab is a test of the
 current Community alpha. It does not claim production readiness or replace
 restore, security, external watchdog, or real-host tests.
+
+## Control plane outage exercise
+
+Run `make control-plane-lab` to create another isolated Compose project. It
+starts PostgreSQL, API, worker and web, then checks these failure and recovery
+steps:
+
+1. Stop the API; the web proxy returns a server error.
+2. Restart the API; `/ready` and the web proxy respond again.
+3. Stop PostgreSQL; `/ready` fails while the database is unavailable.
+4. Restart PostgreSQL; `/ready` succeeds and the worker is running.
+
+This project uses loopback ports 18095 and 18096 by default. The script removes
+its containers and volume on exit. It never stops the normal `meerkateer`
+Compose project.

@@ -58,7 +58,8 @@ existing PostgreSQL 18 instance, keep a dedicated database and role and set
 Run `make failure-lab` to start a separate disposable database and fake service,
 trigger real HTTP and process failures, and verify status, alerts, retries and
 recovery. See the [failure lab guide](docs/failure-lab.md) for the fault list and
-isolated ports.
+isolated ports. Run `make control-plane-lab` to separately exercise API and
+database outage recovery.
 
 Open the web console. On a new database, create the company
 and owner with the `MEERKATEER_BOOTSTRAP_TOKEN` value from the private `.env` file and an owner

@@ -42,6 +42,9 @@ or a release artifact verified on a clean machine.
   kills and restarts the process, checks stale status, tests eight concurrent
   down reports, and verifies webhook rejection, stable retry ID, dead letter and
   later delivery. The lab probe is test code; scheduled product probing remains open.
+- A separate control-plane Compose exercise stopped and restarted the API and
+  PostgreSQL. The web proxy reported the API outage; `/ready` failed during
+  database loss and recovered after restart, with the worker running afterward.
 
 - Minecraft G0: a game instance can be saved as a separate service with its own
   address/port. The Community Console can run a manual Minecraft Java status test;
