@@ -37,6 +37,11 @@ or a release artifact verified on a clean machine.
   transition messages. A repeated down report and older observation create no
   extra alert or false state reversal. The worker retains completed outbox records.
   This is an alpha fixture exercise, not a real host outage or production channel.
+- The disposable failure lab now runs a separate HTTP service with controllable
+  500/503 responses, invalid data, timeout, disconnect and flapping behavior. It
+  kills and restarts the process, checks stale status, tests eight concurrent
+  down reports, and verifies webhook rejection, stable retry ID, dead letter and
+  later delivery. The lab probe is test code; scheduled product probing remains open.
 
 - Minecraft G0: a game instance can be saved as a separate service with its own
   address/port. The Community Console can run a manual Minecraft Java status test;

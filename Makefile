@@ -1,4 +1,4 @@
-.PHONY: bootstrap source-archive dev migrate down logs test lint integration smoke agent-doctor
+.PHONY: bootstrap source-archive dev migrate down logs test lint integration failure-lab smoke agent-doctor
 
 bootstrap:
 	./scripts/bootstrap.sh
@@ -47,6 +47,9 @@ lint:
 
 integration: bootstrap
 	./scripts/integration.sh
+	./tests/integration/community_alerts.sh
+
+failure-lab: bootstrap
 	./tests/integration/community_alerts.sh
 
 smoke:

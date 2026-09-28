@@ -3485,7 +3485,7 @@ async fn project_accepted_ingest(
             let previous_state = previous.as_ref().map(|(state, _)| state.as_str());
             let transition = if state == "offline" && previous_state != Some("offline") {
                 Some("down")
-            } else if state == "online" && matches!(previous_state, Some("offline" | "degraded")) {
+            } else if state == "online" && previous_state == Some("offline") {
                 Some("recovered")
             } else {
                 None

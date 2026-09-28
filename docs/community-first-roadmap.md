@@ -96,3 +96,7 @@ CF-08, CF-10, CF-12, and CF-13 with a local fixture, together with alert
 deduplication for an exact retry and a late observation. The broader
 `integration.sh` covers CF-02, CF-03, and CF-05. These are test-environment
 results; CF-06–07 and CF-09 need richer collectors and an incident model.
+The [disposable failure lab](failure-lab.md) now stops and restarts a separate
+HTTP fixture process, exercises response and transport faults, and checks
+concurrent outage reports plus webhook retry/dead-letter behavior. CF-14 has
+fixture evidence for retry and dead-letter, but no operator-facing failure UI.

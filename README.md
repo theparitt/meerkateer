@@ -55,6 +55,11 @@ In a second terminal, run `make smoke`. Stop the stack with `make down`. To use 
 existing PostgreSQL 18 instance, keep a dedicated database and role and set
 `MEERKATEER_DATABASE_URL`; see [the storage deployment boundary](docs/deployment/storage.md).
 
+Run `make failure-lab` to start a separate disposable database and fake service,
+trigger real HTTP and process failures, and verify status, alerts, retries and
+recovery. See the [failure lab guide](docs/failure-lab.md) for the fault list and
+isolated ports.
+
 Open the web console. On a new database, create the company
 and owner with the `MEERKATEER_BOOTSTRAP_TOKEN` value from the private `.env` file and an owner
 password of at least 12 characters. Later visits use the owner's email and password at `/login`.

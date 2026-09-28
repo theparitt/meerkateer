@@ -119,6 +119,19 @@ jobs:
       - name: Test PHP SDK
         run: docker run --rm -v "$PWD/sdk/php:/work" -w /work php:8.3-cli-alpine sh ./run-tests.sh
 
+  failure-lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install pinned Rust toolchain
+        run: rustup show
+
+      - name: Exercise disposable fault scenarios
+        run: make failure-lab
+
   migration-and-api-integration:
     runs-on: ubuntu-latest
     timeout-minutes: 25
