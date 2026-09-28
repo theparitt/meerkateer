@@ -1,0 +1,25 @@
+{
+  "protocol_version": "1",
+  "agent_id": "00000000-0000-4000-8000-000000000002",
+  "revision": 3,
+  "issued_at": "2026-09-27T00:00:00Z",
+  "expires_at": "2026-09-28T00:00:00Z",
+  "checks": [
+    {
+      "check_id": "00000000-0000-4000-8000-000000000010",
+      "kind": "host",
+      "enabled": true,
+      "interval_seconds": 30,
+      "timeout_ms": 1000,
+      "parameters": {}
+    },
+    {
+      "check_id": "00000000-0000-4000-8000-000000000011",
+      "kind": "minecraft_java",
+      "enabled": true,
+      "interval_seconds": 30,
+      "timeout_ms": 3000,
+      "parameters": { "target": "127.0.0.1", "port": 25565 }
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://meerkateer.dev/schemas/mks-1/deploy.schema.json",
+  "title": "MKS-1 Deploy Push Payload",
+  "description": "Body for POST <MEERKATEER_INGEST_URL>/v1/ingest/deploy.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "interface_version",
+    "service",
+    "project",
+    "environment",
+    "version",
+    "commit",
+    "status",
+    "timestamp"
+  ],
+  "properties": {
+    "interface_version": { "const": "1" },
+    "service": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "project": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+    },
+    "environment": {
+      "type": "string",
+      "enum": ["development", "staging", "production", "test", "local"]
+    },
+    "version": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "commit": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "status": { "type": "string", "enum": ["started", "finished", "failed"] },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "maxLength": 35,
+      "pattern": "Z$"
+    }
+  }
+}

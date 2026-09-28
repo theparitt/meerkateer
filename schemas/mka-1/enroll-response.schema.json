@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://meerkateer.dev/schemas/mka-1/enroll-response.schema.json",
+  "title": "MKA-1 Enrollment Response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "protocol_version", "agent_id", "credential", "credential_expires_at", "config_signing_key_id", "config_signing_public_key", "configuration_revision", "heartbeat_interval_seconds", "max_batch_bytes", "server_time"],
+  "properties": {
+    "protocol": { "const": "meerkateer-agent" },
+    "protocol_version": { "const": "1" },
+    "agent_id": { "type": "string", "format": "uuid" },
+    "credential": { "type": "string", "minLength": 32, "maxLength": 512 },
+    "credential_expires_at": { "$ref": "#/$defs/timestamp" },
+    "config_signing_key_id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9._-]+$" },
+    "config_signing_public_key": { "type": "string", "minLength": 43, "maxLength": 128, "pattern": "^[A-Za-z0-9+/]+={0,2}$" },
+    "configuration_revision": { "type": "integer", "minimum": 0 },
+    "heartbeat_interval_seconds": { "type": "integer", "minimum": 10, "maximum": 3600 },
+    "max_batch_bytes": { "type": "integer", "minimum": 16384, "maximum": 262144 },
+    "server_time": { "$ref": "#/$defs/timestamp" }
+  },
+  "$defs": {
+    "timestamp": { "type": "string", "format": "date-time", "maxLength": 35, "pattern": "Z$" }
+  }
+}

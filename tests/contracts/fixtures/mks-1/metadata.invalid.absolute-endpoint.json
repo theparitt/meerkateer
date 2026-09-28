@@ -1,0 +1,16 @@
+{
+  "interface": "meerkateer",
+  "interface_version": "1",
+  "service": "game-api",
+  "project": "arena_ops",
+  "environment": "production",
+  "runtime": "rust",
+  "version": "1.0.0",
+  "build": { "built_at_utc": "unknown", "git_sha": "unknown", "git_branch": "unknown" },
+  "endpoints": {
+    "health": "https://internal.invalid/health",
+    "ready": "/ready",
+    "metrics": "/metrics"
+  },
+  "capabilities": { "health": true, "readiness": true, "prometheus_metrics": true }
+}

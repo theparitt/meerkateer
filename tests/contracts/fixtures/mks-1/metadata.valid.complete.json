@@ -1,0 +1,29 @@
+{
+  "interface": "meerkateer",
+  "interface_version": "1",
+  "service": "game-api",
+  "project": "arena_ops",
+  "environment": "production",
+  "runtime": "rust",
+  "version": "1.0.0",
+  "build": {
+    "built_at_utc": "2026-09-27T00:00:00Z",
+    "git_sha": "0123456789abcdef",
+    "git_branch": "main"
+  },
+  "endpoints": {
+    "health": "/health",
+    "ready": "/ready",
+    "metrics": "/metrics",
+    "server_info": "/server-info"
+  },
+  "capabilities": {
+    "health": true,
+    "readiness": true,
+    "prometheus_metrics": true,
+    "server_info": true,
+    "push_heartbeat": true,
+    "push_event": true,
+    "push_deploy": true
+  }
+}

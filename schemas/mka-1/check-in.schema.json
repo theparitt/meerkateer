@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://meerkateer.dev/schemas/mka-1/check-in.schema.json",
+  "title": "MKA-1 Agent Check-in",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_version", "agent_id", "agent_version", "configuration_revision", "state", "capabilities", "collectors", "spool", "timestamp"],
+  "properties": {
+    "protocol_version": { "const": "1" },
+    "agent_id": { "type": "string", "format": "uuid" },
+    "agent_version": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "configuration_revision": { "type": "integer", "minimum": 0 },
+    "state": { "type": "string", "enum": ["ok", "degraded"] },
+    "capabilities": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "type": "string", "maxLength": 128, "pattern": "^[a-z][a-z0-9_.-]+$" }
+    },
+    "collectors": {
+      "type": "object",
+      "maxProperties": 64,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_.-]{0,127}$" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ok"],
+        "properties": {
+          "ok": { "type": "boolean" },
+          "error": { "type": "string", "enum": ["unavailable", "timeout", "misconfigured", "disabled", "unknown"] }
+        },
+        "allOf": [
+          { "if": { "properties": { "ok": { "const": false } }, "required": ["ok"] }, "then": { "required": ["error"] } },
+          { "if": { "properties": { "ok": { "const": true } }, "required": ["ok"] }, "then": { "not": { "required": ["error"] } } }
+        ]
+      }
+    },
+    "spool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["queued_records", "queued_bytes"],
+      "properties": {
+        "queued_records": { "type": "integer", "minimum": 0 },
+        "queued_bytes": { "type": "integer", "minimum": 0 },
+        "oldest_record_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "timestamp": { "$ref": "#/$defs/timestamp" }
+  },
+  "$defs": {
+    "timestamp": { "type": "string", "format": "date-time", "maxLength": 35, "pattern": "Z$" }
+  }
+}

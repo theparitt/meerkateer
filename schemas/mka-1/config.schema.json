@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://meerkateer.dev/schemas/mka-1/config.schema.json",
+  "title": "MKA-1 Desired Agent Configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_version", "agent_id", "revision", "issued_at", "expires_at", "checks"],
+  "properties": {
+    "protocol_version": { "const": "1" },
+    "agent_id": { "type": "string", "format": "uuid" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "issued_at": { "$ref": "#/$defs/timestamp" },
+    "expires_at": { "$ref": "#/$defs/timestamp" },
+    "rollback": { "type": "boolean", "default": false },
+    "checks": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/check" }
+    }
+  },
+  "$defs": {
+    "timestamp": { "type": "string", "format": "date-time", "maxLength": 35, "pattern": "Z$" },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["check_id", "kind", "enabled", "interval_seconds", "timeout_ms", "parameters"],
+      "properties": {
+        "check_id": { "type": "string", "format": "uuid" },
+        "kind": {
+          "type": "string",
+          "enum": ["host", "process", "systemd", "windows_service", "docker", "http", "tcp", "dns", "tls", "minecraft_java", "minecraft_bedrock", "steam_a2s", "mks1"]
+        },
+        "enabled": { "type": "boolean" },
+        "interval_seconds": { "type": "integer", "minimum": 10, "maximum": 3600 },
+        "timeout_ms": { "type": "integer", "minimum": 100, "maximum": 30000 },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "target": { "type": "string", "minLength": 1, "maxLength": 255 },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "path": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^/\\S*$" },
+            "secret_ref": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$" },
+            "expected_status_min": { "type": "integer", "minimum": 100, "maximum": 599 },
+            "expected_status_max": { "type": "integer", "minimum": 100, "maximum": 599 }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "host" } }, "required": ["kind"] },
+          "else": { "properties": { "parameters": { "required": ["target"] } } }
+        }
+      ]
+    }
+  }
+}

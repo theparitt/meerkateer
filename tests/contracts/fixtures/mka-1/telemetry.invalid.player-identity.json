@@ -1,0 +1,19 @@
+{
+  "protocol_version": "1",
+  "agent_id": "00000000-0000-4000-8000-000000000002",
+  "batch_id": "00000000-0000-4000-8000-000000000021",
+  "first_sequence": 43,
+  "last_sequence": 43,
+  "sent_at": "2026-09-27T00:00:05Z",
+  "records": [
+    {
+      "type": "event",
+      "sequence": 43,
+      "record_id": "00000000-0000-4000-8000-000000000043",
+      "observed_at": "2026-09-27T00:00:01Z",
+      "kind": "game_player_joined",
+      "severity": "info",
+      "attributes": { "player_id": "fixture-player" }
+    }
+  ]
+}

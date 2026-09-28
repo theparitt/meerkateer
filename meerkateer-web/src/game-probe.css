@@ -1,0 +1,127 @@
+.game-probe-panel {
+  margin: 22px 0;
+  padding: 20px;
+  border: 1px solid #c9dbeb;
+  border-radius: 18px;
+  color: #17264b;
+  background: linear-gradient(145deg, #f3fbff, #fffaf5);
+}
+
+.game-probe-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.game-probe-head .eyebrow {
+  margin-bottom: 6px;
+  color: #3574a5;
+}
+
+.game-probe-head h3 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.game-probe-head p:last-child {
+  margin: 6px 0 0;
+  color: #64718b;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.game-probe-head button {
+  flex: none;
+  padding: 10px 14px;
+  border: 1px solid #1c61a6;
+  border-radius: 10px;
+  color: white;
+  background: #17579a;
+  font-size: 0.78rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.game-probe-head button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.game-signal-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.game-signal {
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid #dce5ef;
+  border-radius: 13px;
+  background: white;
+}
+
+.game-signal > span {
+  color: #7897be;
+  font-size: 1.1rem;
+}
+
+.game-signal h4 {
+  margin: 8px 0;
+  font-size: 0.78rem;
+}
+
+.game-signal strong {
+  display: block;
+  color: #576580;
+  font-size: 0.86rem;
+}
+
+.game-signal p,
+.game-signal small,
+.game-probe-caption {
+  display: block;
+  margin: 7px 0 0;
+  color: #68758d;
+  font-size: 0.73rem;
+  line-height: 1.45;
+}
+
+.game-signal.signal-ok {
+  border-color: #8cddc2;
+  background: #f2fdf8;
+}
+
+.game-signal.signal-ok strong {
+  color: #087455;
+}
+
+.game-signal.signal-warn {
+  border-color: #f2ce9d;
+  background: #fffbf2;
+}
+
+.game-signal.signal-warn strong {
+  color: #855511;
+}
+
+.game-probe-error {
+  margin: 12px 0 0;
+  color: #a82b3c;
+  font-size: 0.77rem;
+}
+
+@media (max-width: 850px) {
+  .game-signal-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .game-probe-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

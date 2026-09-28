@@ -1,0 +1,10 @@
+{
+  "ready": false,
+  "service": "game-api",
+  "project": "arena_ops",
+  "environment": "production",
+  "interface": "meerkateer",
+  "interface_version": "1",
+  "checks": { "database": { "ok": false, "error": "timeout" } },
+  "timestamp": "2026-09-27T00:00:01Z"
+}

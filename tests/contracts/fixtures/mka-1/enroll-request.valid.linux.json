@@ -1,0 +1,9 @@
+{
+  "protocol": "meerkateer-agent",
+  "protocol_version": "1",
+  "instance_id": "00000000-0000-4000-8000-000000000001",
+  "display_name": "game-node-01",
+  "agent_version": "0.1.0",
+  "platform": { "os": "linux", "arch": "amd64", "os_version": "fixture" },
+  "capabilities": ["collector.host", "probe.minecraft_java"]
+}

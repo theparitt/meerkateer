@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://meerkateer.dev/schemas/mks-1/health.schema.json",
+  "title": "MKS-1 Health Response",
+  "description": "Response body for GET /health. status is 'ok' when every check passes, otherwise 'degraded' (served with HTTP 503).",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "status",
+    "service",
+    "project",
+    "environment",
+    "interface",
+    "interface_version",
+    "version",
+    "build",
+    "checks",
+    "timestamp"
+  ],
+  "properties": {
+    "status": { "type": "string", "enum": ["ok", "degraded"] },
+    "service": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "project": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+    },
+    "environment": {
+      "type": "string",
+      "enum": ["development", "staging", "production", "test", "local"]
+    },
+    "interface": { "const": "meerkateer" },
+    "interface_version": { "const": "1" },
+    "version": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "build": { "$ref": "#/$defs/build" },
+    "checks": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+      "additionalProperties": { "$ref": "#/$defs/checkResult" }
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "maxLength": 35,
+      "pattern": "Z$"
+    }
+  },
+  "$defs": {
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["built_at_utc", "git_sha", "git_branch"],
+      "properties": {
+        "built_at_utc": {
+          "anyOf": [
+            { "const": "unknown" },
+            { "type": "string", "format": "date-time", "maxLength": 35, "pattern": "Z$" }
+          ]
+        },
+        "git_sha": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "git_branch": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "checkResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "error": {
+          "type": "string",
+          "enum": ["unavailable", "timeout", "misconfigured", "disabled", "unknown"]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "ok": { "const": false } }, "required": ["ok"] },
+          "then": { "required": ["error"] }
+        },
+        {
+          "if": { "properties": { "ok": { "const": true } }, "required": ["ok"] },
+          "then": { "not": { "required": ["error"] } }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,33 @@
+[Unit]
+Description=Meerkateer outbound monitoring agent
+Documentation=https://github.com/meerkateer/meerkateer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=meerkateer-agent
+Group=meerkateer-agent
+EnvironmentFile=-/etc/meerkateer/agent.env
+StateDirectory=meerkateer-agent
+StateDirectoryMode=0700
+UMask=0077
+ExecStart=/usr/local/bin/meerkateer-agent --config /var/lib/meerkateer-agent/agent.json run
+Restart=on-failure
+RestartSec=10s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

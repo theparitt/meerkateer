@@ -1,0 +1,11 @@
+{
+  "interface_version": "1",
+  "service": "game-api",
+  "project": "arena_ops",
+  "environment": "production",
+  "level": "error",
+  "kind": "database_unavailable",
+  "message": "database dependency is unavailable",
+  "count": 1,
+  "timestamp": "2026-09-27T00:00:01Z"
+}

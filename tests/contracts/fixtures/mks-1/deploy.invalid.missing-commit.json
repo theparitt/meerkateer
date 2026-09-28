@@ -1,0 +1,9 @@
+{
+  "interface_version": "1",
+  "service": "game-api",
+  "project": "arena_ops",
+  "environment": "production",
+  "version": "1.0.0",
+  "status": "finished",
+  "timestamp": "2026-09-27T00:00:01Z"
+}

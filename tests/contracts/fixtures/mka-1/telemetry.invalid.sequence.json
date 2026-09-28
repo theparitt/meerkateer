@@ -1,0 +1,28 @@
+{
+  "protocol_version": "1",
+  "agent_id": "00000000-0000-4000-8000-000000000002",
+  "batch_id": "00000000-0000-4000-8000-000000000020",
+  "first_sequence": 42,
+  "last_sequence": 41,
+  "sent_at": "2026-09-27T00:00:05Z",
+  "records": [
+    {
+      "type": "sample",
+      "sequence": 42,
+      "record_id": "00000000-0000-4000-8000-000000000041",
+      "observed_at": "2026-09-27T00:00:00Z",
+      "metric": "host.cpu.utilization",
+      "value": 0.25,
+      "attributes": {}
+    },
+    {
+      "type": "sample",
+      "sequence": 41,
+      "record_id": "00000000-0000-4000-8000-000000000042",
+      "observed_at": "2026-09-27T00:00:01Z",
+      "metric": "host.memory.used_bytes",
+      "value": 1024,
+      "attributes": {}
+    }
+  ]
+}

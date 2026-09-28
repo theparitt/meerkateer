@@ -1,0 +1,16 @@
+{
+  "status": "ok",
+  "service": "game-api",
+  "project": "arena_ops",
+  "environment": "production",
+  "interface": "meerkateer",
+  "interface_version": "1",
+  "version": "1.0.0",
+  "build": {
+    "built_at_utc": "unknown",
+    "git_sha": "unknown",
+    "git_branch": "unknown"
+  },
+  "checks": { "database": { "ok": false, "error": "unavailable" } },
+  "timestamp": "2026-09-27T00:00:01Z"
+}

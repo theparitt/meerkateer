@@ -1,0 +1,9 @@
+{
+  "protocol_version": "1",
+  "agent_id": "00000000-0000-4000-8000-000000000002",
+  "batch_id": "00000000-0000-4000-8000-000000000020",
+  "status": "accepted",
+  "accepted_through_sequence": 41,
+  "rejected": [{ "sequence": 42, "reason": "invalid_record" }],
+  "server_time": "2026-09-27T00:00:06Z"
+}

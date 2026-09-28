@@ -1,0 +1,35 @@
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# Rust
+target/
+
+# Node
+node_modules/
+dist/
+coverage/
+.pnpm-store/
+*.tsbuildinfo
+meerkateer-web/vite.config.js
+meerkateer-web/vite.config.d.ts
+
+# Tests and local runtime
+.pytest_cache/
+__pycache__/
+*.pyc
+.data/
+tmp/
+*.log
+art/meerkateer-source-preview.tar.gz

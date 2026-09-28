@@ -1,0 +1,110 @@
+name: meerkateer
+
+services:
+  postgres:
+    image: postgres:18.1-alpine3.23@sha256:aa6eb304ddb6dd26df23d05db4e5cb05af8951cda3e0dc57731b771e0ef4ab29
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?run make bootstrap first}
+      POSTGRES_USER: ${POSTGRES_USER:?run make bootstrap first}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run make bootstrap first}
+      MEERKATEER_APP_PASSWORD: ${MEERKATEER_APP_PASSWORD:?run make bootstrap first}
+      MEERKATEER_WORKER_PASSWORD: ${MEERKATEER_WORKER_PASSWORD:?run make bootstrap first}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./migrations/0001_initial.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+      - ./migrations/0002_identity_and_tenant_boundary.sql:/docker-entrypoint-initdb.d/002-identity.sql:ro
+      - ./migrations/0003_bootstrap_state.sql:/docker-entrypoint-initdb.d/003-bootstrap.sql:ro
+      - ./migrations/0004_agent_credential_usage.sql:/docker-entrypoint-initdb.d/004-agent-credential-usage.sql:ro
+      - ./migrations/0005_durable_ingest.sql:/docker-entrypoint-initdb.d/005-durable-ingest.sql:ro
+      - ./migrations/0006_agent_telemetry.sql:/docker-entrypoint-initdb.d/006-agent-telemetry.sql:ro
+      - ./migrations/0007_outbox_delivery.sql:/docker-entrypoint-initdb.d/007-outbox-delivery.sql:ro
+      - ./migrations/0008_workspace_agents.sql:/docker-entrypoint-initdb.d/008-workspace-agents.sql:ro
+      - ./migrations/0009_community_owner_password.sql:/docker-entrypoint-initdb.d/009-community-owner-password.sql:ro
+      - ./migrations/0010_minecraft_instances.sql:/docker-entrypoint-initdb.d/010-minecraft-instances.sql:ro
+      - ./dev/init-runtime-role.sh:/docker-entrypoint-initdb.d/011-runtime-role.sh:ro
+      - ./dev/seed.sql:/docker-entrypoint-initdb.d/900-seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    networks: [backend]
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      MEERKATEER_DATABASE_URL: ${MEERKATEER_DATABASE_URL:?run make bootstrap first}
+      MEERKATEER_DEPLOYMENT_MODE: ${MEERKATEER_DEPLOYMENT_MODE:-community}
+      MEERKATEER_STORAGE_PROFILE: ${MEERKATEER_STORAGE_PROFILE:-compact}
+      MEERKATEER_BIND_ADDR: 0.0.0.0:8080
+      MEERKATEER_SERVICE_ENVIRONMENT: ${MEERKATEER_SERVICE_ENVIRONMENT:-development}
+      MEERKATEER_METRICS_ENABLED: ${MEERKATEER_METRICS_ENABLED:-true}
+      MEERKATEER_METRICS_TOKEN: ${MEERKATEER_METRICS_TOKEN:?run make bootstrap first}
+      MEERKATEER_BOOTSTRAP_TOKEN: ${MEERKATEER_BOOTSTRAP_TOKEN:?run make bootstrap first}
+      MEERKATEER_AUTH_RATE_LIMIT_PER_MINUTE: ${MEERKATEER_AUTH_RATE_LIMIT_PER_MINUTE:-300}
+      MEERKATEER_INGEST_RATE_LIMIT_PER_MINUTE: ${MEERKATEER_INGEST_RATE_LIMIT_PER_MINUTE:-1200}
+      MEERKATEER_HEARTBEAT_STALE_AFTER_SECONDS: ${MEERKATEER_HEARTBEAT_STALE_AFTER_SECONDS:-180}
+      RUST_LOG: ${RUST_LOG:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    restart: unless-stopped
+    ports: ["127.0.0.1:${MEERKATEER_API_PORT:-6510}:8080"]
+    networks: [backend, frontend]
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["/usr/local/bin/meerkateer-worker"]
+    environment:
+      MEERKATEER_DATABASE_URL: ${MEERKATEER_WORKER_DATABASE_URL:?run make bootstrap first}
+      MEERKATEER_DEPLOYMENT_MODE: ${MEERKATEER_DEPLOYMENT_MODE:-community}
+      MEERKATEER_STORAGE_PROFILE: ${MEERKATEER_STORAGE_PROFILE:-compact}
+      MEERKATEER_SERVICE_ENVIRONMENT: ${MEERKATEER_SERVICE_ENVIRONMENT:-development}
+      RUST_LOG: ${RUST_LOG:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    restart: unless-stopped
+    networks: [backend]
+
+  web:
+    build:
+      context: .
+      dockerfile: meerkateer-web/Dockerfile
+    environment:
+      VITE_API_PROXY_TARGET: http://server:8080
+    depends_on:
+      server:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    ports: ["127.0.0.1:${MEERKATEER_WEB_PORT:-6511}:5173"]
+    networks: [frontend]
+
+volumes:
+  postgres-data:
+
+networks:
+  backend:
+    internal: true
+  frontend:

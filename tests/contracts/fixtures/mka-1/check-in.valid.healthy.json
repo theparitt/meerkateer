@@ -1,0 +1,11 @@
+{
+  "protocol_version": "1",
+  "agent_id": "00000000-0000-4000-8000-000000000002",
+  "agent_version": "0.1.0",
+  "configuration_revision": 3,
+  "state": "ok",
+  "capabilities": ["collector.host", "probe.minecraft_java"],
+  "collectors": { "host": { "ok": true }, "minecraft_java": { "ok": true } },
+  "spool": { "queued_records": 0, "queued_bytes": 0 },
+  "timestamp": "2026-09-27T00:00:00Z"
+}

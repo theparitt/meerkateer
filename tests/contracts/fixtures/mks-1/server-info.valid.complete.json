@@ -1,0 +1,10 @@
+{
+  "name": "game-api",
+  "version": "1.0.0",
+  "mode": "production",
+  "build": {
+    "built_at_utc": "unknown",
+    "git_sha": "unknown",
+    "git_branch": "unknown"
+  }
+}

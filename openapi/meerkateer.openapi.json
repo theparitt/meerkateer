@@ -1,0 +1,1320 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Meerkateer API",
+    "version": "0.1.0",
+    "description": "Tenant-isolated Meerkateer control-plane API. Browser mutations require both the session cookie and the X-Meerkateer-CSRF header."
+  },
+  "servers": [{ "url": "/" }],
+  "paths": {
+    "/v1/bootstrap": {
+      "post": {
+        "operationId": "bootstrapOwner",
+        "description": "Create the first tenant and owner exactly once using the deployment setup key. The optional owner password enables routine email/password sign-in.",
+        "security": [{ "bootstrapToken": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/BootstrapRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Bootstrap completed and an HttpOnly session cookie was issued.",
+            "headers": {
+              "Set-Cookie": { "schema": { "type": "string" } },
+              "Cache-Control": { "schema": { "const": "no-store" } }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BootstrapResponse" }
+              }
+            }
+          },
+          "400": { "description": "The bounded request is invalid." },
+          "401": { "description": "The bootstrap token is invalid." },
+          "404": { "description": "Bootstrap is disabled by configuration." },
+          "409": { "description": "Bootstrap was already completed." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/session/password-login": {
+      "post": {
+        "operationId": "createCommunityPasswordSession",
+        "description": "Sign in to the self-hosted Community owner account with email and password.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PasswordLoginRequest" } } }
+        },
+        "responses": {
+          "200": { "description": "A Community owner session and CSRF cookie were issued.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SessionResponse" } } } },
+          "401": { "description": "The email or password is incorrect." },
+          "404": { "description": "Password login is not available in this deployment mode." },
+          "409": { "description": "Initial setup is required." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/session/password-setup": {
+      "post": {
+        "operationId": "setCommunityOwnerPassword",
+        "description": "Set or recover the self-hosted owner password with the deployment setup key.",
+        "security": [{ "bootstrapToken": [] }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PasswordSetupRequest" } } }
+        },
+        "responses": {
+          "200": { "description": "The owner password was set and a browser session was issued.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SessionResponse" } } } },
+          "400": { "description": "The new password is invalid." },
+          "401": { "description": "The setup key is invalid." },
+          "404": { "description": "Password setup is not available in this deployment mode." },
+          "409": { "description": "Initial setup is required or the owner is unavailable." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/session": {
+      "get": {
+        "operationId": "getCurrentSession",
+        "security": [{ "sessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "The current tenant-scoped browser session.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SessionResponse" }
+              }
+            }
+          },
+          "401": { "description": "The session is missing, expired, revoked, or malformed." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/ingest/heartbeat": {
+      "post": {
+        "operationId": "ingestHeartbeat",
+        "description": "Durably accept an MKS-1 heartbeat and update current service state atomically.",
+        "security": [{ "serviceCredential": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HeartbeatIngest" } } }
+        },
+        "responses": {
+          "202": { "$ref": "#/components/responses/IngestAccepted" },
+          "200": { "$ref": "#/components/responses/IngestDuplicate" },
+          "400": { "description": "The payload, time window, content type, or idempotency key is invalid." },
+          "401": { "description": "The service credential is invalid, expired, or revoked." },
+          "409": { "description": "The idempotency key was already used with a different payload." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The durable store is unavailable." }
+        }
+      }
+    },
+    "/v1/ingest/event": {
+      "post": {
+        "operationId": "ingestEvent",
+        "description": "Durably accept an MKS-1 operational event.",
+        "security": [{ "serviceCredential": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EventIngest" } } }
+        },
+        "responses": {
+          "202": { "$ref": "#/components/responses/IngestAccepted" },
+          "200": { "$ref": "#/components/responses/IngestDuplicate" },
+          "400": { "description": "The payload, time window, content type, or idempotency key is invalid." },
+          "401": { "description": "The service credential is invalid, expired, or revoked." },
+          "409": { "description": "The idempotency key was already used with a different payload." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The durable store is unavailable." }
+        }
+      }
+    },
+    "/v1/ingest/deploy": {
+      "post": {
+        "operationId": "ingestDeploy",
+        "description": "Durably accept an MKS-1 deployment event.",
+        "security": [{ "serviceCredential": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DeployIngest" } } }
+        },
+        "responses": {
+          "202": { "$ref": "#/components/responses/IngestAccepted" },
+          "200": { "$ref": "#/components/responses/IngestDuplicate" },
+          "400": { "description": "The payload, time window, content type, or idempotency key is invalid." },
+          "401": { "description": "The service credential is invalid, expired, or revoked." },
+          "409": { "description": "The idempotency key was already used with a different payload." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The durable store is unavailable." }
+        }
+      }
+    },
+    "/v1/agent/telemetry": {
+      "post": {
+        "operationId": "ingestAgentTelemetry",
+        "description": "Durably accept one MKA-1 batch, deduplicate exact retries, and expose sequence gaps.",
+        "security": [{ "agentCredential": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AgentTelemetryBatch" } } }
+        },
+        "responses": {
+          "202": {
+            "description": "Every acknowledged record is durable. X-Meerkateer-Sequence-Gap is true when earlier sequences are absent.",
+            "headers": {
+              "Cache-Control": { "schema": { "const": "no-store" } },
+              "X-Meerkateer-Sequence-Gap": { "schema": { "type": "boolean" } }
+            },
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AgentTelemetryAcknowledgement" } } }
+          },
+          "200": {
+            "description": "The exact batch retry was already durable.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AgentTelemetryAcknowledgement" } } }
+          },
+          "400": { "description": "The batch is malformed, unsafe, stale, future-dated, or mismatched to its idempotency key." },
+          "401": { "description": "The agent credential is invalid, expired, revoked, or scoped to another agent." },
+          "409": { "description": "The batch ID changed payload or its sequence overlaps accepted data." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The durable store is unavailable." }
+        }
+      }
+    },
+    "/v1/projects": {
+      "get": {
+        "operationId": "listProjects",
+        "security": [{ "sessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Up to 200 tenant projects in stable creation order.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ProjectListResponse" }
+              }
+            }
+          },
+          "401": { "description": "Authentication is required." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The control database is unavailable." }
+        }
+      },
+      "post": {
+        "operationId": "createProject",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/CsrfHeader" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateProjectRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Project created.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ProjectResponse" }
+              }
+            }
+          },
+          "400": { "description": "The request is invalid." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "The role or CSRF proof is insufficient." },
+          "409": { "description": "The project slug already exists in this tenant." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/projects/{project_id}/services": {
+      "get": {
+        "operationId": "listServices",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectId" }],
+        "responses": {
+          "200": {
+            "description": "Up to 500 project services in stable creation order.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ServiceListResponse" }
+              }
+            }
+          },
+          "401": { "description": "Authentication is required." },
+          "404": { "description": "The project does not exist in this tenant." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The control database is unavailable." }
+        }
+      },
+      "post": {
+        "operationId": "createService",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/CsrfHeader" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateServiceRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Service created.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ServiceResponse" }
+              }
+            }
+          },
+          "400": { "description": "The request is invalid." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "The role or CSRF proof is insufficient." },
+          "404": { "description": "The project does not exist in this tenant." },
+          "409": { "description": "The service already exists in this project and environment." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/projects/{project_id}/agents": {
+      "get": {
+        "operationId": "listProjectAgents",
+        "description": "List the machines assigned to this workspace.",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectId" }],
+        "responses": {
+          "200": {
+            "description": "Up to 500 workspace machines in stable assignment order.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AgentListResponse" }
+              }
+            }
+          },
+          "401": { "description": "Authentication is required." },
+          "404": { "description": "The workspace does not exist in this company." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/projects/{project_id}/agents/{agent_id}": {
+      "put": {
+        "operationId": "assignProjectAgent",
+        "description": "Idempotently assign an existing company machine to this workspace.",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/AgentId" },
+          { "$ref": "#/components/parameters/CsrfHeader" }
+        ],
+        "responses": {
+          "204": { "description": "The machine is assigned to the workspace." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "Owner/admin role or CSRF proof is insufficient." },
+          "404": { "description": "The workspace or machine does not exist in this company." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The control database is unavailable." }
+        }
+      },
+      "delete": {
+        "operationId": "unassignProjectAgent",
+        "description": "Remove a machine from this workspace without revoking the machine identity.",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/AgentId" },
+          { "$ref": "#/components/parameters/CsrfHeader" }
+        ],
+        "responses": {
+          "204": { "description": "The machine is no longer assigned to the workspace." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "Owner/admin role or CSRF proof is insufficient." },
+          "404": { "description": "The workspace assignment does not exist." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/projects/{project_id}/enrollment-tokens": {
+      "post": {
+        "operationId": "issueProjectEnrollmentToken",
+        "description": "Issue a one-time enrollment token that automatically assigns its machine to this workspace.",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/CsrfHeader" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/IssueEnrollmentTokenRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The workspace-scoped token secret is returned once.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/IssuedEnrollmentTokenResponse" }
+              }
+            }
+          },
+          "400": { "description": "Expiry is outside the allowed range." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "Owner/admin role or CSRF proof is insufficient." },
+          "404": { "description": "The workspace does not exist in this company." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The database or credential generator is unavailable." }
+        }
+      }
+    },
+    "/v1/services/{service_id}/timeline": {
+      "get": {
+        "operationId": "getServiceTimeline",
+        "description": "Return the newest bounded service heartbeat, operational-event, and deployment facts for incident visualization.",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/ServiceId" },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 100 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Newest timeline facts first, with only display-safe normalized fields.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TimelineResponse" }
+              }
+            }
+          },
+          "400": { "description": "The requested limit is outside the supported range." },
+          "401": { "description": "Authentication is required." },
+          "404": { "description": "The service does not exist in this workspace." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/services/{service_id}/game-probe": {
+      "post": {
+        "operationId": "testMinecraftJavaStatus",
+        "description": "Run one bounded Minecraft Java status query from the Community control plane. This is a manual observation, not scheduled monitoring, a player ping, or a gameplay/login test. Cloud mode does not expose this endpoint until isolated probe egress exists.",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/ServiceId" },
+          { "$ref": "#/components/parameters/CsrfHeader" }
+        ],
+        "responses": {
+          "200": {
+            "description": "The bounded probe outcome, including no response or an unreadable response.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GameProbeResponse" } } }
+          },
+          "400": { "description": "The configured destination is unsafe for a public probe." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "The session or CSRF proof is insufficient." },
+          "404": { "description": "The game instance is not in this company or Cloud mode is active." },
+          "409": { "description": "The game configuration is incomplete." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/enrollment-tokens": {
+      "post": {
+        "operationId": "issueEnrollmentToken",
+        "description": "Issue a one-time tenant-scoped agent enrollment token valid for 5-60 minutes.",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/CsrfHeader" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/IssueEnrollmentTokenRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The token secret is returned once and must be transferred securely to one agent.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/IssuedEnrollmentTokenResponse" }
+              }
+            }
+          },
+          "400": { "description": "Expiry is outside the allowed range." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "Owner/admin role or CSRF proof is insufficient." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The database or credential generator is unavailable." }
+        }
+      }
+    },
+    "/v1/agents/enroll": {
+      "post": {
+        "operationId": "enrollAgent",
+        "description": "Consume a one-time enrollment token and issue a 90-day credential scoped to this installation.",
+        "security": [{ "enrollmentToken": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/EnrollAgentRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Agent enrolled; the agent credential is returned once.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/EnrolledAgentResponse" }
+              }
+            }
+          },
+          "400": { "description": "The bounded enrollment request is invalid." },
+          "401": { "description": "The token is malformed, expired, consumed, or invalid." },
+          "409": { "description": "This installation is already enrolled in the tenant." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The database or credential generator is unavailable." }
+        }
+      }
+    },
+    "/v1/agents": {
+      "get": {
+        "operationId": "listAgents",
+        "security": [{ "sessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Up to 500 tenant agents in stable enrollment order.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AgentListResponse" }
+              }
+            }
+          },
+          "401": { "description": "Authentication is required." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/agents/{agent_id}": {
+      "delete": {
+        "operationId": "revokeAgent",
+        "description": "Revoke an agent and all of its active credentials immediately.",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/AgentId" },
+          { "$ref": "#/components/parameters/CsrfHeader" }
+        ],
+        "responses": {
+          "204": { "description": "Agent and active credentials revoked." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "Owner/admin role or CSRF proof is insufficient." },
+          "404": { "description": "The active agent does not exist in this tenant." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/agents/{agent_id}/credentials/rotate": {
+      "post": {
+        "operationId": "rotateAgentCredential",
+        "description": "Issue a new 90-day credential. The authenticated credential remains usable for a five-minute overlap.",
+        "security": [{ "agentCredential": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/AgentId" }],
+        "responses": {
+          "201": {
+            "description": "The replacement credential is returned once.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RotatedAgentCredentialResponse" }
+              }
+            }
+          },
+          "401": { "description": "The credential is malformed, expired, revoked, mismatched, or invalid." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The database or credential generator is unavailable." }
+        }
+      }
+    },
+    "/v1/services/{service_id}/credentials": {
+      "post": {
+        "operationId": "issueServiceCredential",
+        "description": "Issue a service key. Its secret is returned once and only its Argon2id hash is retained.",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/ServiceId" },
+          { "$ref": "#/components/parameters/CsrfHeader" }
+        ],
+        "responses": {
+          "201": {
+            "description": "A new one-time-view credential.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/IssuedCredentialResponse" }
+              }
+            }
+          },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "The role or CSRF proof is insufficient." },
+          "404": { "description": "The service does not exist in this tenant." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The database or credential generator is unavailable." }
+        }
+      }
+    },
+    "/v1/services/{service_id}/credentials/{credential_id}/rotate": {
+      "post": {
+        "operationId": "rotateServiceCredential",
+        "description": "Rotate a key with a bounded overlap of at most one hour.",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/ServiceId" },
+          { "$ref": "#/components/parameters/CredentialId" },
+          { "$ref": "#/components/parameters/CsrfHeader" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RotateCredentialRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The replacement key and the previous key expiry.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RotatedCredentialResponse" }
+              }
+            }
+          },
+          "400": { "description": "The overlap exceeds one hour." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "The role or CSRF proof is insufficient." },
+          "404": { "description": "The active credential does not exist in this tenant." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The database or credential generator is unavailable." }
+        }
+      }
+    },
+    "/v1/services/{service_id}/credentials/{credential_id}": {
+      "delete": {
+        "operationId": "revokeServiceCredential",
+        "description": "Revoke an active service credential immediately.",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/ServiceId" },
+          { "$ref": "#/components/parameters/CredentialId" },
+          { "$ref": "#/components/parameters/CsrfHeader" }
+        ],
+        "responses": {
+          "204": { "description": "The credential was revoked." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "The role or CSRF proof is insufficient." },
+          "404": { "description": "The active credential does not exist in this tenant." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/live": {
+      "get": {
+        "operationId": "getLiveness",
+        "responses": {
+          "200": {
+            "description": "The process event loop is responsive.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LiveResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "description": "All required dependencies are healthy.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthResponse" }
+              }
+            }
+          },
+          "503": {
+            "description": "At least one required dependency is unhealthy.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "operationId": "getReadiness",
+        "responses": {
+          "200": { "description": "The process can receive traffic." },
+          "503": { "description": "The process must not receive traffic." }
+        }
+      }
+    },
+    "/server-info": {
+      "get": {
+        "operationId": "getServerInfo",
+        "responses": {
+          "200": {
+            "description": "Build and deployment-mode information.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ServerInfo" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "getOpenApiDocument",
+        "responses": { "200": { "description": "This OpenAPI document." } }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "IngestAccepted": {
+        "description": "The message and outbox work are durable.",
+        "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IngestAcknowledgement" } } }
+      },
+      "IngestDuplicate": {
+        "description": "This service already durably accepted the idempotency key.",
+        "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IngestAcknowledgement" } } }
+      },
+      "RateLimited": {
+        "description": "This peer exceeded the node-local authentication or ingestion budget.",
+        "headers": {
+          "Retry-After": { "schema": { "type": "integer", "const": 60 } },
+          "Cache-Control": { "schema": { "const": "no-store" } }
+        },
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+      }
+    },
+    "parameters": {
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "schema": { "type": "string", "format": "uuid" }
+      },
+      "ProjectId": {
+        "name": "project_id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string", "format": "uuid" }
+      },
+      "ServiceId": {
+        "name": "service_id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string", "format": "uuid" }
+      },
+      "CredentialId": {
+        "name": "credential_id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string", "format": "uuid" }
+      },
+      "CsrfHeader": {
+        "name": "X-Meerkateer-CSRF",
+        "in": "header",
+        "required": true,
+        "schema": { "type": "string", "minLength": 32, "maxLength": 128 }
+      },
+      "AgentId": {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string", "format": "uuid" }
+      }
+    },
+    "securitySchemes": {
+      "bootstrapToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "Community deployment admin secret"
+      },
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "meerkateer_session"
+      },
+      "enrollmentToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "one-time MKA enrollment token"
+      },
+      "agentCredential": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "tenant-and-agent-scoped MKA credential"
+      },
+      "serviceCredential": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "tenant-and-service-scoped MKS key"
+      }
+    },
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code"],
+        "properties": { "code": { "type": "string", "const": "rate_limited" } }
+      },
+      "BootstrapRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["tenant_slug", "tenant_name", "owner_email", "owner_name", "owner_password"],
+        "properties": {
+          "tenant_slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$" },
+          "tenant_name": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "owner_email": { "type": "string", "format": "email", "maxLength": 254 },
+          "owner_name": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "owner_password": { "type": "string", "minLength": 12, "maxLength": 1024, "writeOnly": true }
+        }
+      },
+      "PasswordLoginRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "format": "email", "maxLength": 254 },
+          "password": { "type": "string", "writeOnly": true }
+        }
+      },
+      "PasswordSetupRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["password"],
+        "properties": { "password": { "type": "string", "minLength": 12, "maxLength": 1024, "writeOnly": true } }
+      },
+      "BootstrapResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["tenant_id", "user_id", "role"],
+        "properties": {
+          "tenant_id": { "type": "string", "format": "uuid" },
+          "user_id": { "type": "string", "format": "uuid" },
+          "role": { "const": "owner" }
+        }
+      },
+      "SessionResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["tenant_id", "user_id", "role", "email", "display_name"],
+        "properties": {
+          "tenant_id": { "type": "string", "format": "uuid" },
+          "user_id": { "type": "string", "format": "uuid" },
+          "role": { "enum": ["owner", "admin", "operator", "viewer"] },
+          "email": { "type": "string", "format": "email" },
+          "display_name": { "type": "string" }
+        }
+      },
+      "AgentTelemetryBatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["protocol_version", "agent_id", "batch_id", "first_sequence", "last_sequence", "sent_at", "records"],
+        "properties": {
+          "protocol_version": { "const": "1" },
+          "agent_id": { "type": "string", "format": "uuid" },
+          "batch_id": { "type": "string", "format": "uuid" },
+          "first_sequence": { "type": "integer", "minimum": 1 },
+          "last_sequence": { "type": "integer", "minimum": 1 },
+          "sent_at": { "type": "string", "format": "date-time", "maxLength": 35, "pattern": "Z$" },
+          "records": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1000,
+            "items": {
+              "oneOf": [
+                { "$ref": "#/components/schemas/AgentTelemetrySample" },
+                { "$ref": "#/components/schemas/AgentTelemetryEvent" }
+              ]
+            }
+          }
+        }
+      },
+      "AgentTelemetryAttributes": {
+        "type": "object",
+        "maxProperties": 16,
+        "propertyNames": { "pattern": "^[a-z][a-z0-9_.]{0,63}$" },
+        "additionalProperties": { "type": "string", "maxLength": 128 }
+      },
+      "AgentTelemetrySample": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "sequence", "record_id", "observed_at", "metric", "value", "attributes"],
+        "properties": {
+          "type": { "const": "sample" },
+          "sequence": { "type": "integer", "minimum": 1 },
+          "record_id": { "type": "string", "format": "uuid" },
+          "observed_at": { "type": "string", "format": "date-time", "maxLength": 35, "pattern": "Z$" },
+          "metric": { "type": "string", "pattern": "^[a-z][a-z0-9_.]+$", "maxLength": 128 },
+          "value": { "type": "number" },
+          "attributes": { "$ref": "#/components/schemas/AgentTelemetryAttributes" }
+        }
+      },
+      "AgentTelemetryEvent": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "sequence", "record_id", "observed_at", "kind", "severity", "attributes"],
+        "properties": {
+          "type": { "const": "event" },
+          "sequence": { "type": "integer", "minimum": 1 },
+          "record_id": { "type": "string", "format": "uuid" },
+          "observed_at": { "type": "string", "format": "date-time", "maxLength": 35, "pattern": "Z$" },
+          "kind": { "type": "string", "pattern": "^[a-z0-9]+(_[a-z0-9]+)+$", "maxLength": 128 },
+          "severity": { "enum": ["info", "warning", "error", "critical"] },
+          "message": { "type": "string", "maxLength": 1024 },
+          "attributes": { "$ref": "#/components/schemas/AgentTelemetryAttributes" }
+        }
+      },
+      "AgentTelemetryAcknowledgement": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["protocol_version", "agent_id", "batch_id", "status", "accepted_through_sequence", "rejected", "server_time"],
+        "properties": {
+          "protocol_version": { "const": "1" },
+          "agent_id": { "type": "string", "format": "uuid" },
+          "batch_id": { "type": "string", "format": "uuid" },
+          "status": { "enum": ["accepted", "partial", "rejected"] },
+          "accepted_through_sequence": { "type": "integer", "minimum": 0 },
+          "rejected": {
+            "type": "array",
+            "maxItems": 1000,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["sequence", "reason"],
+              "properties": {
+                "sequence": { "type": "integer", "minimum": 1 },
+                "reason": { "enum": ["invalid_record", "oversized_record", "unsupported_metric", "unsafe_attributes", "stale_record"] }
+              }
+            }
+          },
+          "server_time": { "type": "string", "format": "date-time" }
+        }
+      },
+      "HeartbeatIngest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["interface_version", "service", "project", "environment", "status", "timestamp"],
+        "properties": {
+          "interface_version": { "const": "1" },
+          "service": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" },
+          "project": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$" },
+          "environment": { "enum": ["development", "staging", "production", "test", "local"] },
+          "status": { "enum": ["ok", "degraded", "down"] },
+          "message": { "type": "string", "maxLength": 1024 },
+          "timestamp": { "type": "string", "format": "date-time", "maxLength": 35, "pattern": "Z$" }
+        }
+      },
+      "EventIngest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["interface_version", "service", "project", "environment", "level", "kind", "timestamp"],
+        "properties": {
+          "interface_version": { "const": "1" },
+          "service": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" },
+          "project": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$" },
+          "environment": { "enum": ["development", "staging", "production", "test", "local"] },
+          "level": { "enum": ["info", "warning", "error", "critical"] },
+          "kind": { "type": "string", "pattern": "^[a-z0-9]+(_[a-z0-9]+)+$", "maxLength": 128 },
+          "message": { "type": "string", "maxLength": 1024 },
+          "count": { "type": "integer", "minimum": 1, "maximum": 1000000, "default": 1 },
+          "timestamp": { "type": "string", "format": "date-time", "maxLength": 35, "pattern": "Z$" }
+        }
+      },
+      "DeployIngest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["interface_version", "service", "project", "environment", "version", "commit", "status", "timestamp"],
+        "properties": {
+          "interface_version": { "const": "1" },
+          "service": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" },
+          "project": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$" },
+          "environment": { "enum": ["development", "staging", "production", "test", "local"] },
+          "version": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "commit": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "status": { "enum": ["started", "finished", "failed"] },
+          "timestamp": { "type": "string", "format": "date-time", "maxLength": 35, "pattern": "Z$" }
+        }
+      },
+      "IngestAcknowledgement": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "idempotency_key", "received_at"],
+        "properties": {
+          "status": { "enum": ["accepted", "duplicate"] },
+          "idempotency_key": { "type": "string", "format": "uuid" },
+          "received_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateProjectRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["slug", "display_name"],
+        "properties": {
+          "slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$" },
+          "display_name": { "type": "string", "minLength": 1, "maxLength": 128 }
+        }
+      },
+      "ProjectResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "slug", "display_name", "created_at"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "slug": { "type": "string" },
+          "display_name": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ProjectListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["items"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 200,
+            "items": { "$ref": "#/components/schemas/ProjectResponse" }
+          }
+        }
+      },
+      "CreateServiceRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["slug", "environment"],
+        "properties": {
+          "slug": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" },
+          "environment": { "enum": ["development", "staging", "production", "test", "local"] },
+          "game": { "$ref": "#/components/schemas/GameConfig" }
+        }
+      },
+      "GameConfig": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "host", "port"],
+        "properties": {
+          "kind": { "const": "minecraft_java" },
+          "host": { "type": "string", "minLength": 1, "maxLength": 253, "description": "Bare DNS name or IP address; no URL scheme, path, or credentials." },
+          "port": { "type": "integer", "minimum": 1, "maximum": 65535, "default": 25565 }
+        }
+      },
+      "GameProbeResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["state", "message", "probe_location", "observed_at", "response_ms", "version_name", "players_online", "players_max"],
+        "properties": {
+          "state": { "enum": ["responding", "could_not_resolve", "no_response", "timed_out", "unreadable_response"] },
+          "message": { "type": "string" },
+          "probe_location": { "const": "community_control_plane" },
+          "observed_at": { "type": "string", "format": "date-time" },
+          "response_ms": { "type": ["integer", "null"], "minimum": 0 },
+          "version_name": { "type": ["string", "null"], "maxLength": 80 },
+          "players_online": { "type": ["integer", "null"], "minimum": 0 },
+          "players_max": { "type": ["integer", "null"], "minimum": 0 }
+        }
+      },
+      "ServiceResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "project_id", "slug", "environment", "created_at", "game", "status"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "project_id": { "type": "string", "format": "uuid" },
+          "slug": { "type": "string" },
+          "environment": { "enum": ["development", "staging", "production", "test", "local"] },
+          "created_at": { "type": "string", "format": "date-time" },
+          "game": { "oneOf": [{ "$ref": "#/components/schemas/GameConfig" }, { "type": "null" }] },
+          "status": { "$ref": "#/components/schemas/ServiceStatusResponse" }
+        }
+      },
+      "ServiceStatusResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["state", "reported_state", "stale", "last_sequence", "observed_at", "updated_at"],
+        "properties": {
+          "state": { "enum": ["online", "degraded", "offline", "maintenance", "unknown"] },
+          "reported_state": {
+            "type": ["string", "null"],
+            "enum": ["online", "degraded", "offline", "maintenance", "unknown", null]
+          },
+          "stale": { "type": "boolean" },
+          "last_sequence": { "type": ["integer", "null"], "format": "int64", "minimum": 0 },
+          "observed_at": { "type": ["string", "null"], "format": "date-time" },
+          "updated_at": { "type": ["string", "null"], "format": "date-time" }
+        }
+      },
+      "ServiceListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["items"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 500,
+            "items": { "$ref": "#/components/schemas/ServiceResponse" }
+          }
+        }
+      },
+      "TimelineItemResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["idempotency_key", "kind", "state", "severity", "title", "message", "observed_at", "received_at"],
+        "properties": {
+          "idempotency_key": { "type": "string", "format": "uuid" },
+          "kind": { "enum": ["heartbeat", "event", "deploy"] },
+          "state": {
+            "type": ["string", "null"],
+            "enum": ["online", "degraded", "offline", "maintenance", "unknown", null]
+          },
+          "severity": {
+            "type": ["string", "null"],
+            "enum": ["info", "warning", "error", "critical", null]
+          },
+          "title": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "message": { "type": ["string", "null"], "maxLength": 1024 },
+          "observed_at": { "type": "string", "format": "date-time" },
+          "received_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "TimelineResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["items"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 200,
+            "items": { "$ref": "#/components/schemas/TimelineItemResponse" }
+          }
+        }
+      },
+      "IssueEnrollmentTokenRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["expires_in_seconds"],
+        "properties": {
+          "expires_in_seconds": { "type": "integer", "minimum": 300, "maximum": 3600 }
+        }
+      },
+      "IssuedEnrollmentTokenResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["token_id", "project_id", "prefix", "secret", "expires_at"],
+        "properties": {
+          "token_id": { "type": "string", "format": "uuid" },
+          "project_id": { "type": ["string", "null"], "format": "uuid" },
+          "prefix": { "type": "string", "pattern": "^[0-9a-f]{12}$" },
+          "secret": { "type": "string", "writeOnly": true },
+          "expires_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "EnrollAgentRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["installation_id", "display_name"],
+        "properties": {
+          "installation_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Random per-installation ID, not a hardware serial or user identifier."
+          },
+          "display_name": { "type": "string", "minLength": 1, "maxLength": 128 }
+        }
+      },
+      "EnrolledAgentResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["agent_id", "project_id", "credential_id", "secret", "expires_at"],
+        "properties": {
+          "agent_id": { "type": "string", "format": "uuid" },
+          "project_id": { "type": ["string", "null"], "format": "uuid" },
+          "credential_id": { "type": "string", "format": "uuid" },
+          "secret": { "type": "string", "writeOnly": true },
+          "expires_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "AgentResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "display_name", "status", "connection_state", "enrolled_at", "last_seen_at"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "display_name": { "type": "string" },
+          "status": { "enum": ["active", "revoked", "quarantined"] },
+          "connection_state": { "enum": ["online", "stale", "never_seen", "revoked", "quarantined", "unknown"] },
+          "enrolled_at": { "type": "string", "format": "date-time" },
+          "last_seen_at": { "type": ["string", "null"], "format": "date-time" }
+        }
+      },
+      "AgentListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["items"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 500,
+            "items": { "$ref": "#/components/schemas/AgentResponse" }
+          }
+        }
+      },
+      "RotatedAgentCredentialResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["credential_id", "secret", "expires_at", "previous_valid_until"],
+        "properties": {
+          "credential_id": { "type": "string", "format": "uuid" },
+          "secret": { "type": "string", "writeOnly": true },
+          "expires_at": { "type": "string", "format": "date-time" },
+          "previous_valid_until": { "type": "string", "format": "date-time" }
+        }
+      },
+      "IssuedCredentialResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["credential_id", "prefix", "secret"],
+        "properties": {
+          "credential_id": { "type": "string", "format": "uuid" },
+          "prefix": { "type": "string" },
+          "secret": { "type": "string", "writeOnly": true }
+        }
+      },
+      "RotateCredentialRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["overlap_seconds"],
+        "properties": {
+          "overlap_seconds": { "type": "integer", "minimum": 0, "maximum": 3600 }
+        }
+      },
+      "RotatedCredentialResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["credential_id", "prefix", "secret", "previous_valid_until"],
+        "properties": {
+          "credential_id": { "type": "string", "format": "uuid" },
+          "prefix": { "type": "string" },
+          "secret": { "type": "string", "writeOnly": true },
+          "previous_valid_until": { "type": "string", "format": "date-time" }
+        }
+      },
+      "LiveResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status"],
+        "properties": { "status": { "const": "ok" } }
+      },
+      "CheckResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ok"],
+        "properties": {
+          "ok": { "type": "boolean" },
+          "latency_ms": { "type": "integer", "minimum": 0 },
+          "error": { "type": "string", "maxLength": 256 }
+        }
+      },
+      "BuildInfo": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["git_sha", "git_branch", "build_time"],
+        "properties": {
+          "git_sha": { "type": "string" },
+          "git_branch": { "type": "string" },
+          "build_time": { "type": "string" }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "service", "project", "environment", "interface", "interface_version", "version", "build", "checks", "timestamp"],
+        "properties": {
+          "status": { "enum": ["ok", "degraded"] },
+          "service": { "type": "string" },
+          "project": { "type": "string" },
+          "environment": { "type": "string" },
+          "interface": { "const": "meerkateer" },
+          "interface_version": { "const": "1" },
+          "version": { "type": "string" },
+          "build": { "$ref": "#/components/schemas/BuildInfo" },
+          "checks": {
+            "type": "object",
+            "additionalProperties": { "$ref": "#/components/schemas/CheckResult" }
+          },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ServerInfo": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "version", "mode", "build"],
+        "properties": {
+          "name": { "type": "string" },
+          "version": { "type": "string" },
+          "mode": { "enum": ["community", "cloud"] },
+          "build": { "$ref": "#/components/schemas/BuildInfo" }
+        }
+      }
+    }
+  }
+}

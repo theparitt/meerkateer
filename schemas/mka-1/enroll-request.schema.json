@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://meerkateer.dev/schemas/mka-1/enroll-request.schema.json",
+  "title": "MKA-1 Enrollment Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "protocol_version", "instance_id", "display_name", "agent_version", "platform", "capabilities"],
+  "properties": {
+    "protocol": { "const": "meerkateer-agent" },
+    "protocol_version": { "const": "1" },
+    "instance_id": { "type": "string", "format": "uuid" },
+    "display_name": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" },
+    "agent_version": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "platform": { "$ref": "#/$defs/platform" },
+    "capabilities": { "$ref": "#/$defs/capabilities" }
+  },
+  "$defs": {
+    "platform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "arch"],
+      "properties": {
+        "os": { "type": "string", "enum": ["linux", "windows"] },
+        "arch": { "type": "string", "enum": ["amd64", "arm64"] },
+        "os_version": { "type": "string", "maxLength": 128 }
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "type": "string", "maxLength": 128, "pattern": "^[a-z][a-z0-9_.-]+$" }
+    }
+  }
+}
