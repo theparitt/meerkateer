@@ -41,6 +41,11 @@ describe("public resource links", () => {
       "/meerkateer-system-map-v1.png",
     );
     expect(container.querySelectorAll(".story-art img")).toHaveLength(3);
+    expect(screen.getByText(/await watch\.heartbeat\("ok"/)).toBeTruthy();
+    expect(container.querySelector(".public-nav a[href='/#sdks']")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Go SDK" }));
+    expect(screen.getByText(/meerkateer.FromEnv/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Python SDK" }));
     expect(screen.getByText(/watch\.heartbeat\("ok"/)).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Host agent" }));
     expect(screen.getByText(/meerkateer-agent -- enroll/)).toBeTruthy();
@@ -55,6 +60,8 @@ describe("public resource links", () => {
 
   it.each([
     ["/docs", "Documentation"],
+    ["/docs/node-sdk", "Node.js SDK"],
+    ["/docs/go-sdk", "Go SDK"],
     ["/docs/python-sdk", "Python SDK"],
     ["/docs/rust-sdk", "Rust SDK"],
     ["/get-started", "Getting started"],

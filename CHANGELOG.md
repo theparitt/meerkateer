@@ -7,6 +7,10 @@ Keep a Changelog principles, and releases use Semantic Versioning.
 
 ### Added
 
+- Public GitHub repository and direct navigation link with GitHub icon.
+- Node.js and Go SDKs for MKS-1 heartbeat, event, and deploy delivery, with language
+  guides, retry tests, and CI coverage. The website now offers Node.js, Go, Rust,
+  Python, and Host agent examples under SDKs.
 - Minecraft Java / Paper pilot plan with separate external, host/process, and game-performance
   evidence; a saved game-instance address and bounded, owner-triggered Community status test.
 - Minecraft query parser, public-address checks, per-peer test budget, and regression coverage
@@ -16,8 +20,7 @@ Keep a Changelog principles, and releases use Semantic Versioning.
   reasons and nearby event context. Unknown days remain visually distinct.
 - Friendly system diagram, mascot action illustrations, integration examples, and visible
   feature, update, test, and roadmap sections on the public landing page.
-- First-party documentation, support, source-download, policy, and SDK guide pages in
-  the web UI while the public repository is unavailable.
+- First-party documentation, support, policy, and SDK guide pages in the web UI.
 - Community owner email/password sign-in and setup-key password recovery for existing
   installations.
 - Commercial release phases with explicit exit tests; bootstrap now requires an owner

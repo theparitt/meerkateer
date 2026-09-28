@@ -18,8 +18,8 @@ const stories = [
     copy: "Enroll a machine with the agent. Add an SDK to a process for heartbeats, events, and deployments.",
     image: "/mascot-monitor-v1.png",
     alt: "Meerkateer mascot checking a dashboard with three friendly servers",
-    link: "/#integrate",
-    action: "See integration code",
+    link: "/#sdks",
+    action: "See the SDKs",
     theme: "sky",
   },
   {
@@ -165,11 +165,23 @@ export function ActionStoriesSection() {
 }
 
 const samples = {
+  node: {
+    title: "Node.js SDK",
+    subtitle: "For JavaScript servers and workers",
+    guide: "/docs/node-sdk",
+    code: `# Install from this repository\nnpm install ./sdk/node\n\n# Set the Console's service environment values, then:\nimport { Meerkateer } from "@meerkateer/sdk";\n\nconst watch = Meerkateer.fromEnv();\nawait watch.heartbeat("ok", { message: "worker ready" });\nawait watch.event("queue_delay", { level: "warning", message: "jobs delayed" });`,
+  },
+  go: {
+    title: "Go SDK",
+    subtitle: "For Go APIs and background services",
+    guide: "/docs/go-sdk",
+    code: `// Add the module: go get github.com/theparitt/meerkateer/sdk/go@main\nimport (\n    "context"\n    meerkateer "github.com/theparitt/meerkateer/sdk/go"\n)\n\nwatch, err := meerkateer.FromEnv()\nif err != nil { return err }\nreturn watch.Heartbeat(context.Background(), "ok", "worker ready")`,
+  },
   python: {
     title: "Python SDK",
-    subtitle: "For a game server or application process",
+    subtitle: "For Python APIs and worker processes",
     guide: "/docs/python-sdk",
-    code: `# Install from the downloaded source\npython3 -m pip install ./sdk/python\n\n# Add the Console's one-time SDK key to your environment.\n# Then, in your Python application:\nfrom meerkateer_sdk import Meerkateer\n\nwatch = Meerkateer.from_env()\nwatch.heartbeat("ok", message="game loop healthy")\nwatch.event("matchmaker_unavailable", level="error", message="dependency unavailable")\nwatch.deploy("1.2.3", "abcdef123456", status="finished")`,
+    code: `# Install from this repository\npython3 -m pip install ./sdk/python\n\n# Set the Console's service environment values, then:\nfrom meerkateer_sdk import Meerkateer\n\nwatch = Meerkateer.from_env()\nwatch.heartbeat("ok", message="worker ready")\nwatch.event("queue_delay", level="warning", message="jobs delayed")`,
   },
   agent: {
     title: "Host agent",
@@ -188,7 +200,7 @@ const samples = {
 type Sample = keyof typeof samples;
 
 export function IntegrationSection() {
-  const [active, setActive] = useState<Sample>("python");
+  const [active, setActive] = useState<Sample>("node");
   const [copied, setCopied] = useState(false);
   const sample = samples[active];
 
@@ -203,11 +215,11 @@ export function IntegrationSection() {
   }
 
   return (
-    <section className="landing-section integration-section" id="integrate">
+    <section className="landing-section integration-section" id="sdks">
       <div className="page-width integration-layout">
         <div className="integration-copy">
-          <p className="eyebrow">Make it yours</p>
-          <h2>Your first signal is a few lines away.</h2>
+          <p className="eyebrow">SDKs for your stack</p>
+          <h2>Send your first signal in your language.</h2>
           <p>
             Create a workspace in the Console. Enroll a machine with the agent, or create a process
             and copy its one-time SDK key. The code then sends the reliability facts you choose to
@@ -232,7 +244,7 @@ export function IntegrationSection() {
           </a>
         </div>
         <div className="integration-code">
-          <div className="integration-tabs" role="tablist" aria-label="Integration example">
+          <div className="integration-tabs" role="tablist" aria-label="SDK example">
             {(Object.keys(samples) as Sample[]).map((key) => (
               <button
                 type="button"
@@ -302,7 +314,7 @@ export function UpdatesRoadmapSection() {
             <ul>
               <li>Owner sign-in with email and password</li>
               <li>Workspace, machine, and process setup in the Console</li>
-              <li>Public guides and a downloadable source preview</li>
+              <li>Public GitHub repository and SDK guides</li>
             </ul>
             <a href="/changelog">See what changed →</a>
           </article>

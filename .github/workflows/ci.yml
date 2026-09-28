@@ -93,6 +93,29 @@ jobs:
       - name: Build
         run: npm run build
 
+  sdk-node-go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22.22.2"
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.24"
+
+      - name: Test Node.js SDK
+        run: cd sdk/node && npm test
+
+      - name: Test Go SDK
+        run: cd sdk/go && go test ./...
+
   migration-and-api-integration:
     runs-on: ubuntu-latest
     timeout-minutes: 25

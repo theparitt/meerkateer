@@ -7,6 +7,8 @@ import license from "../../LICENSE?raw";
 import readme from "../../README.md?raw";
 import security from "../../SECURITY.md?raw";
 import support from "../../SUPPORT.md?raw";
+import goSdk from "../../sdk/go/README.md?raw";
+import nodeSdk from "../../sdk/node/README.md?raw";
 import pythonSdk from "../../sdk/python/README.md?raw";
 import rustSdk from "../../sdk/rust/README.md?raw";
 
@@ -24,6 +26,18 @@ const documents: Record<string, Document> = {
     description: "The setup, architecture, and reliability guides for this developer preview.",
     text: readme,
     file: "README.md",
+  },
+  "/docs/node-sdk": {
+    title: "Node.js SDK",
+    description: "Send service heartbeats, events, and deployments from a Node.js process.",
+    text: nodeSdk,
+    file: "sdk/node/README.md",
+  },
+  "/docs/go-sdk": {
+    title: "Go SDK",
+    description: "Send service heartbeats, events, and deployments from a Go process.",
+    text: goSdk,
+    file: "sdk/go/README.md",
   },
   "/docs/python-sdk": {
     title: "Python SDK",
@@ -96,6 +110,8 @@ function projectHref(href: string, file: string): string {
   if (pathname === "/CHANGELOG") return `/changelog${target.hash}`;
   if (pathname === "/sdk/python/README") return `/docs/python-sdk${target.hash}`;
   if (pathname === "/sdk/rust/README") return `/docs/rust-sdk${target.hash}`;
+  if (pathname === "/sdk/node/README") return `/docs/node-sdk${target.hash}`;
+  if (pathname === "/sdk/go/README") return `/docs/go-sdk${target.hash}`;
   if (pathname.startsWith("/docs/")) {
     return documents[pathname] ? `${pathname}${target.hash}` : "/docs";
   }

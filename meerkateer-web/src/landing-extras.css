@@ -442,7 +442,7 @@
 
 .integration-tabs {
   display: flex;
-  overflow-x: auto;
+  flex-wrap: wrap;
   gap: 5px;
   padding: 9px;
   border-bottom: 1px solid #34496e;

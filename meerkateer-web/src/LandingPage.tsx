@@ -41,7 +41,7 @@ function PublicLinks() {
   return (
     <>
       <a href="/#how-it-works">How it works</a>
-      <a href="/#integrate">Integrate</a>
+      <a href="/#sdks">SDKs</a>
       <a href="/#updates">Updates</a>
       <a href="/#run-it">Community</a>
       <a href={DOCS_URL}>Docs</a>
@@ -491,7 +491,7 @@ function Footer() {
           <strong>Resources</strong>
           <a href={DOCS_URL}>Documentation</a>
           <a href={SELF_HOST_URL}>Getting started</a>
-          <a href="#integrate">Integration examples</a>
+          <a href="#sdks">SDKs and examples</a>
           <a href="/help">Help</a>
         </div>
         <div>

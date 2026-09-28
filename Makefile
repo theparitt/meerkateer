@@ -36,6 +36,7 @@ test:
 	python3 tests/project/validate_openapi.py
 	python3 tests/security/scan_secrets.py
 	python3 -m unittest discover -s sdk/python/tests -v
+	cd sdk/node && npm test
 	cd meerkateer-web && npm test
 
 lint:

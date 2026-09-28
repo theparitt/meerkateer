@@ -49,6 +49,8 @@ have not shipped.
 - Web: Biome check, 27 Vitest tests, TypeScript build and Vite production build pass.
 - Python SDK: three unit tests plus real API E2E for authenticated event delivery pass.
 - Rust SDK: three unit tests plus real API E2E for typed, authenticated event delivery pass.
+- Node.js SDK: retry/idempotency and destination policy tests pass locally; CI is configured.
+- Go SDK: retry/idempotency and destination policy tests pass in a Go 1.24 container; CI is configured.
 - PostgreSQL migration and deterministic seed were applied from an empty container;
   the tenant-scoped fixture service count was verified.
 - A real API process passed the `/live`, `/health`, and `/openapi.json` smoke harness.
