@@ -7,6 +7,32 @@
   },
   "servers": [{ "url": "/" }],
   "paths": {
+    "/v1/instance": {
+      "get": {
+        "operationId": "getInstanceState",
+        "description": "Read whether this control plane still needs its first owner setup. No tenant data is exposed.",
+        "responses": {
+          "200": { "description": "Instance setup state.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InstanceStateResponse" } } } },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/alerts/test": {
+      "post": {
+        "operationId": "testCommunityAlertWebhook",
+        "description": "Send a clearly marked test message to the installation-level Community alert webhook. Requires an owner session and CSRF header.",
+        "security": [{ "sessionCookie": [], "csrfHeader": [] }],
+        "responses": {
+          "204": { "description": "The receiver accepted the test message." },
+          "401": { "description": "A browser session is required." },
+          "403": { "description": "The session is not authorized or CSRF protection failed." },
+          "409": { "description": "No webhook is configured." },
+          "500": { "description": "The alert transport could not be initialized." },
+          "502": { "description": "The receiver did not accept the message." },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
     "/v1/bootstrap": {
       "post": {
         "operationId": "bootstrapOwner",
@@ -794,6 +820,11 @@
         "in": "cookie",
         "name": "meerkateer_session"
       },
+      "csrfHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Meerkateer-CSRF"
+      },
       "enrollmentToken": {
         "type": "http",
         "scheme": "bearer",
@@ -1282,6 +1313,15 @@
           "git_sha": { "type": "string" },
           "git_branch": { "type": "string" },
           "build_time": { "type": "string" }
+        }
+      },
+      "InstanceStateResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["deployment_mode", "setup_required"],
+        "properties": {
+          "deployment_mode": { "enum": ["community", "cloud"] },
+          "setup_required": { "type": "boolean" }
         }
       },
       "HealthResponse": {

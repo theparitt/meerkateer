@@ -7,14 +7,14 @@ afterEach(cleanup);
 
 describe("public resource links", () => {
   it("resolves every footer link to a real section or page", () => {
-    window.history.replaceState({}, "", "/");
+    window.history.replaceState({}, "", "/about");
     const { container } = render(<App />);
     for (const link of container.querySelectorAll<HTMLAnchorElement>(".public-footer a")) {
       const href = link.getAttribute("href");
       expect(href, link.textContent ?? "footer link").toBeTruthy();
       if (!href) continue;
-      if (href.startsWith("#") || href.startsWith("/#")) {
-        expect(container.querySelector(href.replace(/^\//, "")), href).toBeTruthy();
+      if (href.startsWith("#") || href.startsWith("/about#")) {
+        expect(container.querySelector(href.slice(href.indexOf("#"))), href).toBeTruthy();
       } else if (href.startsWith("https://")) {
         expect(href).toBe("https://github.com/theparitt/meerkateer");
       } else {
@@ -24,7 +24,7 @@ describe("public resource links", () => {
   });
 
   it("links the header directly to the GitHub repository with its icon", () => {
-    window.history.replaceState({}, "", "/");
+    window.history.replaceState({}, "", "/about");
     const { container } = render(<App />);
     const link = container.querySelector<HTMLAnchorElement>(".public-nav .github-link");
     expect(link?.getAttribute("href")).toBe("https://github.com/theparitt/meerkateer");
@@ -32,7 +32,7 @@ describe("public resource links", () => {
   });
 
   it("shows a visual system map, mascot actions, and working code examples", async () => {
-    window.history.replaceState({}, "", "/");
+    window.history.replaceState({}, "", "/about");
     const { container } = render(<App />);
     expect(screen.getByRole("heading", { name: "Little signals. One clear story." })).toBeTruthy();
     expect(screen.getByText("Host agent sends telemetry")).toBeTruthy();
@@ -42,7 +42,7 @@ describe("public resource links", () => {
     );
     expect(container.querySelectorAll(".story-art img")).toHaveLength(3);
     expect(screen.getByText(/await watch\.heartbeat\("ok"/)).toBeTruthy();
-    expect(container.querySelector(".public-nav a[href='/#sdks']")).toBeTruthy();
+    expect(container.querySelector(".public-nav a[href='/about#sdks']")).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Go SDK" }));
     expect(screen.getByText(/meerkateer.FromEnv/)).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Python SDK" }));

@@ -4,6 +4,40 @@
  */
 
 export interface paths {
+  "/v1/instance": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** @description Read whether this control plane still needs its first owner setup. No tenant data is exposed. */
+    get: operations["getInstanceState"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/alerts/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** @description Send a clearly marked test message to the installation-level Community alert webhook. Requires an owner session and CSRF header. */
+    post: operations["testCommunityAlertWebhook"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/bootstrap": {
     parameters: {
       query?: never;
@@ -817,6 +851,11 @@ export interface components {
       git_branch: string;
       build_time: string;
     };
+    InstanceStateResponse: {
+      /** @enum {unknown} */
+      deployment_mode: "community" | "cloud";
+      setup_required: boolean;
+    };
     HealthResponse: {
       /** @enum {unknown} */
       status: "ok" | "degraded";
@@ -890,6 +929,93 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  getInstanceState: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Instance setup state. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["InstanceStateResponse"];
+        };
+      };
+      /** @description The control database is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  testCommunityAlertWebhook: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The receiver accepted the test message. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description A browser session is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The session is not authorized or CSRF protection failed. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description No webhook is configured. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The alert transport could not be initialized. */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The receiver did not accept the message. */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The control database is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   bootstrapOwner: {
     parameters: {
       query?: never;

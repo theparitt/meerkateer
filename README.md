@@ -1,23 +1,24 @@
 # Meerkateer
 
-Meerkateer is an open-source reliability platform for game-server operators. The first
-pilot focuses on Minecraft Java / Paper, beginning with a manual external status test
-and the existing agent, service contracts, and incident timeline. Scheduled probes,
-Paper metrics, Discord alerts, and player status pages are tracked in the
-[game-server beta plan](docs/game-server-beta.md).
+Meerkateer is an open-source, self-hosted reliability monitor for server operators.
+The current pilot is **Community-first**: connect a host and service, inspect a
+failure and recovery timeline, and deliver a webhook alert. The
+[Community delivery plan](docs/community-first-roadmap.md) records the verified
+journey and the remaining release gates. The Minecraft Java / Paper adapter is
+experimental and its [game-server beta plan](docs/game-server-beta.md) is paused.
 
 > **Status: developer preview.** Phases 0 and 1 are complete. Phase 2 now has the
 > tenant/RLS boundary, bootstrap session, inventory, service-key lifecycle, and agent
 > enrollment/rotation/revocation. Phase 3 has durable MKS/MKA ingestion foundations,
-> but production OIDC, alert delivery, billing, and the production security gates are
+> but production OIDC, trustworthy alert policies, and the production security gates are
 > not complete. Do not expose this build to untrusted networks.
 
 ## Product modes
 
 - **Meerkateer Community** is self-hosted under Apache-2.0 and has no billing or remote
   license dependency.
-- **Meerkateer Cloud** is the planned managed service with monthly Stripe billing for
-  hosting, upgrades, backups, monitoring, and support.
+- **Meerkateer Cloud** is a deferred concept. It is not part of the current release
+  plan or required for Community use.
 
 Both modes use the same open-source core. The initial product monitors reliability; it
 does not provide arbitrary remote commands, RCON administration, game provisioning, or
@@ -54,7 +55,7 @@ In a second terminal, run `make smoke`. Stop the stack with `make down`. To use 
 existing PostgreSQL 18 instance, keep a dedicated database and role and set
 `MEERKATEER_DATABASE_URL`; see [the storage deployment boundary](docs/deployment/storage.md).
 
-Open the web console and choose **Self-host Community**. On a new database, create the company
+Open the web console. On a new database, create the company
 and owner with the `MEERKATEER_BOOTSTRAP_TOKEN` value from the private `.env` file and an owner
 password of at least 12 characters. Later visits use the owner's email and password at `/login`.
 For installations created before passwords were added, use `/recover` once with the setup key
@@ -65,7 +66,16 @@ Before starting an existing installation with this version, back up its database
 migrations without changing
 existing companies or sessions.
 
-## Add a Minecraft Java / Paper instance
+To test outage and recovery notifications, set `MEERKATEER_ALERT_WEBHOOK_URL` in
+the private `.env` to an HTTPS endpoint that accepts JSON with a `content` field.
+Restart the API and worker, then choose **Send test alert** in the Console.
+Loopback HTTP is allowed only for local tests. Service heartbeats reporting down
+and recovery enqueue transition alerts; repeated or older observations do not
+create another alert. The worker retries failed delivery and eventually moves
+it to the dead-letter queue. This is an early single-channel workflow; alert
+confirmation and maintenance policies are tracked in CE-3.
+
+## Experimental Minecraft Java / Paper adapter
 
 In the Console, create a workspace, open **Manage workspaces, machines, and processes**,
 choose **Minecraft Java / Paper**, and enter the game's public DNS name or IP address

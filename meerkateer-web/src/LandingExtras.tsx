@@ -18,7 +18,7 @@ const stories = [
     copy: "Enroll a machine with the agent. Add an SDK to a process for heartbeats, events, and deployments.",
     image: "/mascot-monitor-v1.png",
     alt: "Meerkateer mascot checking a dashboard with three friendly servers",
-    link: "/#sdks",
+    link: "/about#sdks",
     action: "See the SDKs",
     theme: "sky",
   },
@@ -346,17 +346,17 @@ export function UpdatesRoadmapSection() {
             <h3>What comes next</h3>
             <div className="roadmap-step">
               <b>Now</b>
-              <span>Minecraft Java / Paper: manual status test and incident timeline</span>
+              <span>Source audit and isolated Community operator journey</span>
             </div>
             <div className="roadmap-step">
               <b>Next</b>
-              <span>Scheduled probes, Paper TPS/MSPT collector, calm Discord alerts</span>
+              <span>Service checks, evidence-led incidents, and reliable alerts</span>
             </div>
             <div className="roadmap-step">
               <b>Later</b>
-              <span>Player status pages, pilot operators, managed Cloud</span>
+              <span>Restore, release packaging, and Community preview</span>
             </div>
-            <a href="/docs/game-server-beta">Explore the Minecraft pilot →</a>
+            <a href="/docs/community-first-roadmap">Explore the Community plan →</a>
           </article>
         </div>
       </div>

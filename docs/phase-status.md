@@ -2,13 +2,17 @@
 
 Last verified: 2026-09-28
 
-This file reports evidence, not a production-readiness claim. A phase is complete only
-when every exit gate in the [production roadmap](production-roadmap.md) has evidence.
-The [commercial readiness plan](commercial-readiness-plan.md) has separate C0–C8 release
-gates. C0 is in progress; C1–C8 are not complete.
-The first pilot follows [Minecraft Java / Paper G0–G5](game-server-beta.md). G0 is in
-progress; automatic probes, Paper TPS/MSPT, Discord alerts, and player status pages
-have not shipped.
+This file reports evidence, not a production-readiness claim. The current priority
+is the [Community-first CE-0–CE-7 plan](community-first-roadmap.md): CE-0 passed
+an isolated Compose audit; CE-1 is in progress. The older
+[production roadmap](production-roadmap.md),
+[commercial readiness plan](commercial-readiness-plan.md), and
+[Minecraft pilot](game-server-beta.md) remain reference plans. Cloud and game
+vertical delivery are paused.
+
+The current Community alpha sends a JSON webhook test and down/recovery messages.
+It does not yet have alert confirmation, cooldown, maintenance, external watchdog,
+or a release artifact verified on a clean machine.
 
 | Phase | State | Evidence / blocker |
 | --- | --- | --- |
@@ -20,11 +24,19 @@ have not shipped.
 | 5 — Game/SME adapters/probes | Not started | Protocol labs and SSRF boundary still required |
 | 6 — Usable web product | In progress | Authenticated workspace dashboard signs Community owners in, switches projects, creates process/service SDK credentials, manages workspace/machine membership and enrollment tokens, and renders machine freshness, service state, heartbeat history, and incident/deployment timeline; company switching, richer configuration, accessibility review, and visual regression remain |
 | 7 — Stripe Sandbox SaaS | Not started | Cloud mode fails closed; no billing calls or entitlements exist yet |
-| 8 — Resilience/alerts | Not started | Requires durable ingest and notification outbox |
+| 8 — Resilience/alerts | In progress | Single Community webhook test and transition delivery pass an isolated API/worker/database exercise; confirmation, maintenance, watchdog and alert history remain |
 | 9 — Supply chain/release candidate | Not started | Signing, SBOM, Helm, security review outstanding |
 | 10 — Beta/GA | Not started | Requires representative users, soak, restore and billing lifecycle evidence |
 
 ## Latest local evidence
+
+- Community CE-1: `/` now opens owner setup when the Community database is fresh
+  and the console or login when initialized; `/about` holds public product content.
+  The isolated alert exercise creates an owner, host and service, sends a test
+  message, records down and recovery facts, and verifies exactly two delivered
+  transition messages. A repeated down report and older observation create no
+  extra alert or false state reversal. The worker retains completed outbox records.
+  This is an alpha fixture exercise, not a real host outage or production channel.
 
 - Minecraft G0: a game instance can be saved as a separate service with its own
   address/port. The Community Console can run a manual Minecraft Java status test;
@@ -44,9 +56,9 @@ have not shipped.
   It does not calculate uptime from missing or sparse data.
 
 - Repository policy, MKS/MKA contracts, OpenAPI and secret-shape scan pass.
-- Rust workspace: format, compile, 47 unit/integration tests, and Clippy with warnings
+- Rust workspace: format, compile, 50 unit tests, and Clippy with warnings
   denied pass.
-- Web: Biome check, 27 Vitest tests, TypeScript build and Vite production build pass.
+- Web: Biome check, 34 Vitest tests, TypeScript build and Vite production build pass.
 - Python SDK: three unit tests plus real API E2E for authenticated event delivery pass.
 - Rust SDK: three unit tests plus real API E2E for typed, authenticated event delivery pass.
 - Node.js SDK: retry/idempotency and destination policy tests pass locally; CI is configured.

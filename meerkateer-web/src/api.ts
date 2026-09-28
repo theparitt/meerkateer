@@ -1,6 +1,7 @@
 import type { components } from "./generated/api";
 
 export type HealthResponse = components["schemas"]["HealthResponse"];
+export type InstanceStateResponse = components["schemas"]["InstanceStateResponse"];
 export type SessionResponse = components["schemas"]["SessionResponse"];
 export type CreateProjectRequest = components["schemas"]["CreateProjectRequest"];
 export type CreateServiceRequest = components["schemas"]["CreateServiceRequest"];
@@ -78,10 +79,36 @@ async function mutateJson(
   return response.status === 204 ? null : response.json();
 }
 
+export async function testAlertWebhook(): Promise<void> {
+  await mutateJson("POST", "/v1/alerts/test");
+}
+
 export async function fetchHealth(signal: AbortSignal): Promise<HealthResponse> {
   const body = await getJson("/health", signal);
   if (!isHealthResponse(body)) throw new Error("Health endpoint returned an unsupported contract");
   return body;
+}
+
+export async function fetchInstanceState(
+  signal: AbortSignal,
+): Promise<InstanceStateResponse | null> {
+  const response = await fetch("/v1/instance", { headers: { Accept: "application/json" }, signal });
+  if (
+    response.status === 404 ||
+    !response.headers.get("Content-Type")?.includes("application/json")
+  ) {
+    return null;
+  }
+  if (!response.ok) throw new Error(`Instance state returned HTTP ${response.status}`);
+  const body: unknown = await response.json();
+  if (
+    !isObject(body) ||
+    (body.deployment_mode !== "community" && body.deployment_mode !== "cloud") ||
+    typeof body.setup_required !== "boolean"
+  ) {
+    throw new Error("Instance state returned an unsupported contract");
+  }
+  return body as InstanceStateResponse;
 }
 
 export async function fetchSession(signal: AbortSignal): Promise<SessionResponse | null> {

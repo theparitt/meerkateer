@@ -128,6 +128,8 @@ def run_agent(arguments: list[str], *, token: str | None = None) -> dict[str, An
 
 def bootstrap_and_inventory() -> tuple[str, str, str, str]:
     assert BOOTSTRAP_TOKEN, "MEERKATEER_BOOTSTRAP_TOKEN is required"
+    initial_instance = expect(call("GET", "/v1/instance"), 200).body
+    assert initial_instance == {"deployment_mode": "community", "setup_required": True}
     bootstrap = {
         "tenant_slug": "e2e-operator",
         "tenant_name": "E2E Operator",
@@ -148,6 +150,8 @@ def bootstrap_and_inventory() -> tuple[str, str, str, str]:
         201,
     )
     expect(call("GET", "/v1/session"), 200)
+    ready_instance = expect(call("GET", "/v1/instance"), 200).body
+    assert ready_instance == {"deployment_mode": "community", "setup_required": False}
     expect(
         call(
             "POST",
@@ -170,6 +174,8 @@ def bootstrap_and_inventory() -> tuple[str, str, str, str]:
         200,
     )
     expect(call("GET", "/v1/session"), 200)
+    expect(call("POST", "/v1/alerts/test"), 403, "csrf_failed")
+    expect(call("POST", "/v1/alerts/test", headers=browser_headers()), 409, "alert_webhook_not_configured")
     cookies.clear()
     expect(
         call("POST", "/v1/session/password-setup", body={"password": "new-test-only-password-456"}, headers={"Authorization": "Bearer incorrect-admin-token"}),

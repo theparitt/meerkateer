@@ -6,6 +6,8 @@ import {
 } from "./LandingExtras";
 
 const GITHUB_REPO_URL = "https://github.com/theparitt/meerkateer";
+const COMMUNITY_SOURCE_DOWNLOAD_URL =
+  "https://github.com/theparitt/meerkateer/archive/refs/heads/main.zip";
 const DOCS_URL = "/docs";
 const SELF_HOST_URL = "/get-started";
 
@@ -40,10 +42,10 @@ function Brand() {
 function PublicLinks() {
   return (
     <>
-      <a href="/#how-it-works">How it works</a>
-      <a href="/#sdks">SDKs</a>
-      <a href="/#updates">Updates</a>
-      <a href="/#run-it">Community</a>
+      <a href="/about#how-it-works">How it works</a>
+      <a href="/about#sdks">SDKs</a>
+      <a href="/about#updates">Updates</a>
+      <a href="/about#run-it">Community</a>
       <a href={DOCS_URL}>Docs</a>
       <GitHubLink>GitHub</GitHubLink>
     </>
@@ -197,14 +199,6 @@ const communityBenefits = [
   "No hosted account required",
 ];
 
-const cloudBenefits = [
-  "No control-plane installation",
-  "Managed infrastructure",
-  "Platform updates handled for you",
-  "Create a workspace and start monitoring",
-  "The same Meerkateer experience",
-];
-
 function RunOption({
   variant,
   eyebrow,
@@ -260,8 +254,8 @@ function RunOptionsSection() {
       <div className="page-width">
         <SectionHeading
           eyebrow="Choose how you run it"
-          title="Use Meerkateer your way."
-          copy="Same open-source project. Run it on infrastructure you control, or choose the managed service when you do not want to operate the control plane."
+          title="Community runs on your infrastructure."
+          copy="Download the free source, follow the quick start, and keep your monitoring data on systems you control."
         />
         <div className="run-grid">
           <RunOption
@@ -270,22 +264,10 @@ function RunOptionsSection() {
             title="Open source. Self-hosted. Free."
             copy="For developers and teams who want full control over where Meerkateer runs. Community is a first-class product, not a limited trial."
             benefits={communityBenefits}
-            action="Self-host Meerkateer"
-            actionHref="/setup"
+            action="Quick start"
+            actionHref="/get-started"
             secondary="Explore the source"
             secondaryHref={GITHUB_REPO_URL}
-          />
-          <RunOption
-            variant="cloud"
-            eyebrow="Meerkateer Cloud"
-            title="Hosted by us. No control-plane upkeep."
-            copy="Use Meerkateer without installing, upgrading, or maintaining the control plane yourself. We run the platform for you."
-            benefits={cloudBenefits}
-            action="Explore Meerkateer Cloud"
-            actionHref="/cloud"
-            secondary="Cloud availability"
-            secondaryHref="/cloud"
-            note="Cloud onboarding is still in developer preview in this build."
           />
         </div>
       </div>
@@ -452,15 +434,15 @@ function FinalCallToAction() {
       <img src="/logo.png" alt="" />
       <div>
         <p className="eyebrow">Ready to keep watch?</p>
-        <h2>Choose the setup that works for you.</h2>
-        <p>Self-host Meerkateer for free, or use the managed service when available.</p>
+        <h2>Start with Community.</h2>
+        <p>Download the source, run it yourself, and follow the first monitoring journey.</p>
       </div>
       <div className="final-actions">
         <a className="button button-gold" href="/get-started">
-          Start with Community
+          Quick start
         </a>
-        <a className="button button-light" href="/cloud">
-          Explore Cloud preview
+        <a className="button button-light" href={COMMUNITY_SOURCE_DOWNLOAD_URL}>
+          Download source
         </a>
         <GitHubLink>View on GitHub</GitHubLink>
       </div>
@@ -484,8 +466,7 @@ function Footer() {
           <a href="#product">Overview</a>
           <a href="#how-it-works">How it works</a>
           <a href="#features">Features</a>
-          <a href="/cloud">Cloud</a>
-          <a href="/#run-it">Community Edition</a>
+          <a href="#run-it">Community Edition</a>
         </div>
         <div>
           <strong>Resources</strong>
@@ -499,7 +480,7 @@ function Footer() {
           <GitHubLink>GitHub</GitHubLink>
           <a href="#updates">Updates</a>
           <a href="#tests">Tests</a>
-          <a href="/docs/commercial-readiness-plan">Roadmap</a>
+          <a href="/docs/community-first-roadmap">Roadmap</a>
           <a href="/docs/phase-status">Project status</a>
           <a href="/changelog">Changelog</a>
           <a href="/contributing">Contributing</a>
@@ -522,35 +503,31 @@ export function LandingPage() {
       <main className="landing-main">
         <section className="landing-hero page-width">
           <div className="landing-hero-copy">
-            <p className="eyebrow">Game-server reliability · Minecraft pilot</p>
-            <h1>Know when your servers need you.</h1>
+            <p className="eyebrow">Free, self-hosted Community preview</p>
+            <h1>Know what broke, and when it recovered.</h1>
             <p>
-              Keep your game panel. Add a clearer view of server response, internal signals,
-              outages, and recovery. Minecraft Java / Paper is the first pilot; Community is free to
-              self-host and managed Cloud is on the roadmap.
+              Watch the services you run, follow their heartbeats and host signals, and read the
+              evidence around an outage in one place. Start with Community on your own server.
             </p>
             <div className="hero-actions">
-              <a className="button button-primary" href="/get-started">
-                Get started with Community
+              <a className="button button-primary" href={COMMUNITY_SOURCE_DOWNLOAD_URL}>
+                Download Community source
               </a>
-              <a className="button button-secondary" href="/cloud">
-                Explore Cloud preview
+              <a className="button button-secondary" href="/get-started">
+                Quick start
               </a>
               <GitHubLink>
-                View on GitHub <span aria-hidden="true">→</span>
+                Source code <span aria-hidden="true">→</span>
               </GitHubLink>
-              <a className="text-link" href="/docs/game-server-beta">
-                Minecraft pilot plan <span aria-hidden="true">→</span>
-              </a>
             </div>
             <ul className="trust-list" aria-label="Meerkateer product attributes">
               <li>Open source</li>
               <li>Self-hostable</li>
               <li>Community Edition</li>
-              <li>Cloud planned</li>
+              <li>No Cloud account required</li>
             </ul>
             <small className="preview-note">
-              Developer preview · Cloud onboarding is not yet generally available.
+              Developer preview · Follow the supported scope and current limits.
             </small>
           </div>
           <ProductPreview />

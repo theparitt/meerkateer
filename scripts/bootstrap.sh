@@ -71,6 +71,7 @@ umask 077
     printf 'MEERKATEER_SERVICE_ENVIRONMENT=development\n'
     printf 'MEERKATEER_METRICS_ENABLED=true\n'
     printf 'MEERKATEER_METRICS_TOKEN=%s\n' "$metrics_token"
+    printf 'MEERKATEER_ALERT_WEBHOOK_URL=\n'
     printf 'RUST_LOG=info\n'
 } > .env
 echo 'Created .env with random local-only credentials.'

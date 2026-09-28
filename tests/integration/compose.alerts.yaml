@@ -1,0 +1,5 @@
+services:
+  postgres:
+    networks: [backend, frontend]
+    ports:
+      - "127.0.0.1:${MEERKATEER_ALERT_TEST_DB_PORT:-18543}:5432"

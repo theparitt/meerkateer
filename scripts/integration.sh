@@ -13,6 +13,10 @@ set -a
 . ./.env
 set +a
 
+# The baseline suite exercises Community without an alert destination.
+MEERKATEER_ALERT_WEBHOOK_URL=
+export MEERKATEER_ALERT_WEBHOOK_URL
+
 cleanup() {
     docker compose -p "$project" down --volumes --remove-orphans >/dev/null 2>&1 || true
 }

@@ -10,6 +10,7 @@ import {
   createWorkspace,
   fetchAgents,
   fetchHealth,
+  fetchInstanceState,
   fetchProjects,
   fetchServices,
   fetchSession,
@@ -26,6 +27,7 @@ import {
   type SessionResponse,
   setupOwnerPassword,
   type TimelineItemResponse,
+  testAlertWebhook,
   unassignWorkspaceAgent,
 } from "./api";
 import { GameProbePanel } from "./GameProbePanel";
@@ -69,13 +71,48 @@ function message(error: unknown): string {
 
 export function App() {
   const path = window.location.pathname.replace(/\/$/, "") || "/";
-  if (path === "/") return <LandingPage />;
+  if (path === "/") return <RootPage />;
+  if (path === "/about") return <LandingPage />;
   if (path === "/cloud") return <CloudAccessPage />;
   if (path === "/login") return <CommunityAccessPage mode="login" />;
   if (path === "/setup") return <CommunityAccessPage mode="setup" />;
   if (path === "/recover") return <CommunityAccessPage mode="recover" />;
   if (isResourcePath(path)) return <ResourcePage path={path} />;
   return <ConsoleApp />;
+}
+
+function RootPage() {
+  const [state, setState] = useState<"loading" | "marketing" | "setup" | "console" | "error">(
+    "loading",
+  );
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchInstanceState(controller.signal)
+      .then((instance) => {
+        if (instance === null || instance.deployment_mode !== "community") setState("marketing");
+        else setState(instance.setup_required ? "setup" : "console");
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setState("error");
+      });
+    return () => controller.abort();
+  }, []);
+  if (state === "marketing") return <LandingPage />;
+  if (state === "setup") return <CommunityAccessPage mode="setup" />;
+  if (state === "console") return <ConsoleApp />;
+  if (state === "error") {
+    return (
+      <main className="page-width">
+        <h1>Control plane unavailable</h1>
+        <p>Check the API and database, then reload this page.</p>
+      </main>
+    );
+  }
+  return (
+    <main className="page-width" aria-live="polite">
+      Opening Community…
+    </main>
+  );
 }
 
 type AccessMode = "login" | "setup" | "recover";
@@ -285,6 +322,10 @@ function ConsoleApp() {
           <SummaryCards dashboard={dashboard} />
         </section>
 
+        {dashboard.phase === "ready" && dashboard.session.role === "owner" ? (
+          <AlertTestPanel />
+        ) : null}
+
         <Dashboard
           state={dashboard}
           onAuthenticated={reloadDashboard}
@@ -300,6 +341,46 @@ function ConsoleApp() {
         />
       </main>
     </div>
+  );
+}
+
+function AlertTestPanel() {
+  const [state, setState] = useState<"idle" | "sending" | "sent" | "unconfigured" | "failed">(
+    "idle",
+  );
+  async function sendTest() {
+    setState("sending");
+    try {
+      await testAlertWebhook();
+      setState("sent");
+    } catch (error) {
+      const detail = message(error);
+      setState(detail.includes("alert_webhook_not_configured") ? "unconfigured" : "failed");
+    }
+  }
+  return (
+    <section className="alert-test-panel" aria-labelledby="alert-test-title">
+      <div>
+        <p className="eyebrow">Community alerts</p>
+        <h2 id="alert-test-title">Test your alert channel</h2>
+        <p>
+          Set MEERKATEER_ALERT_WEBHOOK_URL in the private .env file and restart the API and worker.
+        </p>
+        {state === "sent" ? <p role="status">Test message delivered.</p> : null}
+        {state === "unconfigured" ? <p role="status">Webhook is not configured yet.</p> : null}
+        {state === "failed" ? (
+          <p role="alert">Delivery failed. Check the receiver and try again.</p>
+        ) : null}
+      </div>
+      <button
+        className="button button-secondary"
+        type="button"
+        disabled={state === "sending"}
+        onClick={() => void sendTest()}
+      >
+        {state === "sending" ? "Sending…" : "Send test alert"}
+      </button>
+    </section>
   );
 }
 

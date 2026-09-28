@@ -47,6 +47,7 @@ lint:
 
 integration: bootstrap
 	./scripts/integration.sh
+	./tests/integration/community_alerts.sh
 
 smoke:
 	./scripts/smoke.sh

@@ -1,8 +1,9 @@
-use std::time::Duration;
+use std::{env, net::IpAddr, time::Duration};
 
 use anyhow::{Context, ensure};
 use clap::Parser;
 use meerkateer_config::ServerConfig;
+use reqwest::{Client, Url};
 use secrecy::ExposeSecret;
 use serde::Deserialize;
 use serde_json::Value;
@@ -66,6 +67,43 @@ struct AgentTelemetryEvent {
     _gap_detected: bool,
 }
 
+#[derive(Debug, Deserialize)]
+struct AlertTransition {
+    service_id: Uuid,
+    project: String,
+    service: String,
+    environment: String,
+    transition: String,
+    observed_at: String,
+}
+
+fn alert_webhook_url() -> anyhow::Result<Option<Url>> {
+    let value = match env::var("MEERKATEER_ALERT_WEBHOOK_URL") {
+        Ok(value) if !value.trim().is_empty() => value,
+        _ => return Ok(None),
+    };
+    let url = Url::parse(&value).context("invalid alert webhook URL")?;
+    ensure!(
+        matches!(url.scheme(), "http" | "https")
+            && url.host_str().is_some()
+            && url.username().is_empty()
+            && url.password().is_none()
+            && url.query().is_none()
+            && url.fragment().is_none(),
+        "invalid alert webhook URL"
+    );
+    let host = url.host_str().context("invalid alert webhook URL")?;
+    let loopback = host == "localhost"
+        || host
+            .parse::<IpAddr>()
+            .is_ok_and(|address| address.is_loopback());
+    ensure!(
+        url.scheme() == "https" || loopback,
+        "alert webhook requires HTTPS except on loopback"
+    );
+    Ok(Some(url))
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -76,6 +114,12 @@ async fn main() -> anyhow::Result<()> {
         .init();
     let cli = Cli::parse();
     validate_cli(&cli)?;
+    let alert_url = alert_webhook_url()?;
+    let alert_client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(3))
+        .build()
+        .context("failed to configure alert transport")?;
     let config = ServerConfig::load().context("invalid worker configuration")?;
     let database_url = config
         .database_url
@@ -102,6 +146,8 @@ async fn main() -> anyhow::Result<()> {
         worker_id,
         i32::from(cli.batch_size),
         u32::from(cli.max_attempts),
+        &alert_client,
+        alert_url.as_ref(),
     )
     .await?;
     if cli.once {
@@ -119,6 +165,8 @@ async fn main() -> anyhow::Result<()> {
                     worker_id,
                     i32::from(cli.batch_size),
                     u32::from(cli.max_attempts),
+                    &alert_client,
+                    alert_url.as_ref(),
                 ).await?;
             },
             result = tokio::signal::ctrl_c() => {
@@ -151,6 +199,8 @@ async fn run_cycle(
     worker_id: Uuid,
     batch_size: i32,
     max_attempts: u32,
+    alert_client: &Client,
+    alert_url: Option<&Url>,
 ) -> anyhow::Result<CycleStats> {
     let rows = sqlx::query_as::<_, (Uuid, Uuid, String, Value, i32)>(
         "SELECT id, tenant_id, topic, payload, attempts \
@@ -174,7 +224,7 @@ async fn run_cycle(
             payload,
             attempts: u32::try_from(attempts).context("database returned a negative attempt")?,
         };
-        match dispatch(&event) {
+        match dispatch(&event, alert_client, alert_url).await {
             Ok(()) => {
                 complete(database, worker_id, event.id).await?;
                 stats.completed += 1;
@@ -221,7 +271,11 @@ async fn run_cycle(
     Ok(stats)
 }
 
-fn dispatch(event: &ClaimedOutbox) -> Result<(), &'static str> {
+async fn dispatch(
+    event: &ClaimedOutbox,
+    alert_client: &Client,
+    alert_url: Option<&Url>,
+) -> Result<(), &'static str> {
     match event.topic.as_str() {
         "ingest.heartbeat" | "ingest.event" | "ingest.deploy" => {
             let payload: IngestEvent = serde_json::from_value(event.payload.clone())
@@ -249,6 +303,42 @@ fn dispatch(event: &ClaimedOutbox) -> Result<(), &'static str> {
                 return Err("invalid agent telemetry outbox sequence");
             }
             Ok(())
+        }
+        "alert.transition" => {
+            let payload: AlertTransition = serde_json::from_value(event.payload.clone())
+                .map_err(|_| "invalid alert outbox payload")?;
+            if payload.service_id.is_nil()
+                || payload.project.len() > 64
+                || payload.service.len() > 64
+                || payload.environment.len() > 32
+                || payload.observed_at.len() > 35
+                || !payload.observed_at.ends_with('Z')
+                || !matches!(payload.transition.as_str(), "down" | "recovered")
+            {
+                return Err("invalid alert transition");
+            }
+            let url = alert_url.ok_or("alert webhook not configured")?;
+            let label = if payload.transition == "down" {
+                "DOWN"
+            } else {
+                "RECOVERED"
+            };
+            let content = format!(
+                "[{label}] {}/{} ({}) at {}. Open Meerkateer for evidence.",
+                payload.project, payload.service, payload.environment, payload.observed_at
+            );
+            let response = alert_client
+                .post(url.clone())
+                .header("X-Meerkateer-Event-ID", event.id.to_string())
+                .json(&serde_json::json!({ "content": content }))
+                .send()
+                .await
+                .map_err(|_| "alert webhook transport failed")?;
+            if response.status().is_success() {
+                Ok(())
+            } else {
+                Err("alert webhook rejected delivery")
+            }
         }
         _ => Err("unsupported outbox topic"),
     }
@@ -330,8 +420,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn accepts_supported_ingest_topic_with_matching_kind() {
+    #[tokio::test]
+    async fn accepts_supported_ingest_topic_with_matching_kind() {
         let event = event(
             "ingest.heartbeat",
             json!({
@@ -340,11 +430,15 @@ mod tests {
                 "message_kind": "heartbeat"
             }),
         );
-        assert!(dispatch(&event).is_ok());
+        assert!(
+            dispatch(&event, &reqwest::Client::new(), None)
+                .await
+                .is_ok()
+        );
     }
 
-    #[test]
-    fn rejects_ingest_kind_mismatch() {
+    #[tokio::test]
+    async fn rejects_ingest_kind_mismatch() {
         let event = event(
             "ingest.event",
             json!({
@@ -354,13 +448,13 @@ mod tests {
             }),
         );
         assert_eq!(
-            dispatch(&event),
+            dispatch(&event, &reqwest::Client::new(), None).await,
             Err("ingest outbox identity or kind mismatch")
         );
     }
 
-    #[test]
-    fn accepts_valid_agent_batch_and_rejects_invalid_sequence() {
+    #[tokio::test]
+    async fn accepts_valid_agent_batch_and_rejects_invalid_sequence() {
         let valid = event(
             "agent.telemetry",
             json!({
@@ -371,7 +465,11 @@ mod tests {
                 "gap_detected": true
             }),
         );
-        assert!(dispatch(&valid).is_ok());
+        assert!(
+            dispatch(&valid, &reqwest::Client::new(), None)
+                .await
+                .is_ok()
+        );
 
         let invalid = event(
             "agent.telemetry",
@@ -384,15 +482,18 @@ mod tests {
             }),
         );
         assert_eq!(
-            dispatch(&invalid),
+            dispatch(&invalid, &reqwest::Client::new(), None).await,
             Err("invalid agent telemetry outbox sequence")
         );
     }
 
-    #[test]
-    fn rejects_unknown_topics_without_exposing_payload() {
+    #[tokio::test]
+    async fn rejects_unknown_topics_without_exposing_payload() {
         let event = event("billing.unknown", json!({"secret": "do-not-log"}));
-        assert_eq!(dispatch(&event), Err("unsupported outbox topic"));
+        assert_eq!(
+            dispatch(&event, &reqwest::Client::new(), None).await,
+            Err("unsupported outbox topic")
+        );
     }
 
     #[test]

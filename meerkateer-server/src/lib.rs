@@ -69,6 +69,7 @@ pub fn configure_routes(config: &mut web::ServiceConfig) {
         .route("/ready", web::get().to(ready))
         .route("/metrics", web::get().to(metrics))
         .route("/openapi.json", web::get().to(openapi))
+        .route("/v1/instance", web::get().to(instance_state))
         .service(
             web::resource("/v1/agent/telemetry")
                 .app_data(web::PayloadConfig::new(2 * 1024 * 1024))
@@ -82,6 +83,7 @@ pub fn configure_routes(config: &mut web::ServiceConfig) {
                 .route("/session/password-login", web::post().to(password_login))
                 .route("/session/password-setup", web::post().to(password_setup))
                 .route("/session", web::get().to(current_session))
+                .route("/alerts/test", web::post().to(test_alert_webhook))
                 .route("/ingest/heartbeat", web::post().to(ingest_heartbeat))
                 .route("/ingest/event", web::post().to(ingest_event))
                 .route("/ingest/deploy", web::post().to(ingest_deploy))
@@ -147,6 +149,113 @@ pub fn configure_routes(config: &mut web::ServiceConfig) {
 #[derive(Debug, Serialize)]
 struct LiveResponse {
     status: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct InstanceStateResponse {
+    deployment_mode: &'static str,
+    setup_required: bool,
+}
+
+fn alert_webhook_url() -> Result<Option<reqwest::Url>, ()> {
+    let value = match std::env::var("MEERKATEER_ALERT_WEBHOOK_URL") {
+        Ok(value) if !value.trim().is_empty() => value,
+        _ => return Ok(None),
+    };
+    let url = reqwest::Url::parse(&value).map_err(|_| ())?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(());
+    }
+    let host = url.host_str().ok_or(())?;
+    let loopback = host == "localhost"
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|address| address.is_loopback());
+    if url.scheme() != "https" && !loopback {
+        return Err(());
+    }
+    Ok(Some(url))
+}
+
+async fn test_alert_webhook(request: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session.principal.role != Role::Owner {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    if !csrf_is_valid(&request, &session) {
+        return HttpResponse::Forbidden().json(ErrorResponse {
+            code: "csrf_failed",
+        });
+    }
+    if state.config.deployment_mode != DeploymentMode::Community {
+        return HttpResponse::NotFound().json(ErrorResponse { code: "not_found" });
+    }
+    let Ok(Some(url)) = alert_webhook_url() else {
+        return HttpResponse::Conflict().json(ErrorResponse {
+            code: "alert_webhook_not_configured",
+        });
+    };
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let owns_bootstrap: Result<bool, _> = sqlx::query_scalar(
+        "SELECT bootstrap_tenant_id = $1 FROM system_state WHERE singleton_id = 1",
+    )
+    .bind(session.principal.tenant_id)
+    .fetch_one(database)
+    .await;
+    if !matches!(owns_bootstrap, Ok(true)) {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    let Ok(client) = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(3))
+        .build()
+    else {
+        return HttpResponse::InternalServerError().json(ErrorResponse {
+            code: "alert_transport_unavailable",
+        });
+    };
+    let response = client
+        .post(url)
+        .json(&serde_json::json!({ "content": "[TEST] Meerkateer Community alert channel is connected." }))
+        .send()
+        .await;
+    match response {
+        Ok(response) if response.status().is_success() => HttpResponse::NoContent().finish(),
+        _ => HttpResponse::BadGateway().json(ErrorResponse {
+            code: "alert_delivery_failed",
+        }),
+    }
+}
+
+async fn instance_state(state: web::Data<AppState>) -> HttpResponse {
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let setup_required: Result<bool, _> = sqlx::query_scalar(
+        "SELECT bootstrap_completed_at IS NULL FROM system_state WHERE singleton_id = 1",
+    )
+    .fetch_one(database)
+    .await;
+    match setup_required {
+        Ok(setup_required) => HttpResponse::Ok()
+            .insert_header((header::CACHE_CONTROL, "no-store"))
+            .json(InstanceStateResponse {
+                deployment_mode: state.config.deployment_mode.as_str(),
+                setup_required,
+            }),
+        Err(_) => database_unavailable(),
+    }
 }
 
 async fn live() -> impl Responder {
@@ -3213,6 +3322,8 @@ async fn accept_ingest<T: Serialize>(
         received_at,
         payload,
         snapshot_state,
+        state.config.deployment_mode == DeploymentMode::Community
+            && alert_webhook_url().is_ok_and(|url| url.is_some()),
     )
     .await
     {
@@ -3257,6 +3368,7 @@ async fn persist_ingest(
     received_at: chrono::DateTime<Utc>,
     payload: serde_json::Value,
     snapshot_state: Option<&'static str>,
+    alerts_enabled: bool,
 ) -> Result<bool, IngestWriteError> {
     let mut transaction = database
         .begin()
@@ -3309,6 +3421,7 @@ async fn persist_ingest(
             kind,
             observed_at,
             snapshot_state,
+            alerts_enabled,
         )
         .await?;
     } else if !duplicate_matches(&mut transaction, service, idempotency_key, kind, &payload).await?
@@ -3333,15 +3446,33 @@ async fn project_accepted_ingest(
     kind: IngestKind,
     observed_at: chrono::DateTime<Utc>,
     snapshot_state: Option<&'static str>,
+    alerts_enabled: bool,
 ) -> Result<(), IngestWriteError> {
     if let Some(state) = snapshot_state {
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))")
+            .bind(service.service)
+            .execute(&mut **transaction)
+            .await
+            .map_err(|_| IngestWriteError::Database)?;
+        let previous: Option<(String, chrono::DateTime<Utc>)> = sqlx::query_as(
+            "SELECT state, observed_at FROM service_snapshots \
+             WHERE tenant_id = $1 AND service_id = $2 FOR UPDATE",
+        )
+        .bind(service.tenant)
+        .bind(service.service)
+        .fetch_optional(&mut **transaction)
+        .await
+        .map_err(|_| IngestWriteError::Database)?;
+        let is_newer = previous
+            .as_ref()
+            .is_none_or(|(_, previous_at)| observed_at > *previous_at);
         sqlx::query(
             "INSERT INTO service_snapshots \
              (tenant_id, service_id, state, last_sequence, observed_at) \
              VALUES ($1, $2, $3, 0, $4) \
              ON CONFLICT (tenant_id, service_id) DO UPDATE SET \
                state = EXCLUDED.state, observed_at = EXCLUDED.observed_at, updated_at = now() \
-             WHERE service_snapshots.observed_at <= EXCLUDED.observed_at",
+             WHERE service_snapshots.observed_at < EXCLUDED.observed_at",
         )
         .bind(service.tenant)
         .bind(service.service)
@@ -3350,6 +3481,43 @@ async fn project_accepted_ingest(
         .execute(&mut **transaction)
         .await
         .map_err(|_| IngestWriteError::Database)?;
+        if alerts_enabled && is_newer {
+            let previous_state = previous.as_ref().map(|(state, _)| state.as_str());
+            let transition = if state == "offline" && previous_state != Some("offline") {
+                Some("down")
+            } else if state == "online" && matches!(previous_state, Some("offline" | "degraded")) {
+                Some("recovered")
+            } else {
+                None
+            };
+            if let Some(transition) = transition {
+                let bootstrap_tenant: Option<uuid::Uuid> = sqlx::query_scalar(
+                    "SELECT bootstrap_tenant_id FROM system_state WHERE singleton_id = 1",
+                )
+                .fetch_one(&mut **transaction)
+                .await
+                .map_err(|_| IngestWriteError::Database)?;
+                if bootstrap_tenant == Some(service.tenant) {
+                    let alert = serde_json::json!({
+                        "service_id": service.service,
+                        "project": service.project_slug,
+                        "service": service.service_slug,
+                        "environment": service.environment,
+                        "transition": transition,
+                        "observed_at": observed_at,
+                    });
+                    sqlx::query(
+                        "INSERT INTO outbox (tenant_id, topic, payload) \
+                         VALUES ($1, 'alert.transition', $2)",
+                    )
+                    .bind(service.tenant)
+                    .bind(alert)
+                    .execute(&mut **transaction)
+                    .await
+                    .map_err(|_| IngestWriteError::Database)?;
+                }
+            }
+        }
     }
     let outbox_payload = serde_json::json!({
         "service_id": service.service,

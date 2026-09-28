@@ -29,17 +29,28 @@ describe("App", () => {
   });
 
   it("explains the public product and keeps bootstrap access off the landing page", () => {
-    window.history.replaceState({}, "", "/");
+    window.history.replaceState({}, "", "/about");
     const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);
     render(<App />);
-    expect(screen.getByRole("heading", { name: "Know when your servers need you." })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Open source. Self-hosted. Free." })).toBeTruthy();
     expect(
-      screen.getByRole("heading", { name: "Hosted by us. No control-plane upkeep." }),
+      screen.getByRole("heading", { name: "Know what broke, and when it recovered." }),
     ).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Open source. Self-hosted. Free." })).toBeTruthy();
+    expect(screen.queryByText("Explore Cloud preview")).toBeNull();
     expect(screen.queryByText("Admin token")).toBeNull();
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("opens first-run setup at the instance root", async () => {
+    window.history.replaceState({}, "", "/");
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(json({ deployment_mode: "community", setup_required: true }));
+    vi.stubGlobal("fetch", fetch);
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Create your company" })).toBeTruthy();
+    expect(fetch).toHaveBeenCalledWith("/v1/instance", expect.anything());
   });
 
   it("opens self-hosted setup without loading the operations dashboard", () => {
