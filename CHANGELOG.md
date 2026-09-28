@@ -8,9 +8,9 @@ Keep a Changelog principles, and releases use Semantic Versioning.
 ### Added
 
 - Public GitHub repository and direct navigation link with GitHub icon.
-- Node.js and Go SDKs for MKS-1 heartbeat, event, and deploy delivery, with language
-  guides, retry tests, and CI coverage. The website now offers Node.js, Go, Rust,
-  Python, and Host agent examples under SDKs.
+- Node.js, Go, and PHP SDKs for MKS-1 heartbeat, event, and deploy delivery, with
+  language guides, retry tests, and CI coverage. The website now offers Node.js,
+  Go, Rust, Python, PHP, and Host agent examples under SDKs.
 - Minecraft Java / Paper pilot plan with separate external, host/process, and game-performance
   evidence; a saved game-instance address and bounded, owner-triggered Community status test.
 - Minecraft query parser, public-address checks, per-peer test budget, and regression coverage

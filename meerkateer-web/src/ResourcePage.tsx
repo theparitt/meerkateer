@@ -9,6 +9,7 @@ import security from "../../SECURITY.md?raw";
 import support from "../../SUPPORT.md?raw";
 import goSdk from "../../sdk/go/README.md?raw";
 import nodeSdk from "../../sdk/node/README.md?raw";
+import phpSdk from "../../sdk/php/README.md?raw";
 import pythonSdk from "../../sdk/python/README.md?raw";
 import rustSdk from "../../sdk/rust/README.md?raw";
 
@@ -38,6 +39,12 @@ const documents: Record<string, Document> = {
     description: "Send service heartbeats, events, and deployments from a Go process.",
     text: goSdk,
     file: "sdk/go/README.md",
+  },
+  "/docs/php-sdk": {
+    title: "PHP SDK",
+    description: "Send service heartbeats, events, and deployments from a PHP process.",
+    text: phpSdk,
+    file: "sdk/php/README.md",
   },
   "/docs/python-sdk": {
     title: "Python SDK",
@@ -112,6 +119,7 @@ function projectHref(href: string, file: string): string {
   if (pathname === "/sdk/rust/README") return `/docs/rust-sdk${target.hash}`;
   if (pathname === "/sdk/node/README") return `/docs/node-sdk${target.hash}`;
   if (pathname === "/sdk/go/README") return `/docs/go-sdk${target.hash}`;
+  if (pathname === "/sdk/php/README") return `/docs/php-sdk${target.hash}`;
   if (pathname.startsWith("/docs/")) {
     return documents[pathname] ? `${pathname}${target.hash}` : "/docs";
   }

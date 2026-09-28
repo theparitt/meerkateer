@@ -11,6 +11,7 @@ COPY sdk/python/README.md ../sdk/python/
 COPY sdk/rust/README.md ../sdk/rust/
 COPY sdk/node/README.md ../sdk/node/
 COPY sdk/go/README.md ../sdk/go/
+COPY sdk/php/README.md ../sdk/php/
 USER node
 EXPOSE 5173
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--configLoader", "runner"]

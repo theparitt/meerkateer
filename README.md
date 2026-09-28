@@ -104,7 +104,7 @@ Use `--config PATH` before the subcommand when running multiple local agent iden
 ## Add a process or application
 
 Inside a workspace, open **Manage workspaces, machines, and processes**, create the process,
-and copy the SDK key shown once. Choose Node.js, Go, Rust, or Python and use the
+and copy the SDK key shown once. Choose Node.js, Go, Rust, Python, or PHP and use the
 environment block shown by the Console. For example, install the Python SDK:
 
 ```sh
@@ -138,7 +138,8 @@ client.heartbeat(HeartbeatStatus::Ok, None).await?;
 ```
 
 See the [Node.js SDK](sdk/node/README.md), [Go SDK](sdk/go/README.md),
-[Rust SDK](sdk/rust/README.md), and [Python SDK](sdk/python/README.md) guides.
+[Rust SDK](sdk/rust/README.md), [Python SDK](sdk/python/README.md), and
+[PHP SDK](sdk/php/README.md) guides.
 A computer uses the outbound host agent; a process/service uses an SDK key. Both appear
 under the selected workspace.
 
@@ -157,7 +158,7 @@ The repository now contains:
   with atomic outbox writes, sequence-gap evidence, and privacy guards;
 - a working outbound agent enrollment/doctor/run lifecycle with secure local credential
   persistence and exact-batch retry across restarts;
-- Node.js, Go, Python, and typed async Rust SDKs with bounded transport, retry
+- Node.js, Go, Python, PHP, and typed async Rust SDKs with bounded transport, retry
   idempotency, and heartbeat/event/deployment helpers; Python and Rust also have real
   API E2E coverage;
 - service inventory reads that expose reported and effective state and fail stale

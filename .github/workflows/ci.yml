@@ -116,6 +116,9 @@ jobs:
       - name: Test Go SDK
         run: cd sdk/go && go test ./...
 
+      - name: Test PHP SDK
+        run: docker run --rm -v "$PWD/sdk/php:/work" -w /work php:8.3-cli-alpine sh ./run-tests.sh
+
   migration-and-api-integration:
     runs-on: ubuntu-latest
     timeout-minutes: 25

@@ -47,6 +47,8 @@ describe("public resource links", () => {
     expect(screen.getByText(/meerkateer.FromEnv/)).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Python SDK" }));
     expect(screen.getByText(/watch\.heartbeat\("ok"/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "PHP SDK" }));
+    expect(screen.getByText(/Client::fromEnv/)).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Host agent" }));
     expect(screen.getByText(/meerkateer-agent -- enroll/)).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Rust SDK" }));
@@ -62,6 +64,7 @@ describe("public resource links", () => {
     ["/docs", "Documentation"],
     ["/docs/node-sdk", "Node.js SDK"],
     ["/docs/go-sdk", "Go SDK"],
+    ["/docs/php-sdk", "PHP SDK"],
     ["/docs/python-sdk", "Python SDK"],
     ["/docs/rust-sdk", "Rust SDK"],
     ["/get-started", "Getting started"],

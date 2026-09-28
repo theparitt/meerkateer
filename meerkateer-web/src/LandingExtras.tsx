@@ -183,6 +183,12 @@ const samples = {
     guide: "/docs/python-sdk",
     code: `# Install from this repository\npython3 -m pip install ./sdk/python\n\n# Set the Console's service environment values, then:\nfrom meerkateer_sdk import Meerkateer\n\nwatch = Meerkateer.from_env()\nwatch.heartbeat("ok", message="worker ready")\nwatch.event("queue_delay", level="warning", message="jobs delayed")`,
   },
+  php: {
+    title: "PHP SDK",
+    subtitle: "For PHP servers and WordPress integrations",
+    guide: "/docs/php-sdk",
+    code: `<?php\nrequire_once __DIR__ . '/Meerkateer.php';\n\n// Set the Console's service environment values first.\n$watch = \\Meerkateer\\Client::fromEnv();\n$watch->heartbeat('ok', 'worker ready');\n$watch->event('queue_delay', 'warning', 'jobs delayed');`,
+  },
   agent: {
     title: "Host agent",
     subtitle: "For the machine your app runs on",
