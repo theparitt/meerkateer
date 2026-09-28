@@ -23,7 +23,10 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 cleanup
-cargo build --quiet -p meerkateer-agent -p meerkateer-sdk --example send_event
+cargo build --quiet -p meerkateer-agent
+cargo build --quiet -p meerkateer-sdk --example send_event
+test -x target/debug/meerkateer-agent
+test -x target/debug/examples/send_event
 MEERKATEER_API_PORT="$api_port" docker compose -p "$project" up -d --build postgres server
 MEERKATEER_E2E_URL="http://127.0.0.1:${api_port}" \
 MEERKATEER_AGENT_BIN="$(pwd)/target/debug/meerkateer-agent" \
