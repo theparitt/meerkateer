@@ -14,7 +14,7 @@
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="Meerkateer">
-        <Component Id="ControllerFiles" Guid="*">
+        <Component Id="ControllerFiles" Guid="{9C1BB0A7-66C9-43E2-A60B-D02AA433373F}">
           <File
             Id="ControllerExe"
             Source="$(var.ControllerExe)"
