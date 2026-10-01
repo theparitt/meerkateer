@@ -2,7 +2,7 @@
 param([switch]$Purge)
 
 $ErrorActionPreference = 'Stop'
-$taskName = 'Meerkateer Agent'
+$taskNames = @('Meerkateer Controller', 'Meerkateer Agent')
 $programDirectory = Join-Path $env:ProgramFiles 'Meerkateer'
 $dataDirectory = Join-Path $env:ProgramData 'Meerkateer'
 
@@ -12,9 +12,11 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
     throw 'Uninstall-MeerkateerAgent.ps1 must run from an elevated PowerShell session.'
 }
 
-if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
-    Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+foreach ($taskName in $taskNames) {
+    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
+        Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+    }
 }
 
 if (Test-Path -LiteralPath $programDirectory) {

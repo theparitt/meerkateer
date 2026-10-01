@@ -1,0 +1,136 @@
+name: Controller packages
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/controller-packages.yml"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "crates/meerkateer-protocol/**"
+      - "meerkateer-agent/**"
+      - "packaging/debian/**"
+      - "packaging/windows/**"
+      - "rust-toolchain.toml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: controller-packages-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PRODUCT_VERSION: "0.1.0"
+
+jobs:
+  ubuntu-deb:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install pinned Rust toolchain
+        run: rustup show
+
+      - name: Build controller
+        run: cargo build --locked --release -p meerkateer-agent
+
+      - name: Build Ubuntu package
+        run: |
+          packaging/debian/build-deb.sh \
+            --binary target/release/meerkateer-agent \
+            --version "$PRODUCT_VERSION" \
+            --architecture amd64 \
+            --output dist/meerkateer-controller_${PRODUCT_VERSION}_amd64.deb
+          cd dist
+          sha256sum meerkateer-controller_${PRODUCT_VERSION}_amd64.deb \
+            > meerkateer-controller_${PRODUCT_VERSION}_amd64.deb.sha256
+          dpkg-deb --info meerkateer-controller_${PRODUCT_VERSION}_amd64.deb
+          mkdir package-check
+          dpkg-deb --extract meerkateer-controller_${PRODUCT_VERSION}_amd64.deb package-check
+          test -x package-check/usr/bin/meerkateer-controller
+          test -x package-check/usr/lib/meerkateer/meerkateer-controller
+          package-check/usr/lib/meerkateer/meerkateer-controller --help | grep -q Configure
+          rm -rf package-check
+
+      - name: Upload Ubuntu artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: controller-ubuntu
+          path: dist/*
+          if-no-files-found: error
+
+  windows-msi:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install pinned Rust toolchain
+        run: rustup show
+
+      - name: Build controller
+        run: cargo build --locked --release -p meerkateer-agent
+
+      - name: Install pinned WiX Toolset
+        shell: pwsh
+        run: dotnet tool install --global wix --version 7.0.0
+
+      - name: Build MSI and portable CLI
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist, dist/portable | Out-Null
+          Copy-Item target/release/meerkateer-agent.exe dist/portable/meerkateer-controller.exe
+          Copy-Item packaging/windows/README.md dist/portable/README.md
+          Compress-Archive -Path dist/portable/* `
+            -DestinationPath dist/meerkateer-controller-windows-x86_64.zip
+          ./packaging/windows/build-msi.ps1 `
+            -ControllerExe target/release/meerkateer-agent.exe `
+            -Version $env:PRODUCT_VERSION `
+            -OutputPath dist/meerkateer-controller-windows-x86_64.msi
+          wix msi validate dist/meerkateer-controller-windows-x86_64.msi
+          Remove-Item -LiteralPath dist/portable -Recurse -Force
+          Get-ChildItem dist -File | Where-Object { $_.Extension -in '.msi', '.zip' } | ForEach-Object {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)" | Set-Content -NoNewline -Encoding ascii "$($_.FullName).sha256"
+          }
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: controller-windows
+          path: |
+            dist/*.msi
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error
+
+  publish-preview:
+    needs: [ubuntu-deb, windows-msi]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Download package artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: controller-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish rolling developer preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete controller-preview --cleanup-tag --yes || true
+          gh release create controller-preview dist/* \
+            --target "$GITHUB_SHA" \
+            --title "Meerkateer Controller developer preview" \
+            --notes "Unsigned developer-preview installers built from commit $GITHUB_SHA. Verify the adjacent SHA-256 file before installation." \
+            --prerelease

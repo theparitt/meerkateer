@@ -1,10 +1,19 @@
-# Windows background-agent installer
+# Windows Meerkateer Controller
 
-The Rust workspace produces a native Windows `meerkateer-agent.exe`. The included installer runs it
-at startup as a Windows Scheduled Task under the low-privilege `LOCAL SERVICE` identity, locks the
-credential ACL to that identity, `SYSTEM`, and local Administrators, and configures automatic
-restart. It is usable for managed preview deployments; a
-signed MSI, signed executable, DPAPI-backed secret, and native Windows Service remain 1.0 gates.
+The release workflow produces two Windows downloads from the same Rust source:
+
+- `meerkateer-controller-windows-x86_64.msi` installs the CLI, a friendly signal-selection UI, and
+  Start-menu shortcuts.
+- `meerkateer-controller-windows-x86_64.zip` is the CLI-only portable build.
+
+After MSI installation, open **Meerkateer Controller Setup**. It enrolls the computer without
+putting the one-time token into an MSI property or process argument, lets the operator select CPU,
+memory, disk, and exact process signals, and registers an automatically restarted Scheduled Task
+under the low-privilege `LOCAL SERVICE` identity. The credential ACL permits only that identity,
+`SYSTEM`, and local Administrators.
+
+These developer-preview artifacts are not yet signed. Verify the adjacent SHA-256 file. A signed
+MSI/executable and native OS secret protection remain 1.0 gates.
 
 For a development smoke test in PowerShell:
 
@@ -15,15 +24,20 @@ $env:MEERKATEER_ENROLLMENT_TOKEN = Read-Host "Enrollment token" -MaskInput
   --server https://meerkateer.example.com --name game-host-01
 Remove-Item Env:MEERKATEER_ENROLLMENT_TOKEN
 .\meerkateer-agent.exe --config $stagedConfig doctor
+.\meerkateer-agent.exe --config $stagedConfig configure `
+  --signals cpu,memory,disk,process `
+  --watch-process MyGameServer.exe `
+  --watch-process postgres.exe
 .\packaging\windows\Install-MeerkateerAgent.ps1 `
   -BinaryPath .\meerkateer-agent.exe `
   -ConfigPath $stagedConfig `
-  -WatchProcess MyGameServer.exe,postgres.exe
+  -ReplaceConfig
 Remove-Item -LiteralPath $stagedConfig
 ```
 
 Run the installer from an elevated PowerShell session. It copies the binary to
-`%ProgramFiles%\Meerkateer` and the enrolled config to `%ProgramData%\Meerkateer`. The token itself is
+`%ProgramFiles%\Meerkateer` as `meerkateer-controller.exe` and the enrolled config to
+`%ProgramData%\Meerkateer`. The token itself is
 never an installer argument. The task opens outbound HTTPS connections; it exposes no inbound port
 and executes no server-supplied command.
 

@@ -43,6 +43,21 @@ teams that want useful reliability evidence without beginning with an enterprise
 - The Console shows outages, recovery, incidents, alert history, maintenance, and audit activity.
 - Community Edition runs on your own infrastructure with no billing or remote-license dependency.
 
+### Install the Controller on a computer
+
+The rolling developer preview provides ready-to-install packages built from this repository:
+
+| Platform | Download | Setup experience |
+| --- | --- | --- |
+| Windows 10/11 x64 | [MSI installer](https://github.com/theparitt/meerkateer/releases/download/controller-preview/meerkateer-controller-windows-x86_64.msi) | Start-menu UI for enrollment and signal selection |
+| Ubuntu 22.04+ amd64 | [DEB package](https://github.com/theparitt/meerkateer/releases/download/controller-preview/meerkateer-controller_0.1.0_amd64.deb) | `sudo meerkateer-controller setup` guided terminal UI |
+| Windows x64 automation | [Portable CLI ZIP](https://github.com/theparitt/meerkateer/releases/download/controller-preview/meerkateer-controller-windows-x86_64.zip) | `meerkateer-controller.exe` with no installation |
+
+You choose whether the Controller sends CPU, memory, aggregate disk, or selected process-running
+signals. A small heartbeat is always included. It never accepts inbound commands or collects files,
+command arguments, environment values, or player/chat content. Preview packages are currently
+unsigned; verify their adjacent `.sha256` file. See the [Controller guide](docs/agent-cli.md).
+
 ![Six colorful mini Meerkateer friends introducing machines, services, timelines, workspaces, states, and access](docs/images/meerkateer-friends.png)
 
 The current pilot is **Community-first**. Meerkateer Cloud is planned for teams that would rather

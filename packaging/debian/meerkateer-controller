@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly controller_binary="/usr/lib/meerkateer/meerkateer-controller"
+readonly config_path="/var/lib/meerkateer-controller/agent.json"
+readonly service_name="meerkateer-controller.service"
+readonly service_user="meerkateer-controller"
+
+require_root() {
+  if [[ ${EUID} -ne 0 ]]; then
+    echo "run 'sudo meerkateer-controller $*'" >&2
+    exit 1
+  fi
+}
+
+ask_yes_no() {
+  local prompt="$1"
+  local answer
+  read -r -p "$prompt [Y/n] " answer
+  [[ -z "$answer" || "$answer" =~ ^[Yy]$ ]]
+}
+
+configure_signals() {
+  local config="$1"
+  local run_as_service="$2"
+  local -a signals=()
+  local -a configure_args=(--config "$config" configure)
+
+  echo
+  echo "Choose the bounded signals this computer may send."
+  echo "A heartbeat is always included so Meerkateer can detect a disconnected controller."
+  ask_yes_no "Send CPU utilization percentage?" && signals+=(cpu)
+  ask_yes_no "Send memory capacity and usage byte counts?" && signals+=(memory)
+  ask_yes_no "Send disk capacity and usage totals (never filenames)?" && signals+=(disk)
+
+  local watch_processes=false
+  if ask_yes_no "Monitor whether selected processes are running?"; then
+    signals+=(process)
+    watch_processes=true
+  fi
+  if ((${#signals[@]} == 0)); then
+    echo "Choose at least one signal." >&2
+    return 1
+  fi
+
+  local signal_csv
+  signal_csv="$(IFS=,; echo "${signals[*]}")"
+  configure_args+=(--signals "$signal_csv")
+
+  if [[ "$watch_processes" == true ]]; then
+    local process_input
+    local -a process_names=()
+    read -r -p "Exact process names, comma-separated (maximum 16): " process_input
+    IFS=',' read -r -a process_names <<<"$process_input"
+    for process_name in "${process_names[@]}"; do
+      process_name="${process_name#"${process_name%%[![:space:]]*}"}"
+      process_name="${process_name%"${process_name##*[![:space:]]}"}"
+      [[ -n "$process_name" ]] || continue
+      configure_args+=(--watch-process "$process_name")
+    done
+  fi
+
+  if [[ "$run_as_service" == true ]]; then
+    runuser -u "$service_user" -- "$controller_binary" "${configure_args[@]}"
+  else
+    "$controller_binary" "${configure_args[@]}"
+  fi
+}
+
+setup_controller() {
+  require_root setup
+  if [[ -f "$config_path" ]]; then
+    echo "This computer is already enrolled. Updating signal choices only."
+    configure_signals "$config_path" true
+  else
+    local server_url machine_name enrollment_token temporary_directory temporary_config
+    read -r -p "Meerkateer API URL (HTTPS): " server_url
+    read -r -p "Computer name shown in the workspace [$(hostname)]: " machine_name
+    machine_name="${machine_name:-$(hostname)}"
+    read -r -s -p "One-time enrollment token from Console -> Connect: " enrollment_token
+    echo
+    [[ -n "$enrollment_token" ]] || { echo "Enrollment token is required." >&2; exit 1; }
+
+    umask 077
+    temporary_directory="$(mktemp -d -t meerkateer-controller.XXXXXXXX)"
+    temporary_config="${temporary_directory}/agent.json"
+    trap 'rm -rf -- "$temporary_directory"' RETURN
+    export MEERKATEER_ENROLLMENT_TOKEN="$enrollment_token"
+    "$controller_binary" --config "$temporary_config" enroll --server "$server_url" --name "$machine_name"
+    unset MEERKATEER_ENROLLMENT_TOKEN
+    enrollment_token=''
+    configure_signals "$temporary_config" false
+    install -o "$service_user" -g "$service_user" -m 0600 "$temporary_config" "$config_path"
+    rm -rf -- "$temporary_directory"
+    trap - RETURN
+  fi
+
+  systemctl enable "$service_name" >/dev/null
+  systemctl restart "$service_name"
+  "$controller_binary" --config "$config_path" doctor
+  echo
+  echo "Meerkateer Controller is installed and running."
+  echo "Use 'sudo meerkateer-controller setup' again to change signal choices."
+}
+
+case "${1:-}" in
+  setup)
+    shift
+    setup_controller "$@"
+    ;;
+  status)
+    require_root status
+    "$controller_binary" --config "$config_path" doctor
+    systemctl --no-pager --full status "$service_name"
+    ;;
+  start|stop|restart)
+    action="$1"
+    shift
+    require_root "$action"
+    systemctl "$action" "$service_name"
+    ;;
+  '')
+    cat <<'EOF'
+Meerkateer Controller
+
+  sudo meerkateer-controller setup    Connect this computer or change signals
+  sudo meerkateer-controller status   Check enrollment and background service
+  sudo meerkateer-controller restart  Restart telemetry delivery
+
+Advanced CLI:
+  meerkateer-controller --help
+EOF
+    ;;
+  *)
+    exec "$controller_binary" "$@"
+    ;;
+esac

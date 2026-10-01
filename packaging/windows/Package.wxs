@@ -1,0 +1,94 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package
+    Name="Meerkateer Controller"
+    Manufacturer="Meerkateer"
+    Version="$(var.Version)"
+    UpgradeCode="{1EC023F4-C9B9-4CEF-9C4B-398CDF2B4979}"
+    Scope="perMachine"
+    Compressed="yes">
+
+    <SummaryInformation Description="Outbound-only Meerkateer server monitoring controller" />
+    <MajorUpgrade DowngradeErrorMessage="A newer Meerkateer Controller is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Meerkateer">
+        <Component Id="ControllerFiles" Guid="*">
+          <File
+            Id="ControllerExe"
+            Source="$(var.ControllerExe)"
+            Name="meerkateer-controller.exe"
+            KeyPath="yes"
+            Checksum="yes" />
+          <File
+            Id="ControllerSetupScript"
+            Source="$(var.SourceRoot)\MeerkateerControllerSetup.ps1"
+            Name="MeerkateerControllerSetup.ps1" />
+          <File
+            Id="InstallAgentScript"
+            Source="$(var.SourceRoot)\Install-MeerkateerAgent.ps1"
+            Name="Install-MeerkateerAgent.ps1" />
+          <File
+            Id="UninstallAgentScript"
+            Source="$(var.SourceRoot)\Uninstall-MeerkateerAgent.ps1"
+            Name="Uninstall-MeerkateerAgent.ps1" />
+          <File
+            Id="ControllerReadme"
+            Source="$(var.SourceRoot)\README.md"
+            Name="README.md" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="Meerkateer">
+        <Component Id="ControllerShortcuts" Guid="*">
+          <Shortcut
+            Id="ControllerSetupShortcut"
+            Name="Meerkateer Controller Setup"
+            Description="Connect this computer and choose monitoring signals"
+            Target="[System64Folder]WindowsPowerShell\v1.0\powershell.exe"
+            Arguments="-NoProfile -ExecutionPolicy Bypass -File &quot;[#ControllerSetupScript]&quot;"
+            WorkingDirectory="INSTALLFOLDER" />
+          <Shortcut
+            Id="ControllerCliShortcut"
+            Name="Meerkateer Controller Command Line"
+            Description="Open a command prompt for the Meerkateer Controller CLI"
+            Target="[SystemFolder]cmd.exe"
+            Arguments="/K cd /d &quot;[INSTALLFOLDER]&quot;"
+            WorkingDirectory="INSTALLFOLDER" />
+          <RemoveFolder Id="RemoveApplicationProgramsFolder" On="uninstall" />
+          <RegistryValue
+            Root="HKLM"
+            Key="Software\Meerkateer\Controller"
+            Name="Installed"
+            Type="integer"
+            Value="1"
+            KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Complete" Title="Meerkateer Controller" Level="1">
+      <ComponentRef Id="ControllerFiles" />
+      <ComponentRef Id="ControllerShortcuts" />
+    </Feature>
+
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <Property
+      Id="WIXUI_EXITDIALOGOPTIONALTEXT"
+      Value="Open Meerkateer Controller Setup from the Start menu to connect this computer and choose its signals." />
+
+    <CustomAction
+      Id="RemoveControllerTask"
+      Directory="SystemFolder"
+      ExeCommand="schtasks.exe /Delete /TN &quot;Meerkateer Controller&quot; /F"
+      Execute="deferred"
+      Impersonate="no"
+      Return="ignore" />
+    <InstallExecuteSequence>
+      <Custom Action="RemoveControllerTask" Before="RemoveFiles" Condition="REMOVE = &quot;ALL&quot;" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>

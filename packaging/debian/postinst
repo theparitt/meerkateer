@@ -1,0 +1,22 @@
+#!/bin/sh
+set -eu
+
+if ! getent group meerkateer-controller >/dev/null; then
+  addgroup --system meerkateer-controller >/dev/null
+fi
+if ! getent passwd meerkateer-controller >/dev/null; then
+  adduser --system --ingroup meerkateer-controller --home /var/lib/meerkateer-controller \
+    --no-create-home --disabled-login meerkateer-controller >/dev/null
+fi
+
+install -d -o root -g root -m 0755 /usr/lib/meerkateer
+install -d -o meerkateer-controller -g meerkateer-controller -m 0700 /var/lib/meerkateer-controller
+
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl daemon-reload || true
+fi
+
+cat <<'EOF'
+Meerkateer Controller installed.
+Run: sudo meerkateer-controller setup
+EOF

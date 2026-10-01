@@ -1,24 +1,59 @@
-# Meerkateer host agent CLI
+# Meerkateer Controller installers and CLI
 
-Status: developer preview. The same Rust source builds on Linux and Windows. The agent is
+Status: developer preview. The same Rust source builds the Controller on Linux and Windows. It is
 outbound-only: it does not listen on a port and does not expose a remote shell, RCON, file browser,
 or machine-control API.
 
+## Download and install
+
+The landing page links to a rolling, unsigned `controller-preview` release with three artifacts:
+
+- **Windows MSI:** `meerkateer-controller-windows-x86_64.msi` installs the Controller, a Start-menu
+  setup UI, the background-task helper, and the CLI.
+- **Ubuntu DEB:** `meerkateer-controller_0.1.0_amd64.deb` installs the CLI and a hardened systemd
+  unit. Run `sudo meerkateer-controller setup` for its guided terminal UI.
+- **Windows portable CLI:** `meerkateer-controller-windows-x86_64.zip` contains only the native
+  executable and its instructions. It does not modify the machine.
+
+Every package has an adjacent `.sha256` file. Preview artifacts are not code-signed yet, so verify
+that checksum before installation. Authenticode/MSI and repository signing remain mandatory 1.0
+release gates.
+
 ## What it collects
 
-Each run reports a bounded snapshot:
+The setup UI lets the operator enable or disable each bounded signal:
 
 - CPU utilization;
 - used and total memory;
 - aggregate used and total fixed-filesystem capacity; and
 - the running instance count for up to 16 explicitly named processes.
 
-The agent does not collect command lines, environment variables, usernames, file paths, process
-IDs, or file contents. Process matching is exact and case-insensitive. On Linux use the executable
+An agent heartbeat is always sent so disconnects can be detected. The Controller does not collect
+command lines, environment variables, usernames, file paths, process IDs, or file contents.
+Process matching is exact and case-insensitive. On Linux use the executable
 name (for example `java`); on Windows it will commonly include `.exe` (for example
 `MyGameServer.exe`).
 
-## Build
+## Windows setup UI
+
+Install the MSI, then open **Meerkateer Controller Setup** from the Start menu. The UI asks for the
+HTTPS API URL, computer name, one-time token from Console → Connect, and which CPU, memory, disk, or
+exact process signals may be sent. The token is used only through the child process environment,
+cleared immediately, and never becomes an MSI property, process argument, task argument, or log
+entry. Reopen the setup UI later to change signals without a new token.
+
+## Ubuntu setup UI
+
+```sh
+sudo apt install ./meerkateer-controller_0.1.0_amd64.deb
+sudo meerkateer-controller setup
+```
+
+The guided terminal screen asks the same questions and enables the hardened
+`meerkateer-controller.service`. A normal removal preserves the machine credential; an explicit
+package purge removes it.
+
+## Build from source
 
 The repository pins the supported Rust toolchain in `rust-toolchain.toml`.
 
@@ -42,11 +77,11 @@ cargo build --locked --release -p meerkateer-agent
 and automation:
 
 ```sh
-meerkateer-agent inspect --watch-process java --watch-process postgres
+meerkateer-controller inspect --watch-process java --watch-process postgres
 ```
 
 ```powershell
-.\meerkateer-agent.exe inspect --watch-process MyGameServer.exe --watch-process postgres.exe
+.\meerkateer-controller.exe inspect --watch-process MyGameServer.exe --watch-process postgres.exe
 ```
 
 A missing process is reported as `running: false` and `instances: 0`. An invalid or duplicate
@@ -61,20 +96,24 @@ Linux:
 
 ```sh
 read -rsp 'Enrollment token: ' MEERKATEER_ENROLLMENT_TOKEN && export MEERKATEER_ENROLLMENT_TOKEN
-meerkateer-agent enroll --server https://monitor.example.com --name game-host-01
+meerkateer-controller enroll --server https://monitor.example.com --name game-host-01
 unset MEERKATEER_ENROLLMENT_TOKEN
-meerkateer-agent doctor
-meerkateer-agent run --watch-process java --watch-process postgres
+meerkateer-controller configure --signals cpu,memory,disk,process \
+  --watch-process java --watch-process postgres
+meerkateer-controller doctor
+meerkateer-controller run
 ```
 
 Windows PowerShell 7:
 
 ```powershell
 $env:MEERKATEER_ENROLLMENT_TOKEN = Read-Host 'Enrollment token' -MaskInput
-.\meerkateer-agent.exe enroll --server https://monitor.example.com --name game-host-01
+.\meerkateer-controller.exe enroll --server https://monitor.example.com --name game-host-01
 Remove-Item Env:MEERKATEER_ENROLLMENT_TOKEN
-.\meerkateer-agent.exe doctor
-.\meerkateer-agent.exe run --watch-process MyGameServer.exe --watch-process postgres.exe
+.\meerkateer-controller.exe configure --signals cpu,memory,disk,process `
+  --watch-process MyGameServer.exe --watch-process postgres.exe
+.\meerkateer-controller.exe doctor
+.\meerkateer-controller.exe run
 ```
 
 Use `run --once` for a scheduler or a one-shot acceptance test. Continuous mode defaults to a
@@ -84,18 +123,22 @@ loopback development URLs; every non-loopback server must use HTTPS.
 The default config is `%APPDATA%\Meerkateer\agent.json` on Windows and
 `$XDG_CONFIG_HOME/meerkateer/agent.json` or `~/.config/meerkateer/agent.json` on Linux. Override it
 with global `--config PATH`, placed before the subcommand. Unix state is written atomically with
-owner-only permissions. Preview background installers now live under `packaging/systemd` and
-`packaging/windows`. Linux uses a hardened, unprivileged systemd unit; Windows uses an
-ACL-restricted startup task under `LOCAL SERVICE`. Signed packages, native OS secret stores, a
-signed Windows Service/MSI, signed updates, and offline spool beyond the current exact pending batch
-remain release work.
+owner-only permissions. Packaged configuration is stored under `%ProgramData%\Meerkateer` on
+Windows and `/var/lib/meerkateer-controller` on Ubuntu. Linux uses a hardened, unprivileged systemd
+unit; Windows uses an ACL-restricted startup task under `LOCAL SERVICE`. Package signing, native OS
+secret stores, signed updates, and offline spool beyond the current exact pending batch remain
+release work.
 
-## Install as a background agent
+## Install as a background Controller
 
 Enroll a staged config first so the one-time token is never passed to an installer. Then follow the
 [Linux systemd instructions](../packaging/systemd/README.md) or
 [Windows instructions](../packaging/windows/README.md). Both installers preserve credentials during
 a normal uninstall and require an explicit purge to destroy them.
+
+Package source lives in [`packaging/debian`](../packaging/debian) and
+[`packaging/windows/Package.wxs`](../packaging/windows/Package.wxs). GitHub Actions builds the DEB,
+MSI, Windows CLI ZIP, and adjacent SHA-256 files from the same pinned Rust source.
 
 Agents on another machine connect to the API URL over outbound HTTPS; no VPN or inbound firewall
 rule is required when that URL is reachable. The Cloud/Console can display their latest telemetry.
@@ -107,7 +150,8 @@ design and its security gates are documented in [ADR-0008](adr/0008-bounded-remo
 1. Run `inspect` and compare memory/filesystem totals with the OS tools.
 2. Watch one known-running and one deliberately absent process; verify true and false results.
 3. Enroll into the intended workspace and run `doctor`.
-4. Run `run --once --watch-process NAME`; verify an accepted sequence is printed.
+4. Run `configure --signals cpu,memory,disk,process --watch-process NAME`, followed by `run --once`;
+   verify an accepted sequence is printed.
 5. Stop the watched test process, run once again, and verify the stored `process.running` sample is
    zero. Restart it and verify the next fresh sample is non-zero.
 6. Stop the API during a send and restart it; the next run must retry the exact persisted batch

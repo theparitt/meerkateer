@@ -7,6 +7,12 @@ Keep a Changelog principles, and releases use Semantic Versioning.
 
 ### Added
 
+- Installable Meerkateer Controller preview: a WiX-based Windows MSI with Start-menu signal setup
+  UI, an Ubuntu 22.04+ DEB with guided headless setup and hardened systemd service, and a portable
+  Windows CLI ZIP. A pinned GitHub Actions workflow publishes all three with SHA-256 files to a
+  rolling preview release; the landing page exposes direct platform downloads. Controller config
+  now persists an explicit CPU/memory/disk/process allowlist while keeping the heartbeat mandatory
+  and preserving older agent configurations safely.
 - Simple geometric Kalahari scenery behind the public landing hero, using flat acacia trees,
   polygon mountains, and layered sand dunes kept deliberately faded for readable content on
   desktop and mobile.

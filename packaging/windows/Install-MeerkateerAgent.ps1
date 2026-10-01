@@ -14,10 +14,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$taskName = 'Meerkateer Agent'
+$taskName = 'Meerkateer Controller'
 $programDirectory = Join-Path $env:ProgramFiles 'Meerkateer'
 $dataDirectory = Join-Path $env:ProgramData 'Meerkateer'
-$installedBinary = Join-Path $programDirectory 'meerkateer-agent.exe'
+$installedBinary = Join-Path $programDirectory 'meerkateer-controller.exe'
 $installedConfig = Join-Path $dataDirectory 'agent.json'
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -32,7 +32,7 @@ if ((Get-Item -LiteralPath $sourceBinary).PSIsContainer -or (Get-Item -LiteralPa
     throw 'BinaryPath and ConfigPath must identify files.'
 }
 if ([IO.Path]::GetExtension($sourceBinary) -ne '.exe') {
-    throw 'BinaryPath must identify meerkateer-agent.exe.'
+    throw 'BinaryPath must identify the Meerkateer Controller executable.'
 }
 if ((Test-Path -LiteralPath $installedConfig) -and -not $ReplaceConfig) {
     throw "$installedConfig already exists. Use -ReplaceConfig only when rotating this machine identity."
@@ -48,8 +48,12 @@ if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
 }
 
 New-Item -ItemType Directory -Force -Path $programDirectory, $dataDirectory | Out-Null
-Copy-Item -LiteralPath $sourceBinary -Destination $installedBinary -Force
-Copy-Item -LiteralPath $sourceConfig -Destination $installedConfig -Force
+if (-not [StringComparer]::OrdinalIgnoreCase.Equals($sourceBinary, $installedBinary)) {
+    Copy-Item -LiteralPath $sourceBinary -Destination $installedBinary -Force
+}
+if (-not [StringComparer]::OrdinalIgnoreCase.Equals($sourceConfig, $installedConfig)) {
+    Copy-Item -LiteralPath $sourceConfig -Destination $installedConfig -Force
+}
 
 # The machine credential is writable only by Administrators, SYSTEM, and the low-privilege task identity.
 & icacls.exe $dataDirectory /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-19:(OI)(CI)M' | Out-Null
@@ -79,5 +83,5 @@ if (-not $NoStart) {
     Start-ScheduledTask -TaskName $taskName
 }
 
-Write-Host "Meerkateer agent installed as startup task '$taskName'."
+Write-Host "Meerkateer Controller installed as startup task '$taskName'."
 Write-Host "Configuration: $installedConfig"

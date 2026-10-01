@@ -99,6 +99,16 @@ describe("App", () => {
     ).toBeTruthy();
     expect(screen.getByText("v0.1.0")).toBeTruthy();
     expect(screen.getByText("Current phase: Community Alpha")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Install one small Controller." })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Download MSI" }).getAttribute("href")).toContain(
+      "meerkateer-controller-windows-x86_64.msi",
+    );
+    expect(screen.getByRole("link", { name: "Download DEB" }).getAttribute("href")).toContain(
+      "meerkateer-controller_0.1.0_amd64.deb",
+    );
+    expect(screen.getByRole("link", { name: "Download CLI ZIP" }).getAttribute("href")).toContain(
+      "meerkateer-controller-windows-x86_64.zip",
+    );
     expect(screen.getAllByRole("link", { name: /Road to 1.0/ })[0].getAttribute("href")).toBe(
       "/roadmap",
     );

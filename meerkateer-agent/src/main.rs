@@ -1,7 +1,7 @@
 mod collector;
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     env, fs,
     io::Write,
     net::IpAddr,
@@ -12,7 +12,7 @@ use std::{
 use anyhow::{Context, bail, ensure};
 use atomic_write_file::OpenOptions;
 use chrono::{DateTime, Utc};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use meerkateer_protocol::mka1::{PROTOCOL_VERSION, TelemetryBatch, TelemetryRecord};
 use reqwest::{Client, StatusCode, Url};
 use serde::{Deserialize, Serialize};
@@ -28,7 +28,7 @@ const MAX_RESPONSE_BYTES: usize = 64 * 1024;
 const DEFAULT_INTERVAL_SECONDS: u64 = 30;
 
 #[derive(Debug, Parser)]
-#[command(version, about = "Outbound-only Meerkateer host agent")]
+#[command(version, about = "Outbound-only Meerkateer host Controller")]
 struct Cli {
     /// Override the local credential/configuration file.
     #[arg(long, global = true, value_name = "PATH")]
@@ -50,6 +50,15 @@ enum Command {
     },
     /// Verify the local configuration without displaying credentials.
     Doctor,
+    /// Choose which bounded host signals this controller sends.
+    Configure {
+        /// Comma-separated signals: cpu,memory,disk,process.
+        #[arg(long, value_delimiter = ',', required = true)]
+        signals: Vec<SignalKind>,
+        /// Exact process name to monitor when the process signal is enabled.
+        #[arg(long = "watch-process")]
+        watch_processes: Vec<String>,
+    },
     /// Inspect this host locally without requiring enrollment or sending data.
     #[command(visible_alias = "status")]
     Inspect {
@@ -71,6 +80,67 @@ enum Command {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, ValueEnum)]
+#[serde(rename_all = "lowercase")]
+enum SignalKind {
+    Cpu,
+    Memory,
+    Disk,
+    Process,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SignalSelection {
+    enabled: BTreeSet<SignalKind>,
+    #[serde(default)]
+    watched_processes: Vec<String>,
+}
+
+impl Default for SignalSelection {
+    fn default() -> Self {
+        Self {
+            enabled: BTreeSet::from([SignalKind::Cpu, SignalKind::Memory, SignalKind::Disk]),
+            watched_processes: Vec::new(),
+        }
+    }
+}
+
+impl SignalSelection {
+    fn from_cli(signals: &[SignalKind], watched_processes: Vec<String>) -> anyhow::Result<Self> {
+        collector::validate_watched_processes(&watched_processes)?;
+        let enabled = signals.iter().copied().collect::<BTreeSet<_>>();
+        ensure!(
+            enabled.contains(&SignalKind::Process) || watched_processes.is_empty(),
+            "--watch-process requires the process signal"
+        );
+        ensure!(
+            !signals.is_empty(),
+            "select at least one signal; the heartbeat is always sent"
+        );
+        Ok(Self {
+            enabled,
+            watched_processes,
+        })
+    }
+
+    fn names(&self) -> Vec<&'static str> {
+        let mut names = vec!["heartbeat"];
+        if self.enabled.contains(&SignalKind::Cpu) {
+            names.push("cpu");
+        }
+        if self.enabled.contains(&SignalKind::Memory) {
+            names.push("memory");
+        }
+        if self.enabled.contains(&SignalKind::Disk) {
+            names.push("disk");
+        }
+        if self.enabled.contains(&SignalKind::Process) {
+            names.push("process");
+        }
+        names
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct AgentConfig {
     version: u8,
@@ -87,6 +157,8 @@ struct AgentConfig {
     credential: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     credential_expires_at: Option<String>,
+    #[serde(default)]
+    signals: SignalSelection,
     next_sequence: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pending_batch: Option<TelemetryBatch>,
@@ -103,6 +175,8 @@ struct DoctorResult<'a> {
     agent_id: Option<Uuid>,
     project_id: Option<Uuid>,
     credential_expires_at: Option<&'a str>,
+    signals: Vec<&'static str>,
+    watched_processes: &'a [String],
     pending_batch: bool,
     next_sequence: u64,
 }
@@ -122,6 +196,14 @@ struct SendResult {
     agent_id: Uuid,
     batch_id: Uuid,
     accepted_through_sequence: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct ConfigureResult<'a> {
+    status: &'static str,
+    config_path: String,
+    signals: Vec<&'static str>,
+    watched_processes: &'a [String],
 }
 
 #[derive(Debug, Serialize)]
@@ -167,6 +249,10 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         Command::Enroll { server, name } => enroll(&config_path, &server, &name).await,
         Command::Doctor => doctor(&config_path),
+        Command::Configure {
+            signals,
+            watch_processes,
+        } => configure(&config_path, &signals, watch_processes),
         Command::Inspect { watch_processes } => inspect(&watch_processes).await,
         Command::Run {
             once,
@@ -174,6 +260,26 @@ async fn main() -> anyhow::Result<()> {
             watch_processes,
         } => run(&config_path, once, interval_seconds, &watch_processes).await,
     }
+}
+
+fn configure(
+    config_path: &Path,
+    signals: &[SignalKind],
+    watched_processes: Vec<String>,
+) -> anyhow::Result<()> {
+    let mut config = load_config(config_path)?;
+    config.signals = SignalSelection::from_cli(signals, watched_processes)?;
+    save_config(config_path, &config)?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&ConfigureResult {
+            status: "configured",
+            config_path: config_path.display().to_string(),
+            signals: config.signals.names(),
+            watched_processes: &config.signals.watched_processes,
+        })?
+    );
+    Ok(())
 }
 
 async fn inspect(watched_processes: &[String]) -> anyhow::Result<()> {
@@ -219,6 +325,7 @@ async fn enroll(config_path: &Path, server: &str, name: &str) -> anyhow::Result<
                 credential_id: None,
                 credential: None,
                 credential_expires_at: None,
+                signals: SignalSelection::default(),
                 next_sequence: 1,
                 pending_batch: None,
             };
@@ -304,6 +411,8 @@ fn doctor(config_path: &Path) -> anyhow::Result<()> {
         agent_id: config.agent_id,
         project_id: config.project_id,
         credential_expires_at: Some(expires_at),
+        signals: config.signals.names(),
+        watched_processes: &config.signals.watched_processes,
         pending_batch: config.pending_batch.is_some(),
         next_sequence: config.next_sequence,
     };
@@ -326,7 +435,7 @@ async fn run(
     info!(
         config_path = %config_path.display(),
         watched_processes = watched_processes.len(),
-        "starting Meerkateer agent"
+        "starting Meerkateer Controller"
     );
 
     loop {
@@ -355,7 +464,7 @@ async fn run(
 async fn send_once(
     client: &Client,
     config_path: &Path,
-    watched_processes: &[String],
+    watched_process_overrides: &[String],
 ) -> anyhow::Result<SendResult> {
     let mut config = load_config(config_path)?;
     validate_complete_config(&config)?;
@@ -370,8 +479,19 @@ async fn send_once(
         .context("agent configuration is missing its credential")?;
 
     if config.pending_batch.is_none() {
-        let snapshot = collector::collect(watched_processes).await?;
-        config.pending_batch = Some(build_host_batch(agent_id, config.next_sequence, &snapshot)?);
+        let mut signals = config.signals.clone();
+        if !watched_process_overrides.is_empty() {
+            collector::validate_watched_processes(watched_process_overrides)?;
+            signals.enabled.insert(SignalKind::Process);
+            signals.watched_processes = watched_process_overrides.to_vec();
+        }
+        let snapshot = collector::collect(&signals.watched_processes).await?;
+        config.pending_batch = Some(build_host_batch(
+            agent_id,
+            config.next_sequence,
+            &snapshot,
+            &signals,
+        )?);
         save_config(config_path, &config)?;
     }
     let batch = config
@@ -439,33 +559,47 @@ fn build_host_batch(
     agent_id: Uuid,
     sequence: u64,
     snapshot: &HostSnapshot,
+    signals: &SignalSelection,
 ) -> anyhow::Result<TelemetryBatch> {
     ensure!(sequence > 0, "agent sequence must be positive");
     let attributes = BTreeMap::from([
         ("arch".to_owned(), env::consts::ARCH.to_owned()),
         ("os".to_owned(), env::consts::OS.to_owned()),
     ]);
-    let metrics = [
-        ("agent.heartbeat", 1.0),
-        ("host.cpu.utilization", snapshot.cpu_usage_percent / 100.0),
-        (
-            "host.memory.used_bytes",
-            bytes_as_metric(snapshot.memory_used_bytes),
-        ),
-        (
-            "host.memory.total_bytes",
-            bytes_as_metric(snapshot.memory_total_bytes),
-        ),
-        (
-            "host.disk.used_bytes",
-            bytes_as_metric(snapshot.disk_used_bytes),
-        ),
-        (
-            "host.disk.total_bytes",
-            bytes_as_metric(snapshot.disk_total_bytes),
-        ),
-    ];
-    let mut records = Vec::with_capacity(metrics.len() + snapshot.watched_processes.len());
+    let mut metrics = vec![("agent.heartbeat", 1.0)];
+    if signals.enabled.contains(&SignalKind::Cpu) {
+        metrics.push(("host.cpu.utilization", snapshot.cpu_usage_percent / 100.0));
+    }
+    if signals.enabled.contains(&SignalKind::Memory) {
+        metrics.extend([
+            (
+                "host.memory.used_bytes",
+                bytes_as_metric(snapshot.memory_used_bytes),
+            ),
+            (
+                "host.memory.total_bytes",
+                bytes_as_metric(snapshot.memory_total_bytes),
+            ),
+        ]);
+    }
+    if signals.enabled.contains(&SignalKind::Disk) {
+        metrics.extend([
+            (
+                "host.disk.used_bytes",
+                bytes_as_metric(snapshot.disk_used_bytes),
+            ),
+            (
+                "host.disk.total_bytes",
+                bytes_as_metric(snapshot.disk_total_bytes),
+            ),
+        ]);
+    }
+    let process_capacity = if signals.enabled.contains(&SignalKind::Process) {
+        snapshot.watched_processes.len()
+    } else {
+        0
+    };
+    let mut records = Vec::with_capacity(metrics.len() + process_capacity);
     for (offset, (metric, value)) in metrics.into_iter().enumerate() {
         let record_sequence = sequence
             .checked_add(u64::try_from(offset)?)
@@ -479,18 +613,20 @@ fn build_host_batch(
             attributes: attributes.clone(),
         });
     }
-    for process in &snapshot.watched_processes {
-        let record_sequence = sequence
-            .checked_add(u64::try_from(records.len())?)
-            .context("agent sequence exhausted")?;
-        records.push(TelemetryRecord::Sample {
-            sequence: record_sequence,
-            record_id: Uuid::new_v4(),
-            observed_at: snapshot.collected_at.clone(),
-            metric: "process.running".to_owned(),
-            value: f64::from(process.instances),
-            attributes: BTreeMap::from([("process".to_owned(), process.name.clone())]),
-        });
+    if signals.enabled.contains(&SignalKind::Process) {
+        for process in &snapshot.watched_processes {
+            let record_sequence = sequence
+                .checked_add(u64::try_from(records.len())?)
+                .context("agent sequence exhausted")?;
+            records.push(TelemetryRecord::Sample {
+                sequence: record_sequence,
+                record_id: Uuid::new_v4(),
+                observed_at: snapshot.collected_at.clone(),
+                metric: "process.running".to_owned(),
+                value: f64::from(process.instances),
+                attributes: BTreeMap::from([("process".to_owned(), process.name.clone())]),
+            });
+        }
     }
     let last_sequence = records
         .last()
@@ -527,6 +663,12 @@ fn validate_complete_config(config: &AgentConfig) -> anyhow::Result<()> {
         "unsupported agent config version"
     );
     ensure!(config.next_sequence > 0, "agent sequence state is invalid");
+    collector::validate_watched_processes(&config.signals.watched_processes)?;
+    ensure!(
+        config.signals.enabled.contains(&SignalKind::Process)
+            || config.signals.watched_processes.is_empty(),
+        "configured process names require the process signal"
+    );
     ensure!(
         config.agent_id.is_some(),
         "agent enrollment is incomplete; run enroll again"
@@ -753,6 +895,7 @@ mod tests {
             credential_id: Some(Uuid::new_v4()),
             credential: Some("mka_agent_test_secret_material".to_owned()),
             credential_expires_at: Some("2099-01-01T00:00:00Z".to_owned()),
+            signals: SignalSelection::default(),
             next_sequence: 7,
             pending_batch: None,
         }
@@ -776,7 +919,16 @@ mod tests {
             running: true,
             instances: 2,
         }]);
-        let batch = build_host_batch(agent_id, 42, &snapshot)?;
+        let signals = SignalSelection {
+            enabled: BTreeSet::from([
+                SignalKind::Cpu,
+                SignalKind::Memory,
+                SignalKind::Disk,
+                SignalKind::Process,
+            ]),
+            watched_processes: vec!["java".to_owned()],
+        };
+        let batch = build_host_batch(agent_id, 42, &snapshot, &signals)?;
         assert_eq!(batch.agent_id, agent_id);
         assert_eq!(batch.first_sequence, 42);
         assert_eq!(batch.last_sequence, 48);
@@ -787,6 +939,58 @@ mod tests {
             TelemetryRecord::Sample { metric, value, .. }
                 if metric == "process.running" && (*value - 2.0).abs() < f64::EPSILON
         )));
+        Ok(())
+    }
+
+    #[test]
+    fn signal_selection_limits_the_emitted_metrics() -> anyhow::Result<()> {
+        let snapshot = test_snapshot(vec![collector::ProcessObservation {
+            name: "java".to_owned(),
+            running: true,
+            instances: 1,
+        }]);
+        let signals = SignalSelection {
+            enabled: BTreeSet::from([SignalKind::Memory]),
+            watched_processes: Vec::new(),
+        };
+        let batch = build_host_batch(Uuid::new_v4(), 1, &snapshot, &signals)?;
+        let metrics = batch
+            .records
+            .iter()
+            .map(|record| match record {
+                TelemetryRecord::Sample { metric, .. } => metric.as_str(),
+                TelemetryRecord::Event { .. } => "event",
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            metrics,
+            vec![
+                "agent.heartbeat",
+                "host.memory.used_bytes",
+                "host.memory.total_bytes"
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn existing_configs_receive_safe_default_signals() -> anyhow::Result<()> {
+        let config: AgentConfig = serde_json::from_value(serde_json::json!({
+            "version": CONFIG_VERSION,
+            "server_url": "http://127.0.0.1:6510/",
+            "installation_id": Uuid::new_v4(),
+            "display_name": "Existing host",
+            "agent_id": Uuid::new_v4(),
+            "credential_id": Uuid::new_v4(),
+            "credential": "mka_agent_test_secret_material",
+            "credential_expires_at": "2099-01-01T00:00:00Z",
+            "next_sequence": 1
+        }))?;
+        assert_eq!(
+            config.signals.names(),
+            vec!["heartbeat", "cpu", "memory", "disk"]
+        );
+        assert!(config.signals.watched_processes.is_empty());
         Ok(())
     }
 
@@ -817,6 +1021,7 @@ mod tests {
             config.agent_id.context("test agent missing")?,
             config.next_sequence,
             &test_snapshot(Vec::new()),
+            &config.signals,
         )?);
         let batch_id = config
             .pending_batch

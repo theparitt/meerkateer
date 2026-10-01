@@ -10,6 +10,10 @@ const GITHUB_REPO_URL = "https://github.com/theparitt/meerkateer";
 const PRODUCT_VERSION = `v${packageMetadata.version}`;
 const COMMUNITY_SOURCE_DOWNLOAD_URL =
   "https://github.com/theparitt/meerkateer/archive/refs/heads/main.zip";
+const CONTROLLER_PREVIEW_URL = `${GITHUB_REPO_URL}/releases/download/controller-preview`;
+const WINDOWS_MSI_URL = `${CONTROLLER_PREVIEW_URL}/meerkateer-controller-windows-x86_64.msi`;
+const WINDOWS_CLI_URL = `${CONTROLLER_PREVIEW_URL}/meerkateer-controller-windows-x86_64.zip`;
+const UBUNTU_DEB_URL = `${CONTROLLER_PREVIEW_URL}/meerkateer-controller_${packageMetadata.version}_amd64.deb`;
 const DOCS_URL = "/docs";
 const SELF_HOST_URL = "/get-started";
 
@@ -53,6 +57,7 @@ function PublicLinks() {
     <>
       <a href="/#how-it-works">How it works</a>
       <a href="/#sdks">SDKs</a>
+      <a href="/#controller">Controller</a>
       <a href="/roadmap">Roadmap</a>
       <a href="/#run-it">Community</a>
       <a href={DOCS_URL}>Docs</a>
@@ -468,6 +473,80 @@ function ResourcesSection() {
   );
 }
 
+const controllerDownloads = [
+  {
+    platform: "Windows 10 / 11 · x64",
+    title: "Windows installer",
+    copy: "Install the background controller, open the friendly setup screen, and choose CPU, memory, disk, or exact process signals.",
+    action: "Download MSI",
+    href: WINDOWS_MSI_URL,
+    friend: "/friends/machine-scout.png",
+    accent: "windows",
+  },
+  {
+    platform: "Ubuntu 22.04+ · amd64",
+    title: "Ubuntu server package",
+    copy: "Install the hardened systemd service, then use one guided setup command to connect the host and select its signals.",
+    action: "Download DEB",
+    href: UBUNTU_DEB_URL,
+    friend: "/friends/heartbeat-keeper.png",
+    accent: "ubuntu",
+  },
+  {
+    platform: "Windows · portable x64",
+    title: "Command line only",
+    copy: "Use the same outbound-only controller as a portable executable for scripts, automation, or machines without the setup UI.",
+    action: "Download CLI ZIP",
+    href: WINDOWS_CLI_URL,
+    friend: "/friends/access-guardian.png",
+    accent: "cli",
+  },
+];
+
+function ControllerDownloadsSection() {
+  return (
+    <section className="landing-section controller-section" id="controller">
+      <div className="page-width">
+        <SectionHeading
+          eyebrow="Connect a computer"
+          title="Install one small Controller."
+          copy="The Controller sends outbound reliability signals to your workspace. You choose what it may report, and Meerkateer never exposes a remote shell on the machine."
+        />
+        <div className="controller-download-grid">
+          {controllerDownloads.map((download) => (
+            <article className={`controller-download-card ${download.accent}`} key={download.title}>
+              <img src={download.friend} alt="" width="112" height="112" loading="lazy" />
+              <p className="card-label">{download.platform}</p>
+              <h3>{download.title}</h3>
+              <p>{download.copy}</p>
+              <a className="button button-primary" href={download.href}>
+                {download.action}
+              </a>
+            </article>
+          ))}
+        </div>
+        <div className="controller-signal-note">
+          <div>
+            <strong>Always visible before it starts</strong>
+            <span>Heartbeat · CPU · memory · disk totals · selected process state</span>
+          </div>
+          <div>
+            <strong>Never collected</strong>
+            <span>Files · command arguments · environment values · player/chat content</span>
+          </div>
+          <a className="text-link" href="/docs/agent-cli">
+            Installation and CLI guide →
+          </a>
+        </div>
+        <p className="controller-preview-warning">
+          Developer-preview packages are currently unsigned. Verify the adjacent SHA-256 file from
+          the preview release before installation. Signed installers are a 1.0 release gate.
+        </p>
+      </div>
+    </section>
+  );
+}
+
 function FinalCallToAction() {
   return (
     <div className="final-cta-scene">
@@ -595,6 +674,7 @@ export function LandingPage() {
         <SystemMapSection />
         <ActionStoriesSection />
         <IntegrationSection />
+        <ControllerDownloadsSection />
         <CapabilitySection />
         <DashboardPreview />
         <RunOptionsSection />
