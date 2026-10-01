@@ -90,7 +90,8 @@ jobs:
           Copy-Item target/release/meerkateer-agent.exe dist/portable/meerkateer-controller.exe
           Copy-Item packaging/windows/README.md dist/portable/README.md
           $help = & dist/portable/meerkateer-controller.exe --help
-          if ($help -notmatch '(?m)^  tui\s') { throw 'Portable Controller help omitted the TUI command.' }
+          $helpText = $help -join [Environment]::NewLine
+          if ($helpText -notmatch '(?m)^  tui\s') { throw 'Portable Controller help omitted the TUI command.' }
           Compress-Archive -Path dist/portable/* `
             -DestinationPath dist/meerkateer-controller-windows-x86_64.zip
 
