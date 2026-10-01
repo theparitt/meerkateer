@@ -78,7 +78,9 @@ jobs:
 
       - name: Install pinned WiX Toolset
         shell: pwsh
-        run: dotnet tool install --global wix --version 5.0.2
+        run: |
+          dotnet tool install --tool-path .tools wix --version 5.0.2
+          ./.tools/wix.exe --version
 
       - name: Build portable CLI
         shell: pwsh
@@ -95,12 +97,14 @@ jobs:
           ./packaging/windows/build-msi.ps1 `
             -ControllerExe target/release/meerkateer-agent.exe `
             -Version $env:PRODUCT_VERSION `
-            -OutputPath dist/meerkateer-controller-windows-x86_64.msi
+            -OutputPath dist/meerkateer-controller-windows-x86_64.msi `
+            -WixCommand "$env:GITHUB_WORKSPACE/.tools/wix.exe"
 
       - name: Validate MSI
         shell: pwsh
         run: |
-          wix msi validate dist/meerkateer-controller-windows-x86_64.msi
+          & "$env:GITHUB_WORKSPACE/.tools/wix.exe" msi validate `
+            dist/meerkateer-controller-windows-x86_64.msi
 
       - name: Hash Windows packages
         shell: pwsh

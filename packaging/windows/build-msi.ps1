@@ -8,7 +8,9 @@ param(
     [string]$Version,
 
     [Parameter(Mandatory = $true)]
-    [string]$OutputPath
+    [string]$OutputPath,
+
+    [string]$WixCommand = 'wix'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,14 +21,14 @@ $outputFullPath = [IO.Path]::GetFullPath($OutputPath)
 $outputDirectory = Split-Path -Parent $outputFullPath
 New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
 
-if (-not (Get-Command wix -ErrorAction SilentlyContinue)) {
+if (-not (Get-Command $WixCommand -ErrorAction SilentlyContinue)) {
     throw 'WiX is required. Install the pinned tool with: dotnet tool install --global wix --version 5.0.2'
 }
 
-& wix extension add --global WixToolset.UI.wixext/5.0.2
+& $WixCommand extension add --global WixToolset.UI.wixext/5.0.2
 if ($LASTEXITCODE -ne 0) { throw 'Failed to install the pinned WiX UI extension.' }
 
-& wix build `
+& $WixCommand build `
     -arch x64 `
     -ext WixToolset.UI.wixext `
     -d "Version=$Version" `
