@@ -53,7 +53,7 @@ jobs:
           dpkg-deb --extract meerkateer-controller_${PRODUCT_VERSION}_amd64.deb package-check
           test -x package-check/usr/bin/meerkateer-controller
           test -x package-check/usr/lib/meerkateer/meerkateer-controller
-          package-check/usr/lib/meerkateer/meerkateer-controller --help | grep -q Configure
+          package-check/usr/lib/meerkateer/meerkateer-controller --help | grep -q '  configure  '
           rm -rf package-check
 
       - name: Upload Ubuntu artifacts
