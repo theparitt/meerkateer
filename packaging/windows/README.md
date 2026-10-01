@@ -12,6 +12,12 @@ memory, disk, and exact process signals, and registers an automatically restarte
 under the low-privilege `LOCAL SERVICE` identity. The credential ACL permits only that identity,
 `SYSTEM`, and local Administrators.
 
+The API host is entered once during first setup and stored in the ACL-protected
+`%ProgramData%\Meerkateer\agent.json` alongside the exchanged machine credential. Reopening the UI
+shows the enrolled host and current signal choices; it locks host and machine identity while
+allowing the signal allowlist to be changed. Purge and enroll again to intentionally move the
+computer to another host.
+
 These developer-preview artifacts are not yet signed. Verify the adjacent SHA-256 file. A signed
 MSI/executable and native OS secret protection remain 1.0 gates.
 

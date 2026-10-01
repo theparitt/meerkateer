@@ -20,10 +20,10 @@ $outputDirectory = Split-Path -Parent $outputFullPath
 New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
 
 if (-not (Get-Command wix -ErrorAction SilentlyContinue)) {
-    throw 'WiX is required. Install the pinned tool with: dotnet tool install --global wix --version 7.0.0'
+    throw 'WiX is required. Install the pinned tool with: dotnet tool install --global wix --version 5.0.2'
 }
 
-& wix extension add --global WixToolset.UI.wixext/7.0.0
+& wix extension add --global WixToolset.UI.wixext/5.0.2
 if ($LASTEXITCODE -ne 0) { throw 'Failed to install the pinned WiX UI extension.' }
 
 & wix build `

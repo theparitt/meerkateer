@@ -212,9 +212,42 @@ $saveButton.Size = [Drawing.Size]::new(270, 42)
 $saveButton.FlatStyle = 'Flat'
 $form.Controls.Add($saveButton)
 
+$existingConfig = $null
+if (Test-Path -LiteralPath $configPath) {
+    try {
+        $existingConfig = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+        $serverBox.Text = [string]$existingConfig.server_url
+        $nameBox.Text = [string]$existingConfig.display_name
+        $serverBox.Enabled = $false
+        $nameBox.Enabled = $false
+        $tokenBox.Enabled = $false
+        $connectButton.Enabled = $false
+
+        if ($null -ne $existingConfig.signals) {
+            for ($index = 0; $index -lt $signalList.Items.Count; $index++) {
+                $signalList.SetItemChecked($index, $false)
+            }
+            $enabledSignals = @($existingConfig.signals.enabled)
+            $signalList.SetItemChecked(0, $enabledSignals -contains 'cpu')
+            $signalList.SetItemChecked(1, $enabledSignals -contains 'memory')
+            $signalList.SetItemChecked(2, $enabledSignals -contains 'disk')
+            $signalList.SetItemChecked(3, $enabledSignals -contains 'process')
+            $processBox.Text = (@($existingConfig.signals.watched_processes) -join ', ')
+        }
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show(
+            "The existing controller configuration could not be read. Run the controller doctor command before changing it.`n`n$($_.Exception.Message)",
+            'Meerkateer Controller',
+            'OK',
+            'Error'
+        ) | Out-Null
+        exit 1
+    }
+}
+
 $status = [System.Windows.Forms.Label]::new()
-$status.Text = if (Test-Path -LiteralPath $configPath) {
-    'Existing controller found. You can update its signal choices without a new token.'
+$status.Text = if ($null -ne $existingConfig) {
+    'Connected controller found. Host and identity are locked; signal choices can be updated.'
 } else {
     'Not connected yet.'
 }

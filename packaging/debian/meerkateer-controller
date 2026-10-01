@@ -70,7 +70,10 @@ configure_signals() {
 setup_controller() {
   require_root setup
   if [[ -f "$config_path" ]]; then
-    echo "This computer is already enrolled. Updating signal choices only."
+    echo "This computer is already enrolled. Its API host and machine identity are locked to that enrollment:"
+    "$controller_binary" --config "$config_path" doctor
+    echo
+    echo "Updating signal choices only. Purge and enroll again to move this computer to a different host."
     configure_signals "$config_path" true
   else
     local server_url machine_name enrollment_token temporary_directory temporary_config

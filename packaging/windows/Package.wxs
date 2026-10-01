@@ -49,7 +49,7 @@
             Name="Meerkateer Controller Setup"
             Description="Connect this computer and choose monitoring signals"
             Target="[System64Folder]WindowsPowerShell\v1.0\powershell.exe"
-            Arguments="-NoProfile -ExecutionPolicy Bypass -File &quot;[#ControllerSetupScript]&quot;"
+            Arguments="-NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]MeerkateerControllerSetup.ps1&quot;"
             WorkingDirectory="INSTALLFOLDER" />
           <Shortcut
             Id="ControllerCliShortcut"
@@ -60,9 +60,9 @@
             WorkingDirectory="INSTALLFOLDER" />
           <RemoveFolder Id="RemoveApplicationProgramsFolder" On="uninstall" />
           <RegistryValue
-            Root="HKLM"
+            Root="HKCU"
             Key="Software\Meerkateer\Controller"
-            Name="Installed"
+            Name="StartMenuShortcuts"
             Type="integer"
             Value="1"
             KeyPath="yes" />

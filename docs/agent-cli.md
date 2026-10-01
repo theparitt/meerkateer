@@ -53,6 +53,19 @@ The guided terminal screen asks the same questions and enables the hardened
 `meerkateer-controller.service`. A normal removal preserves the machine credential; an explicit
 package purge removes it.
 
+## Where the API host is configured
+
+Set the API host once during enrollment, in the MSI setup UI or the Ubuntu terminal UI. The
+Controller stores the normalized host, machine identity, selected signals, and the exchanged
+machine credential in its protected config; the one-time enrollment token is never stored. Normal
+service starts read that config, so unattended restarts do not need flags or environment variables.
+
+Reopening setup shows the enrolled host and current signal selection. Host and machine identity are
+read-only after enrollment because moving a machine to another control plane requires a new scoped
+credential. Re-enroll (or explicitly purge first) to change hosts; use setup at any time to change
+only the signal allowlist. This avoids an accidental typo silently sending telemetry to a different
+server.
+
 ## Build from source
 
 The repository pins the supported Rust toolchain in `rust-toolchain.toml`.

@@ -23,5 +23,9 @@ one-time enrollment token out of command history, then asks which bounded CPU, m
 exact process signals may be sent. The installed service runs as the unprivileged
 `meerkateer-controller` account with systemd hardening and outbound network access only.
 
+The API host is entered once during first setup and stored with the exchanged machine credential in
+`/var/lib/meerkateer-controller/agent.json`. Later setup runs show that enrollment and update only
+the signal allowlist. Purge and enroll again to intentionally move the machine to another host.
+
 `apt remove` keeps `/var/lib/meerkateer-controller/agent.json` for recovery. `apt purge` removes the
 credential and local sequence state permanently.
