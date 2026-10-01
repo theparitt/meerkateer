@@ -1,5 +1,19 @@
-import { useState } from "react";
+import hljs from "highlight.js/lib/core";
+import bash from "highlight.js/lib/languages/bash";
+import go from "highlight.js/lib/languages/go";
+import javascript from "highlight.js/lib/languages/javascript";
+import php from "highlight.js/lib/languages/php";
+import python from "highlight.js/lib/languages/python";
+import rust from "highlight.js/lib/languages/rust";
+import { type ReactNode, useMemo, useState } from "react";
 import "./landing-extras.css";
+
+hljs.registerLanguage("bash", bash);
+hljs.registerLanguage("go", go);
+hljs.registerLanguage("javascript", javascript);
+hljs.registerLanguage("php", php);
+hljs.registerLanguage("python", python);
+hljs.registerLanguage("rust", rust);
 
 const stories = [
   {
@@ -205,10 +219,36 @@ const samples = {
 
 type Sample = keyof typeof samples;
 
+const sampleLanguages: Record<Sample, string> = {
+  node: "javascript",
+  go: "go",
+  python: "python",
+  php: "php",
+  agent: "bash",
+  rust: "rust",
+};
+
+function highlightedCode(sample: Sample): ReactNode {
+  const html = hljs.highlight(samples[sample].code, { language: sampleLanguages[sample] }).value;
+  const documentFragment = new DOMParser().parseFromString(html, "text/html");
+  function renderNode(node: ChildNode, key: number): ReactNode {
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent;
+    if (!(node instanceof Element) || node.tagName !== "SPAN") return node.textContent;
+    const className = [...node.classList].filter((name) => /^hljs-[\w-]+$/.test(name)).join(" ");
+    return (
+      <span className={className} key={key}>
+        {[...node.childNodes].map(renderNode)}
+      </span>
+    );
+  }
+  return [...documentFragment.body.childNodes].map(renderNode);
+}
+
 export function IntegrationSection() {
   const [active, setActive] = useState<Sample>("node");
   const [copied, setCopied] = useState(false);
   const sample = samples[active];
+  const highlighted = useMemo(() => highlightedCode(active), [active]);
 
   async function copyCode() {
     try {
@@ -280,8 +320,8 @@ export function IntegrationSection() {
               {copied ? "Copied ✓" : "Copy code"}
             </button>
           </div>
-          <pre role="tabpanel">
-            <code>{sample.code}</code>
+          <pre role="tabpanel" aria-label={`${sample.title} code example`}>
+            <code className={`hljs language-${sampleLanguages[active]}`}>{highlighted}</code>
           </pre>
           <div className="integration-code-foot">
             <span>Use the Console's own values; the snippet shows no real secret.</span>
@@ -293,71 +333,241 @@ export function IntegrationSection() {
   );
 }
 
+const releasePhases = [
+  {
+    version: "0.1",
+    name: "Foundation Preview",
+    state: "Current code",
+    track: "Shared public core",
+    outcome: "A runnable, multi-workspace foundation with durable reliability evidence.",
+    features:
+      "Tenant-aware PostgreSQL core, owner access, agent enrollment, five SDKs, durable ingest, status and timeline UI, failure labs, and deployment packaging.",
+    tests:
+      "Contract, API/SQL integration, SDK-language, migration, worker retry/dead-letter, browser-state, and deterministic fleet tests.",
+    edges:
+      "Duplicate and out-of-order facts, stale recovery, revoked credentials, malformed payloads, database outage, and worker restart between claim and acknowledgement.",
+    gate: "Every accepted fact is processed, safely retried, explicitly rejected, or dead-lettered; none silently disappears or invents health.",
+  },
+  {
+    version: "0.2",
+    name: "Community Alpha",
+    state: "In progress",
+    track: "Community critical path",
+    outcome: "One clean installation detects, explains, alerts, and recovers from a real failure.",
+    features:
+      "First-class incident workflow, alert outcome history/retry/dead-letter replay, audited cooldown policy, maintenance suppression, and guided first use are implemented; baseline host/process and HTTP/TLS checks remain.",
+    tests:
+      "Fresh VM setup, two workspaces and machines, process/endpoint failure, receiver 429/500/timeout, service restarts, and three clean end-to-end repetitions.",
+    edges:
+      "Clock skew, agent double-enrollment, queued alert after deletion, workspace reassignment, full spool, IPv6, Unicode names, and browser refresh during setup.",
+    gate: "Failure → evidence → one incident → alert → fresh recovery completes without manual SQL, Cloud, billing, or AI credentials.",
+  },
+  {
+    version: "0.3",
+    name: "Monitoring Alpha",
+    state: "Planned",
+    track: "Community critical path",
+    outcome: "Production-shaped host, process, network, and first game/SME monitoring.",
+    features:
+      "Linux and Windows services, bounded collectors, offline spool, HTTP/TCP/DNS/TLS probes, Minecraft compatibility, and safe configuration rollback.",
+    tests:
+      "Thirty-minute control-plane outage, spool drain, OS/service restart and upgrade, hostile probe fixtures, Minecraft protocol matrix, and resource benchmarks.",
+    edges:
+      "PID reuse, permission denial, full disk, split-horizon DNS, DNS rebinding, private redirect, invalid certificates, sleep/resume, and malformed game responses.",
+    gate: "No unbounded collector, no duplicate drained facts, published compatibility, and reference usage below the declared CPU, memory, disk, and network ceilings.",
+  },
+  {
+    version: "0.4",
+    name: "Security Beta",
+    state: "Planned",
+    track: "Community critical path",
+    outcome: "The identity, role, credential, and tenant boundary is ready for broader exposure.",
+    features:
+      "Invitations, least-privilege roles, revocation, optional OIDC, distributed abuse controls, signed agent config, secure credential storage, and complete audit evidence.",
+    tests:
+      "Two-tenant read/write/ID matrix across API, SQL, workers, exports, caches and pools; invite/session/CSRF tests; rotation under load; scans, fuzzing, and independent review.",
+    edges:
+      "Mixed-tenant batches, pooled connection reuse, stale caches, deleted members with queued jobs, last-owner removal, confusable identities, and replica rate-limit bypass.",
+    gate: "Zero known cross-tenant access and no unresolved critical or high security finding.",
+  },
+  {
+    version: "0.5",
+    name: "Operations Beta",
+    state: "Planned",
+    track: "Community critical path",
+    outcome: "Data, migrations, alerts, and the control plane remain recoverable under failure.",
+    features:
+      "Versioned upgrades, encrypted off-host backup, restore, retention, quotas, alert replay/cooldown, metrics, trace correlation, watchdogs, and runbooks.",
+    tests:
+      "Restore to another host, upgrades from supported versions, interrupted migration, database/worker/network/disk/receiver fault injection, and RPO/RTO measurement.",
+    edges:
+      "Corrupt archive, wrong key, partial upload, schema newer than binary, poison job, pool exhaustion, webhook recovery during retry, and retention/export races.",
+    gate: "A verified restore and data-preserving upgrade meet published RPO/RTO; every fault is visible and has a rehearsed operator response.",
+  },
+  {
+    version: "0.6",
+    name: "Public Preview",
+    state: "Planned",
+    track: "Community critical path",
+    outcome:
+      "An external operator can install and understand Meerkateer without repository knowledge.",
+    features:
+      "Signed OCI and agent artifacts, checksums, SBOM and provenance, complete operator guides, guided onboarding, diagnostics, responsive UI, and WCAG 2.2 AA review.",
+    tests:
+      "Fresh-operator install-to-recovery study, signature and SBOM validation, keyboard/screen-reader/mobile passes, proxy/custom-CA/IPv6/firewall installs, upgrade and uninstall.",
+    edges:
+      "Port collision, read-only directories, low disk, proxy auth failure, missing CA, wrong architecture, mismatched agent/server versions, and retained-data uninstall.",
+    gate: "At least three new operators complete the supported journey from published artifacts with no maintainer intervention.",
+  },
+  {
+    version: "0.7",
+    name: "Scale Beta",
+    state: "Planned",
+    track: "Community critical path",
+    outcome: "Meerkateer publishes an honest, measured operating envelope.",
+    features:
+      "Reference topologies, compatibility window, backpressure behavior, retention sizing, rolling upgrades, capacity dashboards, and sustained fault soak.",
+    tests:
+      "Sustained and 10× burst load, reconnect storms, queue catch-up, high cardinality, mixed agent versions, rolling upgrade/rollback, and a 14-day fault-injected soak.",
+    edges:
+      "Noisy workspace, simultaneous quotas, millions of short incidents, hot indexes, autovacuum lag, long exports, backup/retention overlap, and regional latency.",
+    gate: "Publish hardware, topology, throughput, p50/p95/p99 latency, storage, retention, rejection, and recovery limits with no silent loss or unbounded growth.",
+  },
+  {
+    version: "0.8",
+    name: "Hosted Beta",
+    state: "Parallel after 0.5",
+    track: "Cloud track · free first",
+    outcome: "Named users validate a managed multi-tenant service before billing is introduced.",
+    features:
+      "Private Cloud provisioner and operations repo, tenant lifecycle, company switching, regional probes, quotas, backups, support workflows, SLOs, and cost measurement.",
+    tests:
+      "Concurrent provisioning, cross-tenant attack matrix across every data path, tenant export/delete, region and provider failures, restore drills, fairness, abuse, and cost tests.",
+    edges:
+      "Partial provisioning, duplicate signup, multi-company identity, deletion during incident, offline agents during region move, support impersonation, and backup-expiry erasure.",
+    gate: "No isolation failure, successful region/restore drills, published beta commitments, sustainable measured cost, and Stripe remains disabled.",
+  },
+  {
+    version: "0.9",
+    name: "Release Candidate",
+    state: "Planned",
+    track: "Community critical path",
+    outcome: "Feature-frozen artifacts prove the complete supported journey under real operation.",
+    features:
+      "Immutable release candidate, current documentation and risk register, independent review, rehearsed rollback and recovery, and representative operator trial.",
+    tests:
+      "Promote one digest through the full matrix, disaster recovery by a new operator, every supported platform/profile, and 3–5 operators for at least 14 days.",
+    edges:
+      "Upgrade during incident, restore while agents buffer, key rotation during rollout, retention during export, receiver outage during restart, and rollback with newer agents.",
+    gate: "No severity-one/two defect, critical/high finding, silent loss, tenant leak, unrecoverable migration, or unsupported documentation gap.",
+  },
+  {
+    version: "1.0",
+    name: "Stable Community",
+    state: "Target",
+    track: "Supported release",
+    outcome: "A production-supported Community release with public operating contracts.",
+    features:
+      "Published security, compatibility, deprecation, support, recovery, retention and capacity contracts; consistent versioning and named operational owners.",
+    tests:
+      "All release gates from signed artifacts, supported platform install/restart/upgrade/rollback/uninstall, restore targets, detection latency, and final 14-day soak evidence.",
+    edges:
+      "Revoked signing key, corrupt artifact, bad cache or mirror, urgent dependency disclosure, schema regression, incompatible agent rollout, and post-release rollback communication.",
+    gate: "The system can be installed, operated, diagnosed, upgraded, restored, and removed without private maintainer knowledge and with no open release blocker.",
+  },
+];
+
 export function UpdatesRoadmapSection() {
   return (
-    <section className="landing-section updates-section" id="updates">
+    <section className="landing-section updates-section" id="roadmap">
       <div className="page-width">
         <div className="updates-heading">
           <div className="section-heading">
-            <p className="eyebrow">Project progress</p>
-            <h2>New things, tested things, next things.</h2>
+            <p className="eyebrow">The release path</p>
+            <h2>Ten milestones, one dependable product.</h2>
             <p>
-              Follow the developer preview with a clear view of what works today and what is still
-              being built.
+              Follow the plan from the current foundation through monitoring, security, operations,
+              scale, and the final stable release. Open a phase to inspect all of its evidence.
             </p>
           </div>
-          <a className="button button-secondary" href="/changelog">
-            Full changelog ↗
+          <a className="button button-secondary" href="/docs/phase-status">
+            Verified delivery status ↗
           </a>
         </div>
-        <div className="updates-grid">
-          <article className="update-card update-news">
-            <span className="update-icon" aria-hidden="true">
-              ✦
-            </span>
-            <p className="eyebrow">Latest updates</p>
-            <h3>Fresh from the workshop</h3>
-            <ul>
-              <li>Owner sign-in with email and password</li>
-              <li>Workspace, machine, and process setup in the Console</li>
-              <li>Public GitHub repository and SDK guides</li>
-            </ul>
-            <a href="/changelog">See what changed →</a>
+        <section className="repository-boundary" aria-label="Community and Cloud repository model">
+          <article className="repository-card repository-public">
+            <p className="eyebrow">Public · Apache-2.0</p>
+            <h3>One product core</h3>
+            <p>
+              Server, worker, agent, Console, SDKs, migrations, tenant security, tests, and
+              Community deployment live in <code>theparitt/meerkateer</code>.
+            </p>
           </article>
-          <article className="update-card update-tests" id="tests">
-            <span className="update-icon" aria-hidden="true">
-              ✓
-            </span>
-            <p className="eyebrow">How we test</p>
-            <h3>Signals we verify</h3>
-            <ul>
-              <li>Web behavior and accessible routes</li>
-              <li>Rust and SDK unit tests</li>
-              <li>API, database, and agent integration flows</li>
-              <li>Protocol contracts and secret checks</li>
-            </ul>
-            <a href="/docs/phase-status">Read the test evidence →</a>
+          <div className="repository-flow" aria-hidden="true">
+            <span>signed version + digest</span>
+            <b>→</b>
+          </div>
+          <article className="repository-card repository-private">
+            <p className="eyebrow">Private hosted operations</p>
+            <h3>No Cloud fork</h3>
+            <p>
+              <code>theparitt/meerkateer-cloud</code> pins public artifacts and adds provisioning,
+              regions, quotas, SLOs, support, and later billing—not a copy of core.
+            </p>
           </article>
-          <article className="update-card update-roadmap">
-            <span className="update-icon" aria-hidden="true">
-              ↗
-            </span>
-            <p className="eyebrow">Roadmap</p>
-            <h3>What comes next</h3>
-            <div className="roadmap-step">
-              <b>Now</b>
-              <span>Source audit and isolated Community operator journey</span>
-            </div>
-            <div className="roadmap-step">
-              <b>Next</b>
-              <span>Service checks, evidence-led incidents, and reliable alerts</span>
-            </div>
-            <div className="roadmap-step">
-              <b>Later</b>
-              <span>Restore, release packaging, and Community preview</span>
-            </div>
-            <a href="/docs/community-first-roadmap">Explore the Community plan →</a>
-          </article>
+        </section>
+        <p className="repository-note">
+          Community is one company per installation with many workspaces and machines. Cloud is many
+          tenants on a managed control plane. Reliability and security stay open source.{" "}
+          <a href="/docs/repository-and-cloud-boundary">Read the repository contract →</a>
+        </p>
+        <section className="phase-grid" id="tests" aria-label="Meerkateer release milestones">
+          {releasePhases.map((phase, index) => (
+            <article
+              className={`phase-card phase-${phase.state.toLowerCase().replaceAll(" ", "-")}`}
+              key={phase.version}
+            >
+              <span className="phase-timeline-marker" aria-hidden="true">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <div className="phase-card-head">
+                <span className="phase-version">v{phase.version}</span>
+                <span className="phase-state">{phase.state}</span>
+              </div>
+              <p className="phase-track">{phase.track}</p>
+              <h3>{phase.name}</h3>
+              <p className="phase-outcome">{phase.outcome}</p>
+              <details open={phase.state === "In progress" || phase.state === "Current code"}>
+                <summary>Features, tests, edge cases, and pass gate</summary>
+                <dl>
+                  <div>
+                    <dt>Features</dt>
+                    <dd>{phase.features}</dd>
+                  </div>
+                  <div>
+                    <dt>How we test it</dt>
+                    <dd>{phase.tests}</dd>
+                  </div>
+                  <div>
+                    <dt>Edge cases</dt>
+                    <dd>{phase.edges}</dd>
+                  </div>
+                  <div className="phase-gate">
+                    <dt>Pass gate</dt>
+                    <dd>{phase.gate}</dd>
+                  </div>
+                </dl>
+              </details>
+            </article>
+          ))}
+        </section>
+        <div className="roadmap-actions">
+          <a className="button button-primary" href="/docs/roadmap-to-1.0">
+            Read the technical acceptance plan
+          </a>
+          <a className="button button-secondary" href="/docs/phase-status">
+            Check verified delivery status
+          </a>
         </div>
       </div>
     </section>

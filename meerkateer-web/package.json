@@ -10,13 +10,18 @@
   "scripts": {
     "dev": "vite --config vite.config.ts",
     "build": "tsc -b && vite build --config vite.config.ts",
+    "deploy": "npm run build && wrangler deploy",
+    "deploy:dry-run": "npm run build && wrangler deploy --dry-run",
+    "cloudflare:dev": "npm run build && wrangler dev --local",
+    "cloudflare:set-api-origin": "wrangler secret put MEERKATEER_API_ORIGIN",
     "check": "biome check .",
     "check:fix": "biome check --write .",
     "generate:api": "openapi-typescript ../openapi/meerkateer.openapi.json -o src/generated/api.d.ts && biome format --write src/generated/api.d.ts",
-    "check:api": "npm run generate:api && git diff --exit-code -- src/generated/api.d.ts",
+    "check:api": "node scripts/check-generated-api.mjs",
     "test": "vitest run --config vite.config.ts"
   },
   "dependencies": {
+    "highlight.js": "^11.12.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-markdown": "^10.1.0",
@@ -33,7 +38,11 @@
     "openapi-typescript": "7.13.0",
     "typescript": "5.9.3",
     "vite": "8.3.1",
-    "vitest": "5.0.2"
+    "vitest": "5.0.2",
+    "wrangler": "4.136.3"
+  },
+  "overrides": {
+    "undici": "7.30.0"
   },
   "packageManager": "npm@10.9.8"
 }

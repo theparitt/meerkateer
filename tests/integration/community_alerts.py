@@ -231,6 +231,41 @@ def exercise_fake_system(secret: str, project_id: str, service_id: str) -> None:
         assert database_scalar("SELECT count(*) FROM outbox WHERE topic = 'alert.transition' AND dead_lettered_at IS NOT NULL") == "1"
 
         Receiver.response_status = 204
+        history = expect(
+            call("GET", f"/v1/alerts/deliveries?project_id={project_id}&limit=200"), 200
+        ).body["items"]
+        dead_letter = next(item for item in history if item["status"] == "dead_lettered")
+        expect(
+            call("POST", f"/v1/alerts/deliveries/{dead_letter['id']}/replay"),
+            403,
+            "csrf_failed",
+        )
+        expect(
+            call(
+                "POST",
+                f"/v1/alerts/deliveries/{dead_letter['id']}/replay",
+                headers=browser_headers(),
+            ),
+            204,
+        )
+        replay_history = expect(
+            call("GET", f"/v1/alerts/deliveries?project_id={project_id}&limit=200"), 200
+        ).body["items"]
+        replay = next(item for item in replay_history if item["replay_of"] == dead_letter["id"])
+        assert replay["status"] == "queued" and replay["transition"] == "down", replay
+        expect(
+            call(
+                "POST",
+                f"/v1/alerts/deliveries/{dead_letter['id']}/replay",
+                headers=browser_headers(),
+            ),
+            409,
+            "alert_not_replayable",
+        )
+        run_worker()
+        replayed = received.get(timeout=5)
+        assert replayed["status"] == 204 and "[DOWN]" in str(replayed["payload"]["content"]), replayed
+
         fake_mode(port, "healthy")
         observe("ok", "receiver restored")
         run_worker()
@@ -272,6 +307,42 @@ def exercise_fake_system(secret: str, project_id: str, service_id: str) -> None:
         assert sum("[DOWN]" in str(item["payload"]["content"]) for item in pair) == 1, pair
         assert sum("[RECOVERED]" in str(item["payload"]["content"]) for item in pair) == 1, pair
         assert database_scalar("SELECT count(*) FROM outbox WHERE topic = 'alert.transition' AND processed_at IS NULL") == "0"
+
+        # A bounded cooldown suppresses only repeat-down notification noise. It does
+        # not suppress the incident, state transition, or subsequent recovery alert.
+        expect(call(
+            "PUT", "/v1/alerts/policy",
+            body={
+                "enabled": True, "notify_down": True, "notify_recovered": True,
+                "cooldown_seconds": 86401,
+            }, headers=browser_headers(),
+        ), 400, "invalid_request")
+        expect(call(
+            "PUT", "/v1/alerts/policy",
+            body={
+                "enabled": True, "notify_down": True, "notify_recovered": True,
+                "cooldown_seconds": 300,
+            }, headers=browser_headers(),
+        ), 200)
+        cooldown_down = (
+            dt.datetime.fromisoformat(later_at.replace("Z", "+00:00")) + dt.timedelta(seconds=1)
+        ).isoformat().replace("+00:00", "Z")
+        send(secret, "down", cooldown_down, str(uuid.uuid4()), "repeat outage in cooldown")
+        current = expect(call("GET", f"/v1/projects/{project_id}/services"), 200).body["items"][0]["status"]
+        assert current["state"] == "offline", current
+        cooldown_history = expect(
+            call("GET", f"/v1/alerts/deliveries?project_id={project_id}&limit=200"), 200
+        ).body["items"]
+        suppressed = cooldown_history[0]
+        assert suppressed["status"] == "suppressed" and "cooldown" in suppressed["suppression_reason"].lower(), suppressed
+        assert database_scalar("SELECT count(*) FROM outbox WHERE topic = 'alert.transition' AND processed_at IS NULL") == "0"
+        cooldown_recovered = (
+            dt.datetime.fromisoformat(cooldown_down.replace("Z", "+00:00")) + dt.timedelta(seconds=1)
+        ).isoformat().replace("+00:00", "Z")
+        send(secret, "ok", cooldown_recovered, str(uuid.uuid4()), "repeat outage recovered")
+        run_worker()
+        recovery_after_cooldown = received.get(timeout=5)
+        assert "[RECOVERED]" in str(recovery_after_cooldown["payload"]["content"]), recovery_after_cooldown
         print("Failure lab: HTTP errors, dependency failure, malformed data, timeout, disconnect, crash, flapping, stale data, webhook retry/dead letter, and concurrent outage reports passed.")
     finally:
         Receiver.response_status = 204
@@ -345,6 +416,17 @@ def main() -> None:
         assert any("[RECOVERED]" in content and recovered_at in content for content in contents), contents
         assert all(item["event_id"] for item in delivered), delivered
         assert database_scalar("SELECT count(*) FROM outbox WHERE topic = 'alert.transition' AND processed_at IS NOT NULL") == "2"
+        worker_summary = expect(call("GET", "/v1/admin/summary"), 200).body
+        assert worker_summary["worker_status"] == "healthy", worker_summary
+        assert worker_summary["worker_last_cycle_claimed"] >= 2, worker_summary
+        assert database_scalar(
+            "UPDATE worker_runtime SET last_cycle_at = now() - interval '31 seconds'"
+        ).startswith("UPDATE ")
+        stalled_summary = expect(call("GET", "/v1/admin/summary"), 200).body
+        assert stalled_summary["worker_status"] == "stalled", stalled_summary
+        run_worker()
+        recovered_worker_summary = expect(call("GET", "/v1/admin/summary"), 200).body
+        assert recovered_worker_summary["worker_status"] == "healthy", recovered_worker_summary
         exercise_fake_system(secret, project["id"], service["id"])
         cookies.clear()
     finally:

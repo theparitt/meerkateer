@@ -28,6 +28,32 @@ cleanup
 cargo build --quiet -p meerkateer-server -p meerkateer-worker -p meerkateer-agent
 docker compose -p "$project" $compose_files up -d --wait postgres
 
+# PostgreSQL's image briefly accepts connections from its temporary bootstrap
+# server while running /docker-entrypoint-initdb.d, then restarts it. Compose's
+# pg_isready health check can observe that transient server. Wait for both the
+# final schema and runtime role before launching the host-native API.
+database_ready=false
+attempt=0
+while [ "$attempt" -lt 60 ]; do
+    initialized="$(
+        docker compose -p "$project" $compose_files exec -T postgres \
+            psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+            "SELECT to_regclass('public.worker_runtime') IS NOT NULL AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'meerkateer_app')" \
+            2>/dev/null || true
+    )"
+    if [ "$initialized" = "t" ]; then
+        database_ready=true
+        break
+    fi
+    attempt=$((attempt + 1))
+    sleep 1
+done
+if [ "$database_ready" != "true" ]; then
+    docker compose -p "$project" $compose_files logs postgres >&2
+    echo 'alert test database did not finish initialization' >&2
+    exit 1
+fi
+
 MEERKATEER_DATABASE_URL="$(printf '%s' "$MEERKATEER_DATABASE_URL" | sed "s/@postgres:5432/@127.0.0.1:${db_port}/")"
 MEERKATEER_WORKER_DATABASE_URL="$(printf '%s' "$MEERKATEER_WORKER_DATABASE_URL" | sed "s/@postgres:5432/@127.0.0.1:${db_port}/")"
 MEERKATEER_BIND_ADDR="127.0.0.1:${api_port}"

@@ -14,5 +14,7 @@ creates a new record and links both records; accepted history is not rewritten.
 | [0004](0004-deployment-profiles-and-storage.md) | Compact and HA deployment profiles | Accepted |
 | [0005](0005-tenant-and-machine-trust.md) | Tenant authorization and machine credentials | Accepted |
 | [0006](0006-community-and-cloud-billing-boundary.md) | Community/Cloud and Stripe boundary | Accepted |
+| [0007](0007-public-core-and-private-cloud-operations.md) | Public core and private Cloud operations repositories | Accepted |
+| [0008](0008-bounded-remote-recovery.md) | Bound remote recovery to typed, locally allowlisted actions | Proposed |
 
 Use [0000-template.md](0000-template.md) for new records.

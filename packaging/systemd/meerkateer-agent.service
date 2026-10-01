@@ -8,11 +8,12 @@ Wants=network-online.target
 Type=simple
 User=meerkateer-agent
 Group=meerkateer-agent
+Environment="MEERKATEER_AGENT_ARGS="
 EnvironmentFile=-/etc/meerkateer/agent.env
 StateDirectory=meerkateer-agent
 StateDirectoryMode=0700
 UMask=0077
-ExecStart=/usr/local/bin/meerkateer-agent --config /var/lib/meerkateer-agent/agent.json run
+ExecStart=/usr/local/bin/meerkateer-agent --config /var/lib/meerkateer-agent/agent.json run $MEERKATEER_AGENT_ARGS
 Restart=on-failure
 RestartSec=10s
 NoNewPrivileges=true

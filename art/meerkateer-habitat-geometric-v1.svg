@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="title description">
+  <title id="title">Geometric meerkat habitat</title>
+  <desc id="description">Simple acacia trees, mountains, and sand dunes in a southern African landscape.</desc>
+  <rect width="1600" height="900" fill="#dff1f7"/>
+  <circle cx="1265" cy="160" r="76" fill="#ffd873"/>
+
+  <g fill="#ffffff" opacity=".72">
+    <circle cx="255" cy="158" r="34"/>
+    <circle cx="300" cy="144" r="48"/>
+    <circle cx="350" cy="164" r="31"/>
+    <rect x="255" y="162" width="98" height="30" rx="15"/>
+    <circle cx="830" cy="112" r="25"/>
+    <circle cx="865" cy="101" r="36"/>
+    <circle cx="906" cy="118" r="25"/>
+    <rect x="829" y="117" width="80" height="23" rx="12"/>
+  </g>
+
+  <path d="M0 520 188 347l122 122 156-185 190 236Z" fill="#d89a78"/>
+  <path d="m225 520 190-142 95 76 138-105 210 171Z" fill="#edb58c"/>
+  <path d="m786 520 180-197 111 122 131-164 238 239Z" fill="#c98269"/>
+  <path d="m1137 520 151-129 89 73 97-89 126 145Z" fill="#e4a57c"/>
+
+  <path d="M0 485c210-48 379-23 574 41 203 66 369 25 519-8 184-40 339-5 507 66v316H0Z" fill="#f3cf86"/>
+  <path d="M0 628c196-82 391-72 602 12 203 80 370 70 539-4 174-76 328-75 459-12v276H0Z" fill="#ffe3a6"/>
+  <path d="M0 755c241-73 451-44 629 16 193 65 401 46 566-6 168-53 294-40 405-3v138H0Z" fill="#efbd70"/>
+
+  <g transform="translate(115 375)">
+    <path d="M105 78h25l15 252H88Z" fill="#76513f"/>
+    <path d="m112 112-72 72-14-15 81-88Zm13 17 74 68 15-17-80-91Z" fill="#76513f"/>
+    <path d="M-66 133c0-28 31-47 76-49 18-35 58-55 102-49 44-5 85 14 103 47 47 1 80 20 80 49 0 30-35 50-84 50-27 18-66 22-101 10-34 13-75 10-103-8-44-1-73-21-73-50Z" fill="#66865d"/>
+    <path d="M12 104c7-23 34-38 67-36 20-19 57-24 83-9 33-3 59 11 66 34-24-10-53-9-78 1-42-12-94-8-138 10Z" fill="#7e9b69"/>
+  </g>
+
+  <g transform="translate(1350 505) scale(.72)">
+    <path d="M105 78h25l15 252H88Z" fill="#76513f"/>
+    <path d="m112 112-72 72-14-15 81-88Zm13 17 74 68 15-17-80-91Z" fill="#76513f"/>
+    <path d="M-66 133c0-28 31-47 76-49 18-35 58-55 102-49 44-5 85 14 103 47 47 1 80 20 80 49 0 30-35 50-84 50-27 18-66 22-101 10-34 13-75 10-103-8-44-1-73-21-73-50Z" fill="#66865d"/>
+    <path d="M12 104c7-23 34-38 67-36 20-19 57-24 83-9 33-3 59 11 66 34-24-10-53-9-78 1-42-12-94-8-138 10Z" fill="#7e9b69"/>
+  </g>
+
+  <g fill="none" stroke="#8d8b55" stroke-linecap="round" stroke-width="10">
+    <path d="m430 724-18-42m18 42 8-50m-8 50 32-32"/>
+    <path d="m1165 682-17-41m17 41 9-47m-9 47 31-30"/>
+    <path d="m1015 806-14-34m14 34 7-38m-7 38 24-24"/>
+  </g>
+
+  <g fill="#bb784f">
+    <ellipse cx="716" cy="735" rx="54" ry="18"/>
+    <ellipse cx="765" cy="723" rx="31" ry="13"/>
+    <ellipse cx="1281" cy="786" rx="45" ry="16"/>
+  </g>
+</svg>

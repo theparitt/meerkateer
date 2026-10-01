@@ -1,5 +1,9 @@
 # Commercial readiness plan
 
+This is the later hosted-commerce track, not the Community 1.0 critical path. The canonical
+[roadmap to 1.0](roadmap-to-1.0.md) now schedules a free Hosted Beta first and defers Stripe
+until managed operations, tenant isolation, support, and real cost have been measured.
+
 Status: developer preview, 2026-09-28. This is the release plan for Meerkateer Community and Meerkateer Cloud. A green unit suite or a polished website is not a production claim. Each phase closes only when its test cases pass in CI or a recorded release exercise, with a named owner and reproducible evidence. Cloud billing stays in sandbox until the final gate.
 
 The first customer pilot now follows the narrower [Minecraft Java / Paper game-server beta](game-server-beta.md). Its G0–G5 slices supply the game-specific acceptance cases inside C2–C5 and C8; the commercial security, operations, and billing gates still apply.

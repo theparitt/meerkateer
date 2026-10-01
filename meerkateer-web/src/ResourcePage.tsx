@@ -216,8 +216,8 @@ function GettingStarted() {
         </p>
         <p>
           If your company already exists, <a href="/login">sign in</a> with the owner email and
-          password. Older installations can <a href="/recover">set an owner password</a> using the
-          setup key.
+          password. Older installations can <a href="/login?mode=recover">set an owner password</a>{" "}
+          using the setup key.
         </p>
       </section>
       <section className="resource-panel">
@@ -252,7 +252,7 @@ function Help() {
           <li>
             Use <a href="/setup">Create company</a> only for a new database. If you see{" "}
             <code>bootstrap_already_completed</code>, use <a href="/login">Sign in</a> or{" "}
-            <a href="/recover">set the existing owner's password</a>.
+            <a href="/login?mode=recover">set the existing owner's password</a>.
           </li>
           <li>
             The setup key is in the installation's private <code>.env</code>. Keep it out of issue
@@ -352,8 +352,25 @@ export function isResourcePath(path: string) {
 export function ResourcePage({ path }: { path: string }) {
   const document = documents[path];
   const special = specialPages[path];
-  const title = document?.title ?? special.title;
-  const description = document?.description ?? special.description;
+  if (!document && !special) {
+    return (
+      <div className="resource-page">
+        <ResourceHeader />
+        <main className="resource-main page-width">
+          <a className="resource-back" href="/">
+            ← Back to overview
+          </a>
+          <div className="resource-intro">
+            <p className="eyebrow">Documentation</p>
+            <h1>Guide not found</h1>
+            <p>This guide is not part of the current Meerkateer build.</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+  const title = document?.title ?? special?.title ?? "Documentation";
+  const description = document?.description ?? special?.description ?? "Meerkateer documentation";
   const Content = special?.content;
   return (
     <div className="resource-page">

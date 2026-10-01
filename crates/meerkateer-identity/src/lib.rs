@@ -61,6 +61,8 @@ impl Role {
                 Action::Read
                     | Action::ServiceWrite
                     | Action::CredentialRotate
+                    | Action::IncidentWrite
+                    | Action::AlertWrite
                     | Action::MaintenanceWrite
             ),
             Self::Viewer => matches!(action, Action::Read),
@@ -77,6 +79,8 @@ pub enum Action {
     ServiceWrite,
     CredentialIssue,
     CredentialRotate,
+    IncidentWrite,
+    AlertWrite,
     MaintenanceWrite,
     AgentManage,
     BillingManage,
@@ -538,10 +542,14 @@ mod tests {
         assert!(Role::Owner.allows(Action::BillingManage));
         assert!(!Role::Admin.allows(Action::BillingManage));
         assert!(Role::Operator.allows(Action::CredentialRotate));
+        assert!(Role::Operator.allows(Action::IncidentWrite));
+        assert!(Role::Operator.allows(Action::AlertWrite));
         assert!(!Role::Operator.allows(Action::CredentialIssue));
         assert!(!Role::Operator.allows(Action::AgentManage));
         assert!(Role::Admin.allows(Action::AgentManage));
         assert!(Role::Viewer.allows(Action::Read));
+        assert!(!Role::Viewer.allows(Action::IncidentWrite));
+        assert!(!Role::Viewer.allows(Action::AlertWrite));
         assert!(!Role::Viewer.allows(Action::ServiceWrite));
     }
 

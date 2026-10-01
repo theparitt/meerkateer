@@ -38,6 +38,211 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/alerts/policy": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** @description Read the tenant alert transition policy and whether the installation webhook is configured. */
+    get: operations["getAlertPolicy"];
+    /** @description Update down/recovery notification and bounded cooldown policy. Requires an owner or admin and CSRF proof. */
+    put: operations["updateAlertPolicy"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/alerts/deliveries": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** @description List durable alert outcomes for one tenant workspace, including suppression and failures. */
+    get: operations["listAlertDeliveries"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/alerts/deliveries/{delivery_id}/replay": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** @description Create a new audited delivery attempt from a dead-lettered alert while preserving the original record. */
+    post: operations["replayAlertDelivery"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/incidents": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** @description List durable open and resolved incidents for one tenant workspace. */
+    get: operations["listIncidents"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/incidents/activity": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** @description List operator acknowledgement, assignment, and note activity for one workspace. */
+    get: operations["listIncidentActivity"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/incidents/{incident_id}/acknowledge": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** @description Acknowledge an incident without changing monitored health or resolving it. */
+    post: operations["acknowledgeIncident"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/incidents/{incident_id}/assignment": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** @description Assign the current operator to an incident or clear its assignment. */
+    put: operations["updateIncidentAssignment"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/incidents/{incident_id}/notes": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** @description Add an immutable bounded operator note to an incident. */
+    post: operations["addIncidentNote"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/maintenance-windows": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["listMaintenanceWindows"];
+    put?: never;
+    /** @description Schedule service-level notification suppression for at most 90 days. Health evidence remains visible. */
+    post: operations["createMaintenanceWindow"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/maintenance-windows/{window_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** @description Cancel a non-cancelled maintenance window without deleting its audit history. */
+    delete: operations["cancelMaintenanceWindow"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/audit-events": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** @description Read the tenant append-only administrative audit stream. Requires owner or admin. */
+    get: operations["listAuditEvents"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/admin/summary": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** @description Read tenant-scoped operational counts plus installation worker progress. Requires owner or admin. */
+    get: operations["getAdminSummary"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/bootstrap": {
     parameters: {
       query?: never;
@@ -333,6 +538,23 @@ export interface paths {
       cookie?: never;
     };
     get: operations["listAgents"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/agents/{agent_id}/telemetry": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** @description Return a bounded read model built only from the agent's latest durable batch. Metrics from older batches are never mixed into the snapshot. */
+    get: operations["getAgentTelemetry"];
     put?: never;
     post?: never;
     delete?: never;
@@ -744,6 +966,187 @@ export interface components {
     ServiceListResponse: {
       items: components["schemas"]["ServiceResponse"][];
     };
+    IncidentResponse: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** Format: uuid */
+      service_id: string;
+      service: string;
+      /** @enum {unknown} */
+      status: "open" | "resolved";
+      /** @enum {unknown} */
+      severity: "warning" | "critical";
+      title: string;
+      cause: string;
+      /** Format: date-time */
+      started_at: string;
+      /** Format: date-time */
+      last_observed_at: string;
+      /** Format: date-time */
+      resolved_at: string | null;
+      /** Format: date-time */
+      acknowledged_at: string | null;
+      acknowledged_by: string | null;
+      /** Format: uuid */
+      assigned_to: string | null;
+      assignee: string | null;
+    };
+    IncidentListResponse: {
+      items: components["schemas"]["IncidentResponse"][];
+    };
+    IncidentActivityResponse: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      incident_id: string;
+      /** @enum {unknown} */
+      kind: "acknowledged" | "assigned" | "unassigned" | "note";
+      actor: string;
+      note: string | null;
+      /** Format: date-time */
+      created_at: string;
+    };
+    IncidentActivityListResponse: {
+      items: components["schemas"]["IncidentActivityResponse"][];
+    };
+    UpdateIncidentAssignmentRequest: {
+      assigned: boolean;
+    };
+    AddIncidentNoteRequest: {
+      note: string;
+    };
+    AlertDeliveryResponse: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** Format: uuid */
+      service_id: string;
+      service: string;
+      /** Format: uuid */
+      incident_id: string | null;
+      /** Format: uuid */
+      replay_of: string | null;
+      /** @enum {unknown} */
+      transition: "down" | "recovered";
+      /** @enum {unknown} */
+      status:
+        | "queued"
+        | "retrying"
+        | "delivered"
+        | "dead_lettered"
+        | "suppressed"
+        | "skipped_disabled"
+        | "skipped_unconfigured";
+      /** Format: date-time */
+      observed_at: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      delivered_at: string | null;
+      attempts: number;
+      last_error: string | null;
+      suppression_reason: string | null;
+    };
+    AlertDeliveryListResponse: {
+      items: components["schemas"]["AlertDeliveryResponse"][];
+    };
+    UpdateAlertPolicyRequest: {
+      enabled: boolean;
+      notify_down: boolean;
+      notify_recovered: boolean;
+      cooldown_seconds: number;
+    };
+    AlertPolicyResponse: {
+      enabled: boolean;
+      notify_down: boolean;
+      notify_recovered: boolean;
+      cooldown_seconds: number;
+      webhook_configured: boolean;
+      /** Format: date-time */
+      updated_at: string | null;
+    };
+    CreateMaintenanceWindowRequest: {
+      /** Format: uuid */
+      project_id: string;
+      /** Format: uuid */
+      service_id: string;
+      title: string;
+      reason: string;
+      /** Format: date-time */
+      starts_at: string;
+      /** Format: date-time */
+      ends_at: string;
+    };
+    MaintenanceWindowResponse: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** Format: uuid */
+      service_id: string;
+      service: string;
+      title: string;
+      reason: string;
+      /** Format: date-time */
+      starts_at: string;
+      /** Format: date-time */
+      ends_at: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      cancelled_at: string | null;
+    };
+    MaintenanceWindowListResponse: {
+      items: components["schemas"]["MaintenanceWindowResponse"][];
+    };
+    AuditEventResponse: {
+      /** Format: uuid */
+      id: string;
+      /** @enum {unknown} */
+      actor_type: "user" | "service" | "agent" | "system";
+      /** Format: uuid */
+      actor_id: string | null;
+      action: string;
+      target_type: string;
+      /** Format: uuid */
+      target_id: string | null;
+      details: {
+        [key: string]: unknown;
+      };
+      /** Format: date-time */
+      occurred_at: string;
+    };
+    AuditEventListResponse: {
+      items: components["schemas"]["AuditEventResponse"][];
+    };
+    AdminSummaryResponse: {
+      /** Format: uuid */
+      tenant_id: string;
+      /** @enum {unknown} */
+      deployment_mode: "community" | "cloud";
+      projects: number;
+      services: number;
+      agents: number;
+      open_incidents: number;
+      pending_alerts: number;
+      dead_lettered_alerts: number;
+      active_maintenance_windows: number;
+      /** Format: date-time */
+      oldest_pending_alert_at: string | null;
+      /** @enum {unknown} */
+      worker_status: "healthy" | "stalled" | "never_seen";
+      /** Format: date-time */
+      worker_started_at: string | null;
+      /** Format: date-time */
+      worker_last_cycle_at: string | null;
+      worker_last_cycle_claimed: number;
+      worker_last_cycle_completed: number;
+      worker_last_cycle_retried: number;
+      worker_last_cycle_dead_lettered: number;
+    };
     TimelineItemResponse: {
       /** Format: uuid */
       idempotency_key: string;
@@ -810,6 +1213,43 @@ export interface components {
     };
     AgentListResponse: {
       items: components["schemas"]["AgentResponse"][];
+    };
+    AgentCapacityResponse: {
+      used_bytes: number;
+      total_bytes: number;
+      utilization_percent: number;
+    };
+    AgentProcessResponse: {
+      name: string;
+      running: boolean;
+      instances: number;
+    };
+    AgentTelemetrySnapshotResponse: {
+      /** Format: uuid */
+      agent_id: string;
+      /** @enum {unknown} */
+      connection_state: "online" | "stale" | "never_seen" | "revoked" | "quarantined" | "unknown";
+      /** @enum {unknown} */
+      collection_state: "complete" | "partial" | "unavailable";
+      /** Format: date-time */
+      observed_at: string | null;
+      /** Format: date-time */
+      received_at: string | null;
+      snapshot_stale: boolean;
+      platform: string | null;
+      architecture: string | null;
+      cpu_usage_percent: number | null;
+      memory: components["schemas"]["AgentCapacityResponse"] | null;
+      disk: components["schemas"]["AgentCapacityResponse"] | null;
+      processes: components["schemas"]["AgentProcessResponse"][];
+      missing_metrics: (
+        | "agent.heartbeat"
+        | "host.cpu.utilization"
+        | "host.memory.used_bytes"
+        | "host.memory.total_bytes"
+        | "host.disk.used_bytes"
+        | "host.disk.total_bytes"
+      )[];
     };
     RotatedAgentCredentialResponse: {
       /** Format: uuid */
@@ -1002,6 +1442,666 @@ export interface operations {
       };
       /** @description The receiver did not accept the message. */
       502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The control database is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  getAlertPolicy: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Current effective policy. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AlertPolicyResponse"];
+        };
+      };
+      /** @description Authentication is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The control database is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  updateAlertPolicy: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateAlertPolicyRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated policy. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AlertPolicyResponse"];
+        };
+      };
+      /** @description Cooldown must be between 0 and 86400 seconds. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The role or CSRF proof is insufficient. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The control database is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  listAlertDeliveries: {
+    parameters: {
+      query: {
+        project_id: string;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Alert delivery history. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AlertDeliveryListResponse"];
+        };
+      };
+      /** @description The query is invalid. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The control database is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  replayAlertDelivery: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        delivery_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description A new queued delivery was created. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The role or CSRF proof is insufficient. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The delivery is absent or tenant-hidden. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The delivery is not dead-lettered or the webhook is not configured. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The control database is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  listIncidents: {
+    parameters: {
+      query: {
+        project_id: string;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Incident history, open incidents first. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["IncidentListResponse"];
+        };
+      };
+      /** @description The query is invalid. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The control database is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  listIncidentActivity: {
+    parameters: {
+      query: {
+        project_id: string;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Incident operator activity. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["IncidentActivityListResponse"];
+        };
+      };
+      /** @description The query is invalid. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The control database is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  acknowledgeIncident: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Incident acknowledged, or was already acknowledged. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The role or CSRF proof is insufficient. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The incident is absent or tenant-hidden. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The control database is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  updateIncidentAssignment: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateIncidentAssignmentRequest"];
+      };
+    };
+    responses: {
+      /** @description Assignment updated, or already in the requested state. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The role or CSRF proof is insufficient. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The incident is absent or tenant-hidden. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The control database is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  addIncidentNote: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AddIncidentNoteRequest"];
+      };
+    };
+    responses: {
+      /** @description Note added. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The note is empty or too long. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The role or CSRF proof is insufficient. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The incident is absent or tenant-hidden. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The control database is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  listMaintenanceWindows: {
+    parameters: {
+      query: {
+        project_id: string;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Scheduled, active, completed, and cancelled windows. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MaintenanceWindowListResponse"];
+        };
+      };
+      /** @description Authentication is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The control database is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  createMaintenanceWindow: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateMaintenanceWindowRequest"];
+      };
+    };
+    responses: {
+      /** @description Maintenance window created. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MaintenanceWindowResponse"];
+        };
+      };
+      /** @description The bounded window is invalid. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The role or CSRF proof is insufficient. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The service is not in the selected workspace. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The control database is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  cancelMaintenanceWindow: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        window_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Window cancelled. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The role or CSRF proof is insufficient. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The window is absent, tenant-hidden, or already cancelled. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The control database is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  listAuditEvents: {
+    parameters: {
+      query?: {
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Recent audit events. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuditEventListResponse"];
+        };
+      };
+      /** @description Authentication is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Owner or admin role is required. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The control database is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  getAdminSummary: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Administrative operational summary. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminSummaryResponse"];
+        };
+      };
+      /** @description Authentication is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Owner or admin role is required. */
+      403: {
         headers: {
           [name: string]: unknown;
         };
@@ -2114,6 +3214,58 @@ export interface operations {
       };
       /** @description Authentication is required. */
       401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      429: components["responses"]["RateLimited"];
+      /** @description The control database is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  getAgentTelemetry: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        agent_id: components["parameters"]["AgentId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Latest host and watched-process snapshot, including explicit missing and stale evidence. */
+      200: {
+        headers: {
+          "Cache-Control"?: "no-store";
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentTelemetrySnapshotResponse"];
+        };
+      };
+      /** @description Authentication is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The session cannot read this tenant. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The agent does not exist in this tenant. */
+      404: {
         headers: {
           [name: string]: unknown;
         };

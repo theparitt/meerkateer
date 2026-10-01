@@ -33,6 +33,217 @@
         }
       }
     },
+    "/v1/alerts/policy": {
+      "get": {
+        "operationId": "getAlertPolicy",
+        "description": "Read the tenant alert transition policy and whether the installation webhook is configured.",
+        "security": [{ "sessionCookie": [] }],
+        "responses": {
+          "200": { "description": "Current effective policy.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AlertPolicyResponse" } } } },
+          "401": { "description": "Authentication is required." },
+          "503": { "description": "The control database is unavailable." }
+        }
+      },
+      "put": {
+        "operationId": "updateAlertPolicy",
+        "description": "Update down/recovery notification and bounded cooldown policy. Requires an owner or admin and CSRF proof.",
+        "security": [{ "sessionCookie": [], "csrfHeader": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateAlertPolicyRequest" } } } },
+        "responses": {
+          "200": { "description": "Updated policy.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AlertPolicyResponse" } } } },
+          "400": { "description": "Cooldown must be between 0 and 86400 seconds." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "The role or CSRF proof is insufficient." },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/alerts/deliveries": {
+      "get": {
+        "operationId": "listAlertDeliveries",
+        "description": "List durable alert outcomes for one tenant workspace, including suppression and failures.",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          { "name": "project_id", "in": "query", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 100 } }
+        ],
+        "responses": {
+          "200": { "description": "Alert delivery history.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AlertDeliveryListResponse" } } } },
+          "400": { "description": "The query is invalid." },
+          "401": { "description": "Authentication is required." },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/alerts/deliveries/{delivery_id}/replay": {
+      "post": {
+        "operationId": "replayAlertDelivery",
+        "description": "Create a new audited delivery attempt from a dead-lettered alert while preserving the original record.",
+        "security": [{ "sessionCookie": [], "csrfHeader": [] }],
+        "parameters": [{ "name": "delivery_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": {
+          "204": { "description": "A new queued delivery was created." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "The role or CSRF proof is insufficient." },
+          "404": { "description": "The delivery is absent or tenant-hidden." },
+          "409": { "description": "The delivery is not dead-lettered or the webhook is not configured." },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/incidents": {
+      "get": {
+        "operationId": "listIncidents",
+        "description": "List durable open and resolved incidents for one tenant workspace.",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          { "name": "project_id", "in": "query", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 100 } }
+        ],
+        "responses": {
+          "200": { "description": "Incident history, open incidents first.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IncidentListResponse" } } } },
+          "400": { "description": "The query is invalid." },
+          "401": { "description": "Authentication is required." },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/incidents/activity": {
+      "get": {
+        "operationId": "listIncidentActivity",
+        "description": "List operator acknowledgement, assignment, and note activity for one workspace.",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          { "name": "project_id", "in": "query", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 200 } }
+        ],
+        "responses": {
+          "200": { "description": "Incident operator activity.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IncidentActivityListResponse" } } } },
+          "400": { "description": "The query is invalid." },
+          "401": { "description": "Authentication is required." },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/incidents/{incident_id}/acknowledge": {
+      "post": {
+        "operationId": "acknowledgeIncident",
+        "description": "Acknowledge an incident without changing monitored health or resolving it.",
+        "security": [{ "sessionCookie": [], "csrfHeader": [] }],
+        "parameters": [{ "name": "incident_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": {
+          "204": { "description": "Incident acknowledged, or was already acknowledged." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "The role or CSRF proof is insufficient." },
+          "404": { "description": "The incident is absent or tenant-hidden." },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/incidents/{incident_id}/assignment": {
+      "put": {
+        "operationId": "updateIncidentAssignment",
+        "description": "Assign the current operator to an incident or clear its assignment.",
+        "security": [{ "sessionCookie": [], "csrfHeader": [] }],
+        "parameters": [{ "name": "incident_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateIncidentAssignmentRequest" } } } },
+        "responses": {
+          "204": { "description": "Assignment updated, or already in the requested state." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "The role or CSRF proof is insufficient." },
+          "404": { "description": "The incident is absent or tenant-hidden." },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/incidents/{incident_id}/notes": {
+      "post": {
+        "operationId": "addIncidentNote",
+        "description": "Add an immutable bounded operator note to an incident.",
+        "security": [{ "sessionCookie": [], "csrfHeader": [] }],
+        "parameters": [{ "name": "incident_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AddIncidentNoteRequest" } } } },
+        "responses": {
+          "204": { "description": "Note added." },
+          "400": { "description": "The note is empty or too long." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "The role or CSRF proof is insufficient." },
+          "404": { "description": "The incident is absent or tenant-hidden." },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/maintenance-windows": {
+      "get": {
+        "operationId": "listMaintenanceWindows",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          { "name": "project_id", "in": "query", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 100 } }
+        ],
+        "responses": {
+          "200": { "description": "Scheduled, active, completed, and cancelled windows.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MaintenanceWindowListResponse" } } } },
+          "401": { "description": "Authentication is required." },
+          "503": { "description": "The control database is unavailable." }
+        }
+      },
+      "post": {
+        "operationId": "createMaintenanceWindow",
+        "description": "Schedule service-level notification suppression for at most 90 days. Health evidence remains visible.",
+        "security": [{ "sessionCookie": [], "csrfHeader": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateMaintenanceWindowRequest" } } } },
+        "responses": {
+          "201": { "description": "Maintenance window created.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MaintenanceWindowResponse" } } } },
+          "400": { "description": "The bounded window is invalid." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "The role or CSRF proof is insufficient." },
+          "404": { "description": "The service is not in the selected workspace." },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/maintenance-windows/{window_id}": {
+      "delete": {
+        "operationId": "cancelMaintenanceWindow",
+        "description": "Cancel a non-cancelled maintenance window without deleting its audit history.",
+        "security": [{ "sessionCookie": [], "csrfHeader": [] }],
+        "parameters": [{ "name": "window_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": {
+          "204": { "description": "Window cancelled." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "The role or CSRF proof is insufficient." },
+          "404": { "description": "The window is absent, tenant-hidden, or already cancelled." },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/audit-events": {
+      "get": {
+        "operationId": "listAuditEvents",
+        "description": "Read the tenant append-only administrative audit stream. Requires owner or admin.",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 100 } }],
+        "responses": {
+          "200": { "description": "Recent audit events.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuditEventListResponse" } } } },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "Owner or admin role is required." },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/admin/summary": {
+      "get": {
+        "operationId": "getAdminSummary",
+        "description": "Read tenant-scoped operational counts plus installation worker progress. Requires owner or admin.",
+        "security": [{ "sessionCookie": [] }],
+        "responses": {
+          "200": { "description": "Administrative operational summary.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminSummaryResponse" } } } },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "Owner or admin role is required." },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
     "/v1/bootstrap": {
       "post": {
         "operationId": "bootstrapOwner",
@@ -551,6 +762,30 @@
             }
           },
           "401": { "description": "Authentication is required." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/agents/{agent_id}/telemetry": {
+      "get": {
+        "operationId": "getAgentTelemetry",
+        "description": "Return a bounded read model built only from the agent's latest durable batch. Metrics from older batches are never mixed into the snapshot.",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/AgentId" }],
+        "responses": {
+          "200": {
+            "description": "Latest host and watched-process snapshot, including explicit missing and stale evidence.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AgentTelemetrySnapshotResponse" }
+              }
+            }
+          },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "The session cannot read this tenant." },
+          "404": { "description": "The agent does not exist in this tenant." },
           "429": { "$ref": "#/components/responses/RateLimited" },
           "503": { "description": "The control database is unavailable." }
         }
@@ -1146,6 +1381,197 @@
           }
         }
       },
+      "IncidentResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "project_id", "service_id", "service", "status", "severity", "title", "cause", "started_at", "last_observed_at", "resolved_at", "acknowledged_at", "acknowledged_by", "assigned_to", "assignee"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "project_id": { "type": "string", "format": "uuid" },
+          "service_id": { "type": "string", "format": "uuid" },
+          "service": { "type": "string" },
+          "status": { "enum": ["open", "resolved"] },
+          "severity": { "enum": ["warning", "critical"] },
+          "title": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "cause": { "type": "string", "minLength": 1, "maxLength": 1024 },
+          "started_at": { "type": "string", "format": "date-time" },
+          "last_observed_at": { "type": "string", "format": "date-time" },
+          "resolved_at": { "type": ["string", "null"], "format": "date-time" },
+          "acknowledged_at": { "type": ["string", "null"], "format": "date-time" },
+          "acknowledged_by": { "type": ["string", "null"] },
+          "assigned_to": { "type": ["string", "null"], "format": "uuid" },
+          "assignee": { "type": ["string", "null"] }
+        }
+      },
+      "IncidentListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["items"],
+        "properties": { "items": { "type": "array", "maxItems": 200, "items": { "$ref": "#/components/schemas/IncidentResponse" } } }
+      },
+      "IncidentActivityResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "incident_id", "kind", "actor", "note", "created_at"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "incident_id": { "type": "string", "format": "uuid" },
+          "kind": { "enum": ["acknowledged", "assigned", "unassigned", "note"] },
+          "actor": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "note": { "type": ["string", "null"], "minLength": 1, "maxLength": 2000 },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "IncidentActivityListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["items"],
+        "properties": { "items": { "type": "array", "maxItems": 200, "items": { "$ref": "#/components/schemas/IncidentActivityResponse" } } }
+      },
+      "UpdateIncidentAssignmentRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["assigned"],
+        "properties": { "assigned": { "type": "boolean" } }
+      },
+      "AddIncidentNoteRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["note"],
+        "properties": { "note": { "type": "string", "minLength": 1, "maxLength": 2000 } }
+      },
+      "AlertDeliveryResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "project_id", "service_id", "service", "incident_id", "replay_of", "transition", "status", "observed_at", "created_at", "delivered_at", "attempts", "last_error", "suppression_reason"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "project_id": { "type": "string", "format": "uuid" },
+          "service_id": { "type": "string", "format": "uuid" },
+          "service": { "type": "string" },
+          "incident_id": { "type": ["string", "null"], "format": "uuid" },
+          "replay_of": { "type": ["string", "null"], "format": "uuid" },
+          "transition": { "enum": ["down", "recovered"] },
+          "status": { "enum": ["queued", "retrying", "delivered", "dead_lettered", "suppressed", "skipped_disabled", "skipped_unconfigured"] },
+          "observed_at": { "type": "string", "format": "date-time" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "delivered_at": { "type": ["string", "null"], "format": "date-time" },
+          "attempts": { "type": "integer", "minimum": 0 },
+          "last_error": { "type": ["string", "null"], "maxLength": 2048 },
+          "suppression_reason": { "type": ["string", "null"], "maxLength": 1024 }
+        }
+      },
+      "AlertDeliveryListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["items"],
+        "properties": { "items": { "type": "array", "maxItems": 200, "items": { "$ref": "#/components/schemas/AlertDeliveryResponse" } } }
+      },
+      "UpdateAlertPolicyRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["enabled", "notify_down", "notify_recovered", "cooldown_seconds"],
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "notify_down": { "type": "boolean" },
+          "notify_recovered": { "type": "boolean" },
+          "cooldown_seconds": { "type": "integer", "minimum": 0, "maximum": 86400 }
+        }
+      },
+      "AlertPolicyResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["enabled", "notify_down", "notify_recovered", "cooldown_seconds", "webhook_configured", "updated_at"],
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "notify_down": { "type": "boolean" },
+          "notify_recovered": { "type": "boolean" },
+          "cooldown_seconds": { "type": "integer", "minimum": 0, "maximum": 86400 },
+          "webhook_configured": { "type": "boolean" },
+          "updated_at": { "type": ["string", "null"], "format": "date-time" }
+        }
+      },
+      "CreateMaintenanceWindowRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["project_id", "service_id", "title", "reason", "starts_at", "ends_at"],
+        "properties": {
+          "project_id": { "type": "string", "format": "uuid" },
+          "service_id": { "type": "string", "format": "uuid" },
+          "title": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "reason": { "type": "string", "minLength": 1, "maxLength": 1024 },
+          "starts_at": { "type": "string", "format": "date-time" },
+          "ends_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "MaintenanceWindowResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "project_id", "service_id", "service", "title", "reason", "starts_at", "ends_at", "created_at", "cancelled_at"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "project_id": { "type": "string", "format": "uuid" },
+          "service_id": { "type": "string", "format": "uuid" },
+          "service": { "type": "string" },
+          "title": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "reason": { "type": "string", "minLength": 1, "maxLength": 1024 },
+          "starts_at": { "type": "string", "format": "date-time" },
+          "ends_at": { "type": "string", "format": "date-time" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "cancelled_at": { "type": ["string", "null"], "format": "date-time" }
+        }
+      },
+      "MaintenanceWindowListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["items"],
+        "properties": { "items": { "type": "array", "maxItems": 200, "items": { "$ref": "#/components/schemas/MaintenanceWindowResponse" } } }
+      },
+      "AuditEventResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "actor_type", "actor_id", "action", "target_type", "target_id", "details", "occurred_at"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "actor_type": { "enum": ["user", "service", "agent", "system"] },
+          "actor_id": { "type": ["string", "null"], "format": "uuid" },
+          "action": { "type": "string" },
+          "target_type": { "type": "string" },
+          "target_id": { "type": ["string", "null"], "format": "uuid" },
+          "details": { "type": "object", "additionalProperties": true },
+          "occurred_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "AuditEventListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["items"],
+        "properties": { "items": { "type": "array", "maxItems": 200, "items": { "$ref": "#/components/schemas/AuditEventResponse" } } }
+      },
+      "AdminSummaryResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["tenant_id", "deployment_mode", "projects", "services", "agents", "open_incidents", "pending_alerts", "dead_lettered_alerts", "active_maintenance_windows", "oldest_pending_alert_at", "worker_status", "worker_started_at", "worker_last_cycle_at", "worker_last_cycle_claimed", "worker_last_cycle_completed", "worker_last_cycle_retried", "worker_last_cycle_dead_lettered"],
+        "properties": {
+          "tenant_id": { "type": "string", "format": "uuid" },
+          "deployment_mode": { "enum": ["community", "cloud"] },
+          "projects": { "type": "integer", "minimum": 0 },
+          "services": { "type": "integer", "minimum": 0 },
+          "agents": { "type": "integer", "minimum": 0 },
+          "open_incidents": { "type": "integer", "minimum": 0 },
+          "pending_alerts": { "type": "integer", "minimum": 0 },
+          "dead_lettered_alerts": { "type": "integer", "minimum": 0 },
+          "active_maintenance_windows": { "type": "integer", "minimum": 0 },
+          "oldest_pending_alert_at": { "type": ["string", "null"], "format": "date-time" },
+          "worker_status": { "enum": ["healthy", "stalled", "never_seen"] },
+          "worker_started_at": { "type": ["string", "null"], "format": "date-time" },
+          "worker_last_cycle_at": { "type": ["string", "null"], "format": "date-time" },
+          "worker_last_cycle_claimed": { "type": "integer", "minimum": 0 },
+          "worker_last_cycle_completed": { "type": "integer", "minimum": 0 },
+          "worker_last_cycle_retried": { "type": "integer", "minimum": 0 },
+          "worker_last_cycle_dead_lettered": { "type": "integer", "minimum": 0 }
+        }
+      },
       "TimelineItemResponse": {
         "type": "object",
         "additionalProperties": false,
@@ -1246,6 +1672,73 @@
             "type": "array",
             "maxItems": 500,
             "items": { "$ref": "#/components/schemas/AgentResponse" }
+          }
+        }
+      },
+      "AgentCapacityResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["used_bytes", "total_bytes", "utilization_percent"],
+        "properties": {
+          "used_bytes": { "type": "number", "minimum": 0, "maximum": 9007199254740992 },
+          "total_bytes": { "type": "number", "exclusiveMinimum": 0, "maximum": 9007199254740992 },
+          "utilization_percent": { "type": "number", "minimum": 0, "maximum": 100 }
+        }
+      },
+      "AgentProcessResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "running", "instances"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "running": { "type": "boolean" },
+          "instances": { "type": "integer", "minimum": 0, "maximum": 4294967295 }
+        }
+      },
+      "AgentTelemetrySnapshotResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "agent_id", "connection_state", "collection_state", "observed_at", "received_at",
+          "snapshot_stale", "platform", "architecture", "cpu_usage_percent", "memory", "disk",
+          "processes", "missing_metrics"
+        ],
+        "properties": {
+          "agent_id": { "type": "string", "format": "uuid" },
+          "connection_state": { "enum": ["online", "stale", "never_seen", "revoked", "quarantined", "unknown"] },
+          "collection_state": { "enum": ["complete", "partial", "unavailable"] },
+          "observed_at": { "type": ["string", "null"], "format": "date-time" },
+          "received_at": { "type": ["string", "null"], "format": "date-time" },
+          "snapshot_stale": { "type": "boolean" },
+          "platform": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 },
+          "architecture": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 },
+          "cpu_usage_percent": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+          "memory": {
+            "oneOf": [
+              { "$ref": "#/components/schemas/AgentCapacityResponse" },
+              { "type": "null" }
+            ]
+          },
+          "disk": {
+            "oneOf": [
+              { "$ref": "#/components/schemas/AgentCapacityResponse" },
+              { "type": "null" }
+            ]
+          },
+          "processes": {
+            "type": "array",
+            "maxItems": 16,
+            "items": { "$ref": "#/components/schemas/AgentProcessResponse" }
+          },
+          "missing_metrics": {
+            "type": "array",
+            "maxItems": 6,
+            "items": {
+              "enum": [
+                "agent.heartbeat", "host.cpu.utilization", "host.memory.used_bytes",
+                "host.memory.total_bytes", "host.disk.used_bytes", "host.disk.total_bytes"
+              ]
+            }
           }
         }
       },

@@ -9,9 +9,21 @@ export type ProjectResponse = components["schemas"]["ProjectResponse"];
 export type ServiceResponse = components["schemas"]["ServiceResponse"];
 export type IssuedCredentialResponse = components["schemas"]["IssuedCredentialResponse"];
 export type AgentResponse = components["schemas"]["AgentResponse"];
+export type AgentTelemetrySnapshotResponse =
+  components["schemas"]["AgentTelemetrySnapshotResponse"];
 export type IssuedEnrollmentTokenResponse = components["schemas"]["IssuedEnrollmentTokenResponse"];
 export type TimelineItemResponse = components["schemas"]["TimelineItemResponse"];
 export type GameProbeResponse = components["schemas"]["GameProbeResponse"];
+export type IncidentResponse = components["schemas"]["IncidentResponse"];
+export type IncidentActivityResponse = components["schemas"]["IncidentActivityResponse"];
+export type AlertDeliveryResponse = components["schemas"]["AlertDeliveryResponse"];
+export type AlertPolicyResponse = components["schemas"]["AlertPolicyResponse"];
+export type UpdateAlertPolicyRequest = components["schemas"]["UpdateAlertPolicyRequest"];
+export type MaintenanceWindowResponse = components["schemas"]["MaintenanceWindowResponse"];
+export type CreateMaintenanceWindowRequest =
+  components["schemas"]["CreateMaintenanceWindowRequest"];
+export type AuditEventResponse = components["schemas"]["AuditEventResponse"];
+export type AdminSummaryResponse = components["schemas"]["AdminSummaryResponse"];
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -81,6 +93,131 @@ async function mutateJson(
 
 export async function testAlertWebhook(): Promise<void> {
   await mutateJson("POST", "/v1/alerts/test");
+}
+
+export async function fetchIncidents(
+  projectId: string,
+  signal: AbortSignal,
+): Promise<IncidentResponse[]> {
+  const body = await getJson(
+    `/v1/incidents?project_id=${encodeURIComponent(projectId)}&limit=100`,
+    signal,
+  );
+  if (!isObject(body) || !Array.isArray(body.items)) {
+    throw new Error("Incident endpoint returned an unsupported contract");
+  }
+  return body.items as IncidentResponse[];
+}
+
+export async function fetchIncidentActivity(
+  projectId: string,
+  signal: AbortSignal,
+): Promise<IncidentActivityResponse[]> {
+  const body = await getJson(
+    `/v1/incidents/activity?project_id=${encodeURIComponent(projectId)}&limit=200`,
+    signal,
+  );
+  if (!isObject(body) || !Array.isArray(body.items)) {
+    throw new Error("Incident activity endpoint returned an unsupported contract");
+  }
+  return body.items as IncidentActivityResponse[];
+}
+
+export async function acknowledgeIncident(incidentId: string): Promise<void> {
+  await mutateJson("POST", `/v1/incidents/${encodeURIComponent(incidentId)}/acknowledge`);
+}
+
+export async function updateIncidentAssignment(
+  incidentId: string,
+  assigned: boolean,
+): Promise<void> {
+  await mutateJson("PUT", `/v1/incidents/${encodeURIComponent(incidentId)}/assignment`, {
+    assigned,
+  });
+}
+
+export async function addIncidentNote(incidentId: string, note: string): Promise<void> {
+  await mutateJson("POST", `/v1/incidents/${encodeURIComponent(incidentId)}/notes`, { note });
+}
+
+export async function fetchAlertDeliveries(
+  projectId: string,
+  signal: AbortSignal,
+): Promise<AlertDeliveryResponse[]> {
+  const body = await getJson(
+    `/v1/alerts/deliveries?project_id=${encodeURIComponent(projectId)}&limit=100`,
+    signal,
+  );
+  if (!isObject(body) || !Array.isArray(body.items)) {
+    throw new Error("Alert history endpoint returned an unsupported contract");
+  }
+  return body.items as AlertDeliveryResponse[];
+}
+
+export async function replayAlertDelivery(deliveryId: string): Promise<void> {
+  await mutateJson("POST", `/v1/alerts/deliveries/${encodeURIComponent(deliveryId)}/replay`);
+}
+
+export async function fetchAlertPolicy(signal: AbortSignal): Promise<AlertPolicyResponse> {
+  const body = await getJson("/v1/alerts/policy", signal);
+  if (!isObject(body) || typeof body.enabled !== "boolean") {
+    throw new Error("Alert policy endpoint returned an unsupported contract");
+  }
+  return body as AlertPolicyResponse;
+}
+
+export async function updateAlertPolicy(
+  input: UpdateAlertPolicyRequest,
+): Promise<AlertPolicyResponse> {
+  const body = await mutateJson("PUT", "/v1/alerts/policy", input);
+  if (!isObject(body) || typeof body.enabled !== "boolean") {
+    throw new Error("Alert policy update returned an unsupported contract");
+  }
+  return body as AlertPolicyResponse;
+}
+
+export async function fetchMaintenanceWindows(
+  projectId: string,
+  signal: AbortSignal,
+): Promise<MaintenanceWindowResponse[]> {
+  const body = await getJson(
+    `/v1/maintenance-windows?project_id=${encodeURIComponent(projectId)}&limit=100`,
+    signal,
+  );
+  if (!isObject(body) || !Array.isArray(body.items)) {
+    throw new Error("Maintenance endpoint returned an unsupported contract");
+  }
+  return body.items as MaintenanceWindowResponse[];
+}
+
+export async function createMaintenanceWindow(
+  input: CreateMaintenanceWindowRequest,
+): Promise<MaintenanceWindowResponse> {
+  const body = await mutateJson("POST", "/v1/maintenance-windows", input);
+  if (!isObject(body) || typeof body.id !== "string") {
+    throw new Error("Maintenance creation returned an unsupported contract");
+  }
+  return body as MaintenanceWindowResponse;
+}
+
+export async function cancelMaintenanceWindow(windowId: string): Promise<void> {
+  await mutateJson("DELETE", `/v1/maintenance-windows/${encodeURIComponent(windowId)}`);
+}
+
+export async function fetchAuditEvents(signal: AbortSignal): Promise<AuditEventResponse[]> {
+  const body = await getJson("/v1/audit-events?limit=100", signal);
+  if (!isObject(body) || !Array.isArray(body.items)) {
+    throw new Error("Audit endpoint returned an unsupported contract");
+  }
+  return body.items as AuditEventResponse[];
+}
+
+export async function fetchAdminSummary(signal: AbortSignal): Promise<AdminSummaryResponse> {
+  const body = await getJson("/v1/admin/summary", signal);
+  if (!isObject(body) || typeof body.tenant_id !== "string") {
+    throw new Error("Admin summary returned an unsupported contract");
+  }
+  return body as AdminSummaryResponse;
 }
 
 export async function fetchHealth(signal: AbortSignal): Promise<HealthResponse> {
@@ -227,6 +364,22 @@ export async function fetchAgents(signal: AbortSignal): Promise<AgentResponse[]>
     throw new Error("Company machine endpoint returned an unsupported contract");
   }
   return body.items as AgentResponse[];
+}
+
+export async function fetchAgentTelemetry(
+  agentId: string,
+  signal: AbortSignal,
+): Promise<AgentTelemetrySnapshotResponse> {
+  const body = await getJson(`/v1/agents/${encodeURIComponent(agentId)}/telemetry`, signal);
+  if (
+    !isObject(body) ||
+    body.agent_id !== agentId ||
+    !Array.isArray(body.processes) ||
+    !Array.isArray(body.missing_metrics)
+  ) {
+    throw new Error("Machine telemetry endpoint returned an unsupported contract");
+  }
+  return body as AgentTelemetrySnapshotResponse;
 }
 
 export async function createWorkspace(input: CreateProjectRequest): Promise<ProjectResponse> {

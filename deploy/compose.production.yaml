@@ -1,0 +1,116 @@
+services:
+  postgres:
+    image: postgres:18.1-alpine3.23@sha256:aa6eb304ddb6dd26df23d05db4e5cb05af8951cda3e0dc57731b771e0ef4ab29
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?missing production environment}
+      POSTGRES_USER: ${POSTGRES_USER:?missing production environment}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?missing production environment}
+      MEERKATEER_APP_PASSWORD: ${MEERKATEER_APP_PASSWORD:?missing production environment}
+      MEERKATEER_WORKER_PASSWORD: ${MEERKATEER_WORKER_PASSWORD:?missing production environment}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../migrations/0001_initial.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+      - ../migrations/0002_identity_and_tenant_boundary.sql:/docker-entrypoint-initdb.d/002-identity.sql:ro
+      - ../migrations/0003_bootstrap_state.sql:/docker-entrypoint-initdb.d/003-bootstrap.sql:ro
+      - ../migrations/0004_agent_credential_usage.sql:/docker-entrypoint-initdb.d/004-agent-credential-usage.sql:ro
+      - ../migrations/0005_durable_ingest.sql:/docker-entrypoint-initdb.d/005-durable-ingest.sql:ro
+      - ../migrations/0006_agent_telemetry.sql:/docker-entrypoint-initdb.d/006-agent-telemetry.sql:ro
+      - ../migrations/0007_outbox_delivery.sql:/docker-entrypoint-initdb.d/007-outbox-delivery.sql:ro
+      - ../migrations/0008_workspace_agents.sql:/docker-entrypoint-initdb.d/008-workspace-agents.sql:ro
+      - ../migrations/0009_community_owner_password.sql:/docker-entrypoint-initdb.d/009-community-owner-password.sql:ro
+      - ../migrations/0010_minecraft_instances.sql:/docker-entrypoint-initdb.d/010-minecraft-instances.sql:ro
+      - ../migrations/0011_operations.sql:/docker-entrypoint-initdb.d/011-operations.sql:ro
+      - ../migrations/0012_incident_workflow.sql:/docker-entrypoint-initdb.d/012-incident-workflow.sql:ro
+      - ../migrations/0013_alert_replay_cooldown.sql:/docker-entrypoint-initdb.d/013-alert-replay-cooldown.sql:ro
+      - ../migrations/0014_worker_progress.sql:/docker-entrypoint-initdb.d/014-worker-progress.sql:ro
+      - ../dev/init-runtime-role.sh:/docker-entrypoint-initdb.d/015-runtime-role.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    stop_grace_period: 30s
+    networks: [backend]
+
+  server:
+    image: ${MEERKATEER_SERVER_IMAGE:-ghcr.io/theparitt/meerkateer-server}:${MEERKATEER_IMAGE_TAG:?missing production image tag}
+    pull_policy: always
+    environment:
+      MEERKATEER_DATABASE_URL: ${MEERKATEER_DATABASE_URL:?missing application database URL}
+      MEERKATEER_DEPLOYMENT_MODE: ${MEERKATEER_DEPLOYMENT_MODE:-community}
+      MEERKATEER_STORAGE_PROFILE: ${MEERKATEER_STORAGE_PROFILE:-compact}
+      MEERKATEER_BIND_ADDR: 0.0.0.0:8080
+      MEERKATEER_SERVICE_ENVIRONMENT: production
+      MEERKATEER_METRICS_ENABLED: ${MEERKATEER_METRICS_ENABLED:-true}
+      MEERKATEER_METRICS_TOKEN: ${MEERKATEER_METRICS_TOKEN:?missing metrics token}
+      MEERKATEER_BOOTSTRAP_TOKEN: ${MEERKATEER_BOOTSTRAP_TOKEN:?missing bootstrap token}
+      MEERKATEER_ALERT_WEBHOOK_URL: ${MEERKATEER_ALERT_WEBHOOK_URL:-}
+      MEERKATEER_DATABASE_MAX_CONNECTIONS: ${MEERKATEER_DATABASE_MAX_CONNECTIONS:-20}
+      MEERKATEER_AUTH_RATE_LIMIT_PER_MINUTE: ${MEERKATEER_AUTH_RATE_LIMIT_PER_MINUTE:-300}
+      MEERKATEER_INGEST_RATE_LIMIT_PER_MINUTE: ${MEERKATEER_INGEST_RATE_LIMIT_PER_MINUTE:-1200}
+      MEERKATEER_HEARTBEAT_STALE_AFTER_SECONDS: ${MEERKATEER_HEARTBEAT_STALE_AFTER_SECONDS:-180}
+      RUST_LOG: ${RUST_LOG:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 10s
+    read_only: true
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    pids_limit: 256
+    restart: unless-stopped
+    stop_grace_period: 30s
+    ports: ["127.0.0.1:${MEERKATEER_API_PORT:-6510}:8080"]
+    networks: [backend, edge]
+    logging:
+      driver: json-file
+      options: {max-size: 20m, max-file: "5"}
+
+  worker:
+    image: ${MEERKATEER_WORKER_IMAGE:-ghcr.io/theparitt/meerkateer-worker}:${MEERKATEER_IMAGE_TAG:?missing production image tag}
+    pull_policy: always
+    entrypoint: ["/usr/local/bin/meerkateer-worker"]
+    environment:
+      MEERKATEER_DATABASE_URL: ${MEERKATEER_WORKER_DATABASE_URL:?missing worker database URL}
+      MEERKATEER_DEPLOYMENT_MODE: ${MEERKATEER_DEPLOYMENT_MODE:-community}
+      MEERKATEER_STORAGE_PROFILE: ${MEERKATEER_STORAGE_PROFILE:-compact}
+      MEERKATEER_SERVICE_ENVIRONMENT: production
+      MEERKATEER_METRICS_ENABLED: ${MEERKATEER_METRICS_ENABLED:-true}
+      MEERKATEER_METRICS_TOKEN: ${MEERKATEER_METRICS_TOKEN:?missing metrics token}
+      MEERKATEER_ALERT_WEBHOOK_URL: ${MEERKATEER_ALERT_WEBHOOK_URL:-}
+      RUST_LOG: ${RUST_LOG:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    read_only: true
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    pids_limit: 256
+    restart: unless-stopped
+    stop_grace_period: 30s
+    networks: [backend, edge]
+    logging:
+      driver: json-file
+      options: {max-size: 20m, max-file: "5"}
+
+volumes:
+  postgres-data:
+
+networks:
+  backend:
+    internal: true
+  edge:

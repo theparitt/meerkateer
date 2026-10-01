@@ -1,0 +1,95 @@
+services:
+  python-demo:
+    build:
+      context: ../..
+      dockerfile: examples/multi-language/python/Dockerfile
+    environment:
+      MEERKATEER_URL: ${MEERKATEER_URL:?run make sdk-lab}
+      MEERKATEER_SERVICE_KEY: ${PYTHON_SERVICE_KEY:?run make sdk-lab}
+      MEERKATEER_PROJECT: ${MEERKATEER_PROJECT:-sdk-lab}
+      MEERKATEER_SERVICE: python-demo
+      MEERKATEER_ENVIRONMENT: local
+      DEMO_PORT: 19101
+      DEMO_HEARTBEAT_SECONDS: ${DEMO_HEARTBEAT_SECONDS:-5}
+    network_mode: host
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    restart: unless-stopped
+
+  node-demo:
+    build:
+      context: ../..
+      dockerfile: examples/multi-language/node/Dockerfile
+    environment:
+      MEERKATEER_URL: ${MEERKATEER_URL:?run make sdk-lab}
+      MEERKATEER_SERVICE_KEY: ${NODE_SERVICE_KEY:?run make sdk-lab}
+      MEERKATEER_PROJECT: ${MEERKATEER_PROJECT:-sdk-lab}
+      MEERKATEER_SERVICE: node-demo
+      MEERKATEER_ENVIRONMENT: local
+      DEMO_PORT: 19102
+      DEMO_HEARTBEAT_SECONDS: ${DEMO_HEARTBEAT_SECONDS:-5}
+    network_mode: host
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    restart: unless-stopped
+
+  go-demo:
+    build:
+      context: ../..
+      dockerfile: examples/multi-language/go/Dockerfile
+    environment:
+      MEERKATEER_URL: ${MEERKATEER_URL:?run make sdk-lab}
+      MEERKATEER_SERVICE_KEY: ${GO_SERVICE_KEY:?run make sdk-lab}
+      MEERKATEER_PROJECT: ${MEERKATEER_PROJECT:-sdk-lab}
+      MEERKATEER_SERVICE: go-demo
+      MEERKATEER_ENVIRONMENT: local
+      DEMO_PORT: 19103
+      DEMO_HEARTBEAT_SECONDS: ${DEMO_HEARTBEAT_SECONDS:-5}
+    network_mode: host
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    restart: unless-stopped
+
+  php-demo:
+    build:
+      context: ../..
+      dockerfile: examples/multi-language/php/Dockerfile
+    environment:
+      MEERKATEER_URL: ${MEERKATEER_URL:?run make sdk-lab}
+      MEERKATEER_SERVICE_KEY: ${PHP_SERVICE_KEY:?run make sdk-lab}
+      MEERKATEER_PROJECT: ${MEERKATEER_PROJECT:-sdk-lab}
+      MEERKATEER_SERVICE: php-demo
+      MEERKATEER_ENVIRONMENT: local
+      DEMO_PORT: 19104
+      DEMO_HEARTBEAT_SECONDS: ${DEMO_HEARTBEAT_SECONDS:-5}
+    network_mode: host
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    restart: unless-stopped
+
+  rust-demo:
+    build:
+      context: ../..
+      dockerfile: examples/multi-language/rust/Dockerfile
+    environment:
+      MEERKATEER_URL: ${MEERKATEER_URL:?run make sdk-lab}
+      MEERKATEER_SERVICE_KEY: ${RUST_SERVICE_KEY:?run make sdk-lab}
+      MEERKATEER_PROJECT: ${MEERKATEER_PROJECT:-sdk-lab}
+      MEERKATEER_SERVICE: rust-demo
+      MEERKATEER_ENVIRONMENT: local
+      DEMO_PORT: 19105
+      DEMO_HEARTBEAT_SECONDS: ${DEMO_HEARTBEAT_SECONDS:-5}
+    network_mode: host
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    restart: unless-stopped

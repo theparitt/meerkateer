@@ -9,6 +9,10 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.wrangler/
 *.pem
 *.key
 *.p12
@@ -26,6 +30,7 @@ meerkateer-web/vite.config.js
 meerkateer-web/vite.config.d.ts
 
 # Tests and local runtime
+dev/.multilang-lab.env
 .pytest_cache/
 __pycache__/
 *.pyc

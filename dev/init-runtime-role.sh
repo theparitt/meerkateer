@@ -35,15 +35,22 @@ GRANT CONNECT ON DATABASE :"database_name" TO meerkateer_worker;
 GRANT USAGE ON SCHEMA public TO meerkateer_worker, meerkateer_outbox_executor;
 GRANT SELECT, UPDATE ON outbox TO meerkateer_outbox_executor;
 GRANT SELECT, INSERT ON outbox_dead_letters TO meerkateer_outbox_executor;
+GRANT SELECT, UPDATE ON alert_deliveries TO meerkateer_outbox_executor;
+GRANT SELECT, INSERT, UPDATE, DELETE ON worker_runtime TO meerkateer_outbox_executor;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO meerkateer_outbox_executor;
 
 ALTER FUNCTION meerkateer_claim_outbox(uuid, integer) OWNER TO meerkateer_outbox_executor;
 ALTER FUNCTION meerkateer_complete_outbox(uuid, uuid) OWNER TO meerkateer_outbox_executor;
 ALTER FUNCTION meerkateer_retry_outbox(uuid, uuid, text, integer) OWNER TO meerkateer_outbox_executor;
 ALTER FUNCTION meerkateer_dead_letter_outbox(uuid, uuid, text) OWNER TO meerkateer_outbox_executor;
+ALTER FUNCTION meerkateer_record_worker_cycle(uuid, timestamptz, integer, integer, integer, integer)
+    OWNER TO meerkateer_outbox_executor;
 
 GRANT EXECUTE ON FUNCTION meerkateer_claim_outbox(uuid, integer) TO meerkateer_worker;
 GRANT EXECUTE ON FUNCTION meerkateer_complete_outbox(uuid, uuid) TO meerkateer_worker;
 GRANT EXECUTE ON FUNCTION meerkateer_retry_outbox(uuid, uuid, text, integer) TO meerkateer_worker;
 GRANT EXECUTE ON FUNCTION meerkateer_dead_letter_outbox(uuid, uuid, text) TO meerkateer_worker;
+GRANT EXECUTE ON FUNCTION meerkateer_record_worker_cycle(
+    uuid, timestamptz, integer, integer, integer, integer
+) TO meerkateer_worker;
 SQL

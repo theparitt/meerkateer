@@ -27,7 +27,20 @@ cargo build --quiet -p meerkateer-agent
 cargo build --quiet -p meerkateer-sdk --example send_event
 test -x target/debug/meerkateer-agent
 test -x target/debug/examples/send_event
-MEERKATEER_API_PORT="$api_port" docker compose -p "$project" up -d --build postgres server
+fleet_stale_after_seconds="${MEERKATEER_FLEET_STALE_AFTER_SECONDS:-30}"
+MEERKATEER_API_PORT="$api_port" \
+MEERKATEER_HEARTBEAT_STALE_AFTER_SECONDS="$fleet_stale_after_seconds" \
+docker compose -p "$project" up -d --build postgres server
+ready_attempt=0
+until curl --fail --silent --max-time 2 "http://127.0.0.1:${api_port}/ready" >/dev/null; do
+    ready_attempt=$((ready_attempt + 1))
+    if [ "$ready_attempt" -ge 30 ]; then
+        docker compose -p "$project" logs server >&2
+        echo 'integration API did not become ready' >&2
+        exit 1
+    fi
+    sleep 1
+done
 MEERKATEER_E2E_URL="http://127.0.0.1:${api_port}" \
 MEERKATEER_AGENT_BIN="$(pwd)/target/debug/meerkateer-agent" \
 MEERKATEER_RUST_SDK_BIN="$(pwd)/target/debug/examples/send_event" \
@@ -39,6 +52,11 @@ docker compose -p "$project" exec -T postgres \
     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
     < tests/integration/prepare_outbox_worker.sql
 
+# The server and worker share one Dockerfile but Compose gives each service its
+# own image tag. Build the worker explicitly so a previous local test image can
+# never hide worker source changes.
+docker compose -p "$project" build worker
+
 if printf '%s\n' 'SELECT count(*) FROM outbox;' \
     | docker compose -p "$project" exec -T \
         -e "PGPASSWORD=$MEERKATEER_WORKER_PASSWORD" postgres \
@@ -47,10 +65,34 @@ if printf '%s\n' 'SELECT count(*) FROM outbox;' \
     echo 'worker login unexpectedly has direct outbox table access' >&2
     exit 1
 fi
+if printf '%s\n' 'SELECT count(*) FROM worker_runtime;' \
+    | docker compose -p "$project" exec -T \
+        -e "PGPASSWORD=$MEERKATEER_WORKER_PASSWORD" postgres \
+        psql -h 127.0.0.1 -U meerkateer_worker -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 \
+        >/dev/null 2>&1; then
+    echo 'worker login unexpectedly has direct worker progress table access' >&2
+    exit 1
+fi
 
 docker compose -p "$project" run --rm --no-deps worker --once
 docker compose -p "$project" exec -T postgres \
     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
     < tests/integration/assert_e2e.sql
 
-echo 'Meerkateer API, PostgreSQL, worker retry, and dead-letter integration passed.'
+# Reset the bounded in-memory authentication budget exhausted by the abuse-control case,
+# then exercise a concurrent real-agent fleet against the same isolated database.
+docker compose -p "$project" restart server >/dev/null
+until curl --fail --silent --max-time 2 "http://127.0.0.1:${api_port}/ready" >/dev/null; do
+    sleep 1
+done
+MEERKATEER_E2E_URL="http://127.0.0.1:${api_port}" \
+MEERKATEER_AGENT_BIN="$(pwd)/target/debug/meerkateer-agent" \
+MEERKATEER_FLEET_STALE_AFTER_SECONDS="$fleet_stale_after_seconds" \
+python3 tests/integration/fleet_e2e.py
+
+docker compose -p "$project" run --rm --no-deps worker --once
+docker compose -p "$project" exec -T postgres \
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+    < tests/integration/assert_fleet.sql
+
+echo 'Meerkateer API, PostgreSQL, worker, DLQ, and concurrent fleet integration passed.'

@@ -328,6 +328,8 @@ def bootstrap_and_inventory() -> tuple[str, str, str, str]:
 def mks_ingestion(
     project_id: str, service_id: str, credential_id: str, secret: str
 ) -> None:
+    owner_session = expect(call("GET", "/v1/session"), 200).body
+    owner_user_id = owner_session["user_id"]
     expect(
         call(
             "POST",
@@ -523,6 +525,95 @@ def mks_ingestion(
     assert projected["reported_state"] == "offline", projected
     assert projected["stale"] is False, projected
     assert projected["observed_at"] == fresh_timestamp, projected
+    open_incidents = expect(
+        call("GET", f"/v1/incidents?project_id={project_id}&limit=20"), 200
+    ).body["items"]
+    assert len(open_incidents) == 1 and open_incidents[0]["status"] == "open", open_incidents
+    incident_id = open_incidents[0]["id"]
+    expect(
+        call("POST", f"/v1/incidents/{incident_id}/acknowledge"),
+        403,
+        "csrf_failed",
+    )
+    expect(
+        call(
+            "POST",
+            f"/v1/incidents/{incident_id}/acknowledge",
+            headers=browser_headers(),
+        ),
+        204,
+    )
+    expect(
+        call(
+            "POST",
+            f"/v1/incidents/{incident_id}/acknowledge",
+            headers=browser_headers(),
+        ),
+        204,
+    )
+    expect(
+        call(
+            "PUT",
+            f"/v1/incidents/{incident_id}/assignment",
+            body={"assigned": True},
+            headers=browser_headers(),
+        ),
+        204,
+    )
+    expect(
+        call(
+            "PUT",
+            f"/v1/incidents/{incident_id}/assignment",
+            body={"assigned": True},
+            headers=browser_headers(),
+        ),
+        204,
+    )
+    expect(
+        call(
+            "POST",
+            f"/v1/incidents/{incident_id}/notes",
+            body={"note": "   "},
+            headers=browser_headers(),
+        ),
+        400,
+        "invalid_request",
+    )
+    expect(
+        call(
+            "POST",
+            f"/v1/incidents/{incident_id}/notes",
+            body={"note": "ตรวจสอบแล้ว: process หยุดจริง"},
+            headers=browser_headers(),
+        ),
+        204,
+    )
+    expect(
+        call(
+            "POST",
+            f"/v1/incidents/{uuid.uuid4()}/notes",
+            body={"note": "must stay tenant-hidden"},
+            headers=browser_headers(),
+        ),
+        404,
+        "not_found",
+    )
+    after_operator_action = expect(
+        call("GET", f"/v1/projects/{project_id}/services"), 200
+    ).body["items"][0]["status"]
+    assert after_operator_action["state"] == "offline", after_operator_action
+    open_incidents = expect(
+        call("GET", f"/v1/incidents?project_id={project_id}&limit=20"), 200
+    ).body["items"]
+    assert open_incidents[0]["acknowledged_at"], open_incidents
+    assert open_incidents[0]["acknowledged_by"] == owner_session["display_name"], open_incidents
+    assert open_incidents[0]["assigned_to"] == owner_user_id, open_incidents
+    assert open_incidents[0]["assignee"] == owner_session["display_name"], open_incidents
+    activity = expect(
+        call("GET", f"/v1/incidents/activity?project_id={project_id}&limit=20"), 200
+    ).body["items"]
+    assert [item["kind"] for item in activity] == ["note", "assigned", "acknowledged"], activity
+    assert activity[0]["note"] == "ตรวจสอบแล้ว: process หยุดจริง", activity
     recovered_timestamp = utc(dt.timedelta(seconds=1))
     expect(
         call(
@@ -543,6 +634,168 @@ def mks_ingestion(
     assert projected["state"] == "online", projected
     assert projected["reported_state"] == "online", projected
     assert projected["observed_at"] == recovered_timestamp, projected
+    incidents = expect(
+        call("GET", f"/v1/incidents?project_id={project_id}&limit=20"), 200
+    ).body["items"]
+    assert len(incidents) == 1, incidents
+    assert incidents[0]["status"] == "resolved", incidents
+    assert incidents[0]["cause"] == "game process exited", incidents
+    assert incidents[0]["resolved_at"] == recovered_timestamp, incidents
+    assert incidents[0]["acknowledged_at"] and incidents[0]["assigned_to"] == owner_user_id, incidents
+    expect(
+        call(
+            "PUT",
+            f"/v1/incidents/{incident_id}/assignment",
+            body={"assigned": False},
+            headers=browser_headers(),
+        ),
+        204,
+    )
+    deliveries = expect(
+        call("GET", f"/v1/alerts/deliveries?project_id={project_id}&limit=20"), 200
+    ).body["items"]
+    assert [item["transition"] for item in deliveries[:2]] == ["recovered", "down"], deliveries
+    assert all(item["status"] == "skipped_unconfigured" for item in deliveries[:2]), deliveries
+    assert all(item["replay_of"] is None for item in deliveries[:2]), deliveries
+    policy = expect(call("GET", "/v1/alerts/policy"), 200).body
+    assert policy == {
+        "enabled": True,
+        "notify_down": True,
+        "notify_recovered": True,
+        "cooldown_seconds": 0,
+        "webhook_configured": False,
+        "updated_at": None,
+    }, policy
+    expect(
+        call(
+            "PUT",
+            "/v1/alerts/policy",
+            body={"enabled": False, "notify_down": True, "notify_recovered": True, "cooldown_seconds": 120},
+        ),
+        403,
+        "csrf_failed",
+    )
+    policy = expect(
+        call(
+            "PUT",
+            "/v1/alerts/policy",
+            body={"enabled": False, "notify_down": True, "notify_recovered": True, "cooldown_seconds": 120},
+            headers=browser_headers(),
+        ),
+        200,
+    ).body
+    assert policy["enabled"] is False and policy["cooldown_seconds"] == 120 and policy["updated_at"], policy
+    maintenance = expect(
+        call(
+            "POST",
+            "/v1/maintenance-windows",
+            body={
+                "project_id": project_id,
+                "service_id": service_id,
+                "title": "Rolling upgrade",
+                "reason": "planned game process restart",
+                "starts_at": utc(dt.timedelta(minutes=-1)),
+                "ends_at": utc(dt.timedelta(minutes=10)),
+            },
+            headers=browser_headers(),
+        ),
+        201,
+    ).body
+    assert maintenance["service"] == "game-api", maintenance
+    operations_base = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+    operation_time = lambda seconds: (operations_base + dt.timedelta(seconds=seconds)).isoformat().replace("+00:00", "Z")
+    maintenance_down = operation_time(2)
+    expect(
+        call(
+            "POST",
+            "/v1/ingest/heartbeat",
+            body=dict(
+                heartbeat,
+                timestamp=maintenance_down,
+                status="down",
+                message="planned process restart",
+            ),
+            headers=bearer(secret, str(uuid.uuid4())),
+        ),
+        202,
+    )
+    # A repeated newer down is evidence, but must not open or notify a second incident.
+    expect(
+        call(
+            "POST",
+            "/v1/ingest/heartbeat",
+            body=dict(heartbeat, timestamp=operation_time(3), status="down"),
+            headers=bearer(secret, str(uuid.uuid4())),
+        ),
+        202,
+    )
+    incidents = expect(
+        call("GET", f"/v1/incidents?project_id={project_id}&limit=20"), 200
+    ).body["items"]
+    assert len(incidents) == 2 and incidents[0]["status"] == "open", incidents
+    deliveries = expect(
+        call("GET", f"/v1/alerts/deliveries?project_id={project_id}&limit=20"), 200
+    ).body["items"]
+    assert len(deliveries) == 3, deliveries
+    assert deliveries[0]["status"] == "suppressed", deliveries
+    assert deliveries[0]["suppression_reason"] == "planned game process restart", deliveries
+    # Older evidence is retained but cannot recover the newer outage.
+    expect(
+        call(
+            "POST",
+            "/v1/ingest/heartbeat",
+            body=dict(heartbeat, timestamp=operation_time(1), message="late packet"),
+            headers=bearer(secret, str(uuid.uuid4())),
+        ),
+        202,
+    )
+    incidents = expect(
+        call("GET", f"/v1/incidents?project_id={project_id}&limit=20"), 200
+    ).body["items"]
+    assert incidents[0]["status"] == "open", incidents
+    final_recovery = operation_time(4)
+    expect(
+        call(
+            "POST",
+            "/v1/ingest/heartbeat",
+            body=dict(heartbeat, timestamp=final_recovery, message="upgrade complete"),
+            headers=bearer(secret, str(uuid.uuid4())),
+        ),
+        202,
+    )
+    incidents = expect(
+        call("GET", f"/v1/incidents?project_id={project_id}&limit=20"), 200
+    ).body["items"]
+    assert incidents[0]["status"] == "resolved" and incidents[0]["resolved_at"] == final_recovery, incidents
+    windows = expect(
+        call("GET", f"/v1/maintenance-windows?project_id={project_id}&limit=20"), 200
+    ).body["items"]
+    assert len(windows) == 1 and windows[0]["cancelled_at"] is None, windows
+    expect(call("DELETE", f"/v1/maintenance-windows/{maintenance['id']}"), 403, "csrf_failed")
+    expect(
+        call(
+            "DELETE",
+            f"/v1/maintenance-windows/{maintenance['id']}",
+            headers=browser_headers(),
+        ),
+        204,
+    )
+    summary = expect(call("GET", "/v1/admin/summary"), 200).body
+    assert summary["open_incidents"] == 0 and summary["active_maintenance_windows"] == 0, summary
+    assert summary["worker_status"] == "never_seen", summary
+    assert summary["worker_last_cycle_at"] is None, summary
+    assert summary["worker_last_cycle_claimed"] == 0, summary
+    audit = expect(call("GET", "/v1/audit-events?limit=100"), 200).body["items"]
+    actions = {item["action"] for item in audit}
+    assert {
+        "alert.policy.update",
+        "incident.acknowledge",
+        "incident.assign",
+        "incident.unassign",
+        "incident.note",
+        "maintenance.create",
+        "maintenance.cancel",
+    } <= actions, actions
     event = {
         "interface_version": "1",
         "service": "game-api",
@@ -710,11 +963,27 @@ def enroll_agent(project_id: str) -> tuple[str, str]:
             assert config_path.stat().st_mode & 0o777 == 0o600
         doctor = run_agent(["--config", str(config_path), "doctor"])
         assert doctor["status"] == "ok" and doctor["pending_batch"] is False
+        empty_snapshot = expect(
+            call("GET", f"/v1/agents/{config['agent_id']}/telemetry"), 200
+        ).body
+        assert empty_snapshot["connection_state"] == "never_seen"
+        assert empty_snapshot["collection_state"] == "unavailable"
+        assert empty_snapshot["snapshot_stale"] is True
+        assert empty_snapshot["processes"] == []
+        assert len(empty_snapshot["missing_metrics"]) == 6
 
         config["server_url"] = "http://127.0.0.1:1/"
         config_path.write_text(json.dumps(config), encoding="utf-8")
         failed = subprocess.run(
-            [AGENT_BIN, "--config", str(config_path), "run", "--once"],
+            [
+                AGENT_BIN,
+                "--config",
+                str(config_path),
+                "run",
+                "--once",
+                "--watch-process",
+                "python3",
+            ],
             check=False,
             capture_output=True,
             text=True,
@@ -724,16 +993,42 @@ def enroll_agent(project_id: str) -> tuple[str, str]:
         assert "mka_agent_" not in failed.stdout + failed.stderr
         pending = json.loads(config_path.read_text(encoding="utf-8"))
         assert pending["pending_batch"]["first_sequence"] == 1
+        assert pending["pending_batch"]["last_sequence"] == 7
+        assert len(pending["pending_batch"]["records"]) == 7
+        process_records = [
+            record
+            for record in pending["pending_batch"]["records"]
+            if record["metric"] == "process.running"
+        ]
+        assert len(process_records) == 1
+        assert process_records[0]["attributes"] == {"process": "python3"}
+        assert process_records[0]["value"] >= 1
         pending_batch_id = pending["pending_batch"]["batch_id"]
         pending["server_url"] = f"{BASE_URL}/"
         config_path.write_text(json.dumps(pending), encoding="utf-8")
 
         sent = run_agent(["--config", str(config_path), "run", "--once"])
-        assert sent["status"] == "accepted" and sent["accepted_through_sequence"] == 1
+        assert sent["status"] == "accepted" and sent["accepted_through_sequence"] == 7
         assert sent["batch_id"] == pending_batch_id
         persisted = json.loads(config_path.read_text(encoding="utf-8"))
-        assert persisted["next_sequence"] == 2
+        assert persisted["next_sequence"] == 8
         assert "pending_batch" not in persisted
+        snapshot = expect(
+            call("GET", f"/v1/agents/{config['agent_id']}/telemetry"), 200
+        ).body
+        assert snapshot["agent_id"] == config["agent_id"]
+        assert snapshot["connection_state"] == "online"
+        assert snapshot["collection_state"] == "complete"
+        assert snapshot["snapshot_stale"] is False
+        assert 0 <= snapshot["cpu_usage_percent"] <= 100
+        assert snapshot["memory"]["used_bytes"] <= snapshot["memory"]["total_bytes"]
+        assert snapshot["disk"]["used_bytes"] <= snapshot["disk"]["total_bytes"]
+        assert snapshot["missing_metrics"] == []
+        assert len(snapshot["processes"]) == 1
+        assert snapshot["processes"][0]["name"] == "python3"
+        assert snapshot["processes"][0]["running"] is True
+        assert snapshot["processes"][0]["instances"] >= 1
+        expect(call("GET", f"/v1/agents/{uuid.uuid4()}/telemetry"), 404, "not_found")
         installation_id = config["installation_id"]
         enrollment_body = {
             "installation_id": installation_id,

@@ -1,5 +1,9 @@
 # Meerkateer Community-first delivery plan
 
+This document expands the active `0.2 Community Alpha` slice in the canonical
+[roadmap to 1.0](roadmap-to-1.0.md). Its CE phase identifiers remain acceptance-test groupings,
+not separate product version numbers.
+
 Status: CE-0 complete for the isolated Compose pilot, 2026-09-28. CE-1 is in progress.
 This plan supersedes the choice of a
 game or WooCommerce pilot and pauses Cloud, billing, and hosted signup work. The
@@ -19,11 +23,12 @@ there is runnable code, but the requested operator outcome is not yet verified.
 | Capability | Source | Current result | Evidence | Gap |
 | --- | --- | --- | --- | --- |
 | Owner setup and login | `meerkateer-server/src/lib.rs` (`bootstrap`, `password_login`, `password_setup`), `migrations/0009_community_owner_password.sql`, `meerkateer-web/src/App.tsx` | Partial | `tests/integration/api_e2e.py` rejects second bootstrap, tests password login/recovery and retired setup-key login; `/` routes fresh Community to setup | No clean-machine browser journey recorded |
-| Host enrollment and telemetry | `meerkateer-agent/src/main.rs`, `migrations/0006_agent_telemetry.sql`, server `/v1/agent/telemetry` | Partial | Agent CLI enroll/doctor/run and credential lifecycle are exercised in `api_e2e.py`; agent unit tests cover durable batch retry | Agent currently sends `agent.heartbeat` only; no disk, inode, memory-pressure, or process-state collector |
-| Service signals | `sdk/{node,go,rust,python,php}`, server `ingest_heartbeat`, `ingest_event`, `ingest_deploy` | Partial | MKS E2E proves auth, idempotency, status transitions and timeline; SDK unit tests pass | No scheduled HTTP/TLS check or last-success worker check |
-| Status and staleness | `service_snapshots`, `service_from_row` and `agent_responses` in server, `AvailabilityBoard.tsx` | Partial | E2E proves fresh down then fresh recovery and aged heartbeat becomes `unknown` | Permission failure and collector failure are not first-class status reasons; no automatic incident open/close |
-| Incident evidence | `ingest_messages`, `/v1/services/{id}/timeline`, `AvailabilityBoard.tsx` | Partial | E2E checks down/recovery reasons, event/deploy timeline; web tests check detail interactions | Timeline facts are not a deduplicated incident engine; no separate hypotheses/missing-evidence/next-check fields |
-| Alert delivery | `outbox`, `outbox_dead_letters`, `meerkateer-worker/src/main.rs`, `/v1/alerts/test` | Partial | Single webhook channel, test button, down/recovery transition enqueue and worker delivery have isolated E2E coverage | Confirmation, maintenance and alert history UI remain |
+| Host enrollment and telemetry | `meerkateer-agent/src/main.rs`, `meerkateer-agent/src/collector.rs`, `migrations/0006_agent_telemetry.sql`, server `/v1/agent/telemetry` and `/v1/agents/{agent_id}/telemetry` | Partial | Cross-platform CLI inspect plus enroll/doctor/run collect bounded CPU, memory, fixed-filesystem and exact-name process samples; a tenant-scoped latest-batch read model and responsive Machine detail UI expose complete/partial/unavailable, stale, and stopped-process evidence; unit/E2E tests cover shape, durable retry, never-seen, current snapshot and unknown agent | Inodes, memory pressure, network/service-manager collection, native installers, signed updates, historical charts and process alert policies remain |
+| Service signals | `sdk/{node,go,rust,python,php}`, server `ingest_heartbeat`, `ingest_event`, `ingest_deploy` | Partial | MKS E2E proves auth, idempotency, status transitions and timeline; SDK unit tests pass | No scheduled HTTP/TLS check |
+| Status and staleness | `service_snapshots`, `service_from_row` and `agent_responses` in server, `AvailabilityBoard.tsx` | Partial | E2E proves fresh down then fresh recovery and aged heartbeat becomes `unknown` | Permission failure and collector failure are not first-class status reasons |
+| Incidents | `incidents`, `incident_events`, `incident_activity`, `/v1/incidents`, Console Incidents view | Partial | E2E proves one incident per outage, reported cause, repeat-down deduplication, stale-transition rejection, fresh recovery, idempotent acknowledgement, self-assignment, immutable Unicode notes, audit, and unchanged health state after operator actions | Hypotheses, missing-evidence, richer ownership, and multi-signal correlation remain |
+| Alert delivery | `alert_policies`, `alert_deliveries`, `outbox`, worker, Console Alerts view | Partial | E2E covers delivery, stable retry, dead-letter, unconfigured/disabled/suppressed outcomes, audited policy, bounded repeat-down cooldown, maintenance suppression, and audited dead-letter replay with immutable source history | Multiple destinations, escalation, delivery acknowledgement, and external watchdog remain |
+| Maintenance and administration | `maintenance_windows`, `audit_events`, `worker_runtime`, `/v1/admin/summary`, Console Maintenance/Admin views | Partial | E2E covers create/cancel/CSRF/roles, active suppression, preserved incident evidence, tenant counts, audited actions, and worker healthy/stalled/recovery progress | Recurrence, workspace-wide windows, retention/export, and hosted fleet operations remain |
 | Tenant and credential boundary | `migrations/0002_identity_and_tenant_boundary.sql`, `crates/meerkateer-identity`, server auth/CSRF | Partial | API and SQL E2E cover tenant isolation, replay, rotation/revocation, CSRF and rate limit | Release security review, gateway-wide limits and multi-user roles remain |
 | Packaging and restore | `compose.yaml`, `scripts/bootstrap.sh`, `scripts/migrate-existing.sh`, `packaging/`, CI | Partial | Fresh and upgrade migration tests, Compose smoke and isolated integration | No verified release artifact install, backup/restore exercise, or uninstall guide |
 | Cloud/AI independence | `crates/meerkateer-config`, Community Compose path | Partial | Community E2E runs without Stripe or AI credentials; website now presents Community as current product | Release artifact installation remains unverified |
@@ -33,7 +38,9 @@ this repository. It does not count as delivered Meerkateer functionality.
 
 The CE-0 isolated `make integration` run passed on 2026-09-28: bootstrap and
 password login, agent enrollment and replay protection, ingest status/recovery,
-timeline, migration 0007→0010, worker retry and dead-letter. The separate Compose
+incident correlation, operator acknowledgement/assignment/notes, maintenance suppression, alert
+outcomes, cooldown/replay, migration 0007→0014, worker retry, durable worker-stall detection,
+and dead-letter. The separate Compose
 volume and containers were removed by the harness. This is test-environment
 evidence; it does not verify any real production host.
 
@@ -95,8 +102,11 @@ The isolated `community_alerts.sh` exercise currently proves CF-01, CF-04,
 CF-08, CF-10, CF-12, and CF-13 with a local fixture, together with alert
 deduplication for an exact retry and a late observation. The broader
 `integration.sh` covers CF-02, CF-03, and CF-05. These are test-environment
-results; CF-06–07 and CF-09 need richer collectors and an incident model.
+results; CF-11 now has API/PostgreSQL evidence that acknowledgement leaves monitored state offline.
+CF-06–07 still need richer collectors. CF-17 now has isolated API/database evidence for a fresh
+worker cycle, a cycle stalled beyond 30 seconds, queue context, and recovery after another real
+worker run; CF-15 still requires an independent external watchdog.
 The [disposable failure lab](failure-lab.md) now stops and restarts a separate
 HTTP fixture process, exercises response and transport faults, and checks
-concurrent outage reports plus webhook retry/dead-letter behavior. CF-14 has
-fixture evidence for retry and dead-letter, but no operator-facing failure UI.
+concurrent outage reports plus webhook retry/dead-letter behavior. CF-14 has fixture evidence for
+retry, dead-letter, audited replay, and operator-visible delivery history.

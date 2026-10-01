@@ -1,0 +1,4 @@
+MEERKATEER_API_ORIGIN="https://api.example.com"
+# Optional: use both values when the API origin is protected by Cloudflare Access.
+# MEERKATEER_ACCESS_CLIENT_ID="service-token-id.access"
+# MEERKATEER_ACCESS_CLIENT_SECRET="service-token-secret"

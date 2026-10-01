@@ -1,3 +1,5 @@
+mod collector;
+
 use std::{
     collections::BTreeMap,
     env, fs,
@@ -9,7 +11,7 @@ use std::{
 
 use anyhow::{Context, bail, ensure};
 use atomic_write_file::OpenOptions;
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{DateTime, Utc};
 use clap::{Parser, Subcommand};
 use meerkateer_protocol::mka1::{PROTOCOL_VERSION, TelemetryBatch, TelemetryRecord};
 use reqwest::{Client, StatusCode, Url};
@@ -18,6 +20,8 @@ use tokio::time;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
+
+use crate::collector::HostSnapshot;
 
 const CONFIG_VERSION: u8 = 1;
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
@@ -46,7 +50,14 @@ enum Command {
     },
     /// Verify the local configuration without displaying credentials.
     Doctor,
-    /// Send host heartbeat telemetry until stopped.
+    /// Inspect this host locally without requiring enrollment or sending data.
+    #[command(visible_alias = "status")]
+    Inspect {
+        /// Exact process name to count (repeatable, for example java or server.exe).
+        #[arg(long = "watch-process")]
+        watch_processes: Vec<String>,
+    },
+    /// Send bounded host and process telemetry until stopped.
     Run {
         /// Send one batch and exit.
         #[arg(long)]
@@ -54,6 +65,9 @@ enum Command {
         /// Seconds between heartbeat batches.
         #[arg(long, default_value_t = DEFAULT_INTERVAL_SECONDS, value_parser = clap::value_parser!(u64).range(5..=3600))]
         interval_seconds: u64,
+        /// Exact process name to count (repeatable, for example java or server.exe).
+        #[arg(long = "watch-process")]
+        watch_processes: Vec<String>,
     },
 }
 
@@ -153,11 +167,19 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         Command::Enroll { server, name } => enroll(&config_path, &server, &name).await,
         Command::Doctor => doctor(&config_path),
+        Command::Inspect { watch_processes } => inspect(&watch_processes).await,
         Command::Run {
             once,
             interval_seconds,
-        } => run(&config_path, once, interval_seconds).await,
+            watch_processes,
+        } => run(&config_path, once, interval_seconds, &watch_processes).await,
     }
+}
+
+async fn inspect(watched_processes: &[String]) -> anyhow::Result<()> {
+    let snapshot = collector::collect(watched_processes).await?;
+    println!("{}", serde_json::to_string_pretty(&snapshot)?);
+    Ok(())
 }
 
 async fn enroll(config_path: &Path, server: &str, name: &str) -> anyhow::Result<()> {
@@ -293,12 +315,22 @@ fn doctor(config_path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn run(config_path: &Path, once: bool, interval_seconds: u64) -> anyhow::Result<()> {
+async fn run(
+    config_path: &Path,
+    once: bool,
+    interval_seconds: u64,
+    watched_processes: &[String],
+) -> anyhow::Result<()> {
+    collector::validate_watched_processes(watched_processes)?;
     let client = http_client()?;
-    info!(config_path = %config_path.display(), "starting Meerkateer agent");
+    info!(
+        config_path = %config_path.display(),
+        watched_processes = watched_processes.len(),
+        "starting Meerkateer agent"
+    );
 
     loop {
-        let result = send_once(&client, config_path).await;
+        let result = send_once(&client, config_path, watched_processes).await;
         match result {
             Ok(result) => println!("{}", serde_json::to_string(&result)?),
             Err(error) if once => return Err(error),
@@ -320,7 +352,11 @@ async fn run(config_path: &Path, once: bool, interval_seconds: u64) -> anyhow::R
     }
 }
 
-async fn send_once(client: &Client, config_path: &Path) -> anyhow::Result<SendResult> {
+async fn send_once(
+    client: &Client,
+    config_path: &Path,
+    watched_processes: &[String],
+) -> anyhow::Result<SendResult> {
     let mut config = load_config(config_path)?;
     validate_complete_config(&config)?;
     ensure_credential_valid(&config)?;
@@ -334,7 +370,8 @@ async fn send_once(client: &Client, config_path: &Path) -> anyhow::Result<SendRe
         .context("agent configuration is missing its credential")?;
 
     if config.pending_batch.is_none() {
-        config.pending_batch = Some(build_heartbeat_batch(agent_id, config.next_sequence)?);
+        let snapshot = collector::collect(watched_processes).await?;
+        config.pending_batch = Some(build_host_batch(agent_id, config.next_sequence, &snapshot)?);
         save_config(config_path, &config)?;
     }
     let batch = config
@@ -398,35 +435,90 @@ async fn send_once(client: &Client, config_path: &Path) -> anyhow::Result<SendRe
     Ok(result)
 }
 
-fn build_heartbeat_batch(agent_id: Uuid, sequence: u64) -> anyhow::Result<TelemetryBatch> {
+fn build_host_batch(
+    agent_id: Uuid,
+    sequence: u64,
+    snapshot: &HostSnapshot,
+) -> anyhow::Result<TelemetryBatch> {
     ensure!(sequence > 0, "agent sequence must be positive");
-    let now = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
     let attributes = BTreeMap::from([
         ("arch".to_owned(), env::consts::ARCH.to_owned()),
         ("os".to_owned(), env::consts::OS.to_owned()),
     ]);
-    let record = TelemetryRecord::Sample {
-        sequence,
-        record_id: Uuid::new_v4(),
-        observed_at: now.clone(),
-        metric: "agent.heartbeat".to_owned(),
-        value: 1.0,
-        attributes,
-    };
+    let metrics = [
+        ("agent.heartbeat", 1.0),
+        ("host.cpu.utilization", snapshot.cpu_usage_percent / 100.0),
+        (
+            "host.memory.used_bytes",
+            bytes_as_metric(snapshot.memory_used_bytes),
+        ),
+        (
+            "host.memory.total_bytes",
+            bytes_as_metric(snapshot.memory_total_bytes),
+        ),
+        (
+            "host.disk.used_bytes",
+            bytes_as_metric(snapshot.disk_used_bytes),
+        ),
+        (
+            "host.disk.total_bytes",
+            bytes_as_metric(snapshot.disk_total_bytes),
+        ),
+    ];
+    let mut records = Vec::with_capacity(metrics.len() + snapshot.watched_processes.len());
+    for (offset, (metric, value)) in metrics.into_iter().enumerate() {
+        let record_sequence = sequence
+            .checked_add(u64::try_from(offset)?)
+            .context("agent sequence exhausted")?;
+        records.push(TelemetryRecord::Sample {
+            sequence: record_sequence,
+            record_id: Uuid::new_v4(),
+            observed_at: snapshot.collected_at.clone(),
+            metric: metric.to_owned(),
+            value,
+            attributes: attributes.clone(),
+        });
+    }
+    for process in &snapshot.watched_processes {
+        let record_sequence = sequence
+            .checked_add(u64::try_from(records.len())?)
+            .context("agent sequence exhausted")?;
+        records.push(TelemetryRecord::Sample {
+            sequence: record_sequence,
+            record_id: Uuid::new_v4(),
+            observed_at: snapshot.collected_at.clone(),
+            metric: "process.running".to_owned(),
+            value: f64::from(process.instances),
+            attributes: BTreeMap::from([("process".to_owned(), process.name.clone())]),
+        });
+    }
+    let last_sequence = records
+        .last()
+        .map(TelemetryRecord::sequence)
+        .context("host collector produced no records")?;
     let batch = TelemetryBatch {
         protocol_version: PROTOCOL_VERSION.to_owned(),
         agent_id,
         batch_id: Uuid::new_v4(),
         first_sequence: sequence,
-        last_sequence: sequence,
-        sent_at: now,
-        records: vec![record],
+        last_sequence,
+        sent_at: snapshot.collected_at.clone(),
+        records,
     };
     ensure!(
         batch.has_valid_shape(),
         "agent produced an invalid telemetry batch"
     );
     Ok(batch)
+}
+
+fn bytes_as_metric(value: u64) -> f64 {
+    // MKS/MKA sample values are f64. Integer-byte precision remains exact through
+    // 8 PiB, well above the supported single-host capacity envelope.
+    #[allow(clippy::cast_precision_loss)]
+    {
+        value as f64
+    }
 }
 
 fn validate_complete_config(config: &AgentConfig) -> anyhow::Result<()> {
@@ -595,13 +687,16 @@ fn save_config(path: &Path, config: &AgentConfig) -> anyhow::Result<()> {
     fs::create_dir_all(parent).with_context(|| format!("failed to create {}", parent.display()))?;
     secure_directory(parent)?;
     let bytes = serde_json::to_vec_pretty(config)?;
-    let mut options = OpenOptions::new();
     #[cfg(unix)]
-    {
+    let options = {
         use atomic_write_file::unix::OpenOptionsExt as _;
         use std::os::unix::fs::OpenOptionsExt as _;
+        let mut options = OpenOptions::new();
         options.preserve_mode(false).mode(0o600);
-    }
+        options
+    };
+    #[cfg(not(unix))]
+    let options = OpenOptions::new();
     let mut file = options
         .open(path)
         .with_context(|| format!("failed to securely open {}", path.display()))?;
@@ -632,6 +727,21 @@ mod tests {
 
     use super::*;
 
+    fn test_snapshot(watched_processes: Vec<collector::ProcessObservation>) -> HostSnapshot {
+        HostSnapshot {
+            collected_at: "2026-09-30T00:00:00Z".to_owned(),
+            platform: "linux",
+            architecture: "x86_64",
+            cpu_usage_percent: 25.0,
+            memory_total_bytes: 16_000,
+            memory_used_bytes: 8_000,
+            disk_total_bytes: 100_000,
+            disk_used_bytes: 40_000,
+            disk_count: 1,
+            watched_processes,
+        }
+    }
+
     fn test_config() -> AgentConfig {
         AgentConfig {
             version: CONFIG_VERSION,
@@ -659,13 +769,24 @@ mod tests {
     }
 
     #[test]
-    fn heartbeat_batch_uses_requested_sequence_and_safe_attributes() -> anyhow::Result<()> {
+    fn host_batch_uses_contiguous_sequences_and_safe_metrics() -> anyhow::Result<()> {
         let agent_id = Uuid::new_v4();
-        let batch = build_heartbeat_batch(agent_id, 42)?;
+        let snapshot = test_snapshot(vec![collector::ProcessObservation {
+            name: "java".to_owned(),
+            running: true,
+            instances: 2,
+        }]);
+        let batch = build_host_batch(agent_id, 42, &snapshot)?;
         assert_eq!(batch.agent_id, agent_id);
         assert_eq!(batch.first_sequence, 42);
-        assert_eq!(batch.last_sequence, 42);
+        assert_eq!(batch.last_sequence, 48);
+        assert_eq!(batch.records.len(), 7);
         assert!(batch.has_valid_shape());
+        assert!(batch.records.iter().any(|record| matches!(
+            record,
+            TelemetryRecord::Sample { metric, value, .. }
+                if metric == "process.running" && (*value - 2.0).abs() < f64::EPSILON
+        )));
         Ok(())
     }
 
@@ -692,9 +813,10 @@ mod tests {
         let directory = env::temp_dir().join(format!("meerkateer-agent-test-{}", Uuid::new_v4()));
         let path = directory.join("agent.json");
         let mut config = test_config();
-        config.pending_batch = Some(build_heartbeat_batch(
+        config.pending_batch = Some(build_host_batch(
             config.agent_id.context("test agent missing")?,
             config.next_sequence,
+            &test_snapshot(Vec::new()),
         )?);
         let batch_id = config
             .pending_batch

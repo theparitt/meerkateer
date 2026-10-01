@@ -1,10 +1,16 @@
 # Meerkateer: Roadmap to Production
 
+The shorter [roadmap to 1.0](roadmap-to-1.0.md) is now the canonical version sequence. This
+document retains the detailed technical architecture, capacity, enterprise, and commercial
+analysis behind those milestones. Where older sections place paid Cloud or Stripe before 1.0,
+the canonical plan supersedes them: Community 1.0 comes first, Hosted Beta is parallel, and
+billing follows proven free-beta operations.
+
 > Baseline audit: 2026-09-27
 > License target: Apache License 2.0
 > Product focus: Game Server + SME Server reliability
-> Product modes: self-hosted community edition + paid Meerkateer Cloud
-> Billing environment: Stripe Sandbox until the live-readiness gate passes
+> Product modes: one-company self-hosted Community + managed multi-tenant Cloud
+> Billing direction: free Hosted Beta first; Stripe is deferred until the service is proven
 > Current maturity: developer preview; see [delivery status](phase-status.md) and the [commercial release gates](commercial-readiness-plan.md).
 
 The first customer pilot is now specifically [Minecraft Java / Paper](game-server-beta.md).
@@ -39,13 +45,16 @@ resolved before implementation:
 
 ## 2. Production target
 
-The first production release has two delivery modes from the same codebase:
+The product has two operating modes from the same released public core. The canonical repository
+ownership and artifact flow are defined in the
+[Community and Cloud boundary](repository-and-cloud-boundary.md):
 
 - **Meerkateer Community:** free self-hosting under Apache-2.0. Billing is disabled and
   Stripe is not required to install or operate the product.
-- **Meerkateer Cloud:** a paid, multi-tenant service operated by the Meerkateer team.
-  Customers pay a monthly subscription through Stripe in return for hosting, upgrades,
-  backups, monitoring, and support.
+- **Meerkateer Cloud:** a planned managed, multi-tenant service operated by the Meerkateer team.
+  It begins as a free named-user beta after the Operations Beta gate. Billing through Stripe is a
+  later milestone after tenant isolation, upgrades, backups, monitoring, support, SLOs, and real
+  per-tenant cost have been proved.
 
 Apache-2.0 permits commercial hosted services. The cloud terms of service, privacy
 policy, support promise, and Meerkateer trademark policy remain separate from the

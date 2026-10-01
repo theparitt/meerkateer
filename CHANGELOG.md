@@ -7,6 +7,66 @@ Keep a Changelog principles, and releases use Semantic Versioning.
 
 ### Added
 
+- Simple geometric Kalahari scenery behind the public landing hero, using flat acacia trees,
+  polygon mountains, and layered sand dunes kept deliberately faded for readable content on
+  desktop and mobile.
+- Dedicated responsive `/roadmap` page with a playful introduction, a single-column milestone
+  timeline, expandable feature/test/edge-case evidence, and clear pass gates; the full roadmap no
+  longer makes the product landing page unnecessarily long.
+- Friendly GitHub README masthead using the Meerkateer mascot and wordmark, current product and
+  Community sign-in screenshots, plain-language product benefits, and a human-first quick start
+  with the longer AI installation prompt kept available in a collapsible section.
+- Six transparent mini Meerkateer friends give Machines, Services, Timeline, Workspaces, States,
+  and Access their own color and role on the landing page, with responsive placement and
+  reduced-motion-safe hover behavior.
+- Cross-platform Rust host-agent collector and `inspect`/`status` CLI for Linux and Windows,
+  reporting bounded CPU, memory, deduplicated fixed-filesystem capacity, and up to 16 exact-name
+  process instance counts without collecting command lines, environment variables, usernames,
+  paths, PIDs, or file contents. Continuous and one-shot runs send the same metrics through durable
+  exact-batch retry, with native Windows/Linux CI coverage and an operator guide.
+- Tenant-scoped latest-machine telemetry API and responsive Machine detail visualization for CPU,
+  memory, disk, OS/architecture, collection completeness/freshness, and watched process state. The
+  read model uses only one durable batch, never fills gaps with older evidence, and calls out stale,
+  missing, and stopped-process states explicitly.
+- Preview background-agent installers for hardened, unprivileged Linux systemd and ACL-restricted
+  Windows `LOCAL SERVICE` startup tasks, including safe uninstall/purge behavior and CI syntax/
+  disposable-install checks. ADR-0008 defines a future signed, typed, locally allowlisted restart
+  boundary while keeping the current agent outbound-only and command-free.
+- Cute authenticated Console shell with honest deep-linked Overview, Machines, Services,
+  incident-evidence, and Connect views; responsive desktop/mobile navigation; workspace context;
+  role-aware controls; API retry; and a real-data first-signal guide from company to workspace to
+  machine/application to fresh evidence. Machine and service lists now include responsive,
+  accessible search and state/environment filters with explicit no-result states. Tenant-safe
+  machine, service, and evidence detail URLs survive reload/sign-in and never substitute an
+  unknown requested object with a different workspace object. Dedicated Incidents, Alerts,
+  Maintenance, and Admin views expose real operational records instead of placeholder controls.
+- First-class tenant incidents correlate one outage into a durable open/resolved record, retain the
+  reported cause, reject stale transitions, and avoid duplicate incidents during repeated reports.
+  Operators can acknowledge without inventing recovery, assign/unassign themselves, add immutable
+  Unicode notes, and inspect the audited activity stream from the responsive Console.
+- Durable alert-delivery outcomes stay synchronized with worker retry and dead-letter processing;
+  the Console shows queued, delivered, retrying, dead-lettered, suppressed, disabled, and
+  unconfigured outcomes together with audited down/recovery policy controls. A bounded repeat-down
+  cooldown suppresses flapping noise without hiding incidents, and operators can replay a
+  dead-letter as a new audited delivery while preserving the original terminal record.
+- Audited per-service maintenance windows suppress notifications without hiding health or incident
+  evidence, and owner/admin users can inspect tenant counts plus append-only audit activity.
+- Durable installation-level worker progress records the latest bounded cycle counts through a
+  least-privilege database function. The Admin view now distinguishes a healthy worker, a worker
+  stalled for more than 30 seconds, and a worker that has never checked in, alongside the oldest
+  pending alert. Fault coverage proves healthy → stalled → recovered without changing service
+  health evidence.
+- Shared administration contracts remain Cloud-ready while hosted provisioning, regional
+  operations, quotas, support, and billing stay isolated in the private Cloud repository.
+- Canonical cute, simple, and functionally complete UI product plan covering information
+  architecture, every operator/admin surface, progressive disclosure, delivery phases, edge cases,
+  responsive/accessibility requirements, and measurable screen acceptance gates.
+- Distinct Meerkateer Cloud identity and responsive sky-themed `/cloud` page with an explicit
+  Cloud logo lockup, friendly cloud illustration, hosted-beta status, and accurate free-beta gates.
+- Canonical Community/Cloud repository boundary: one public Apache-2.0 product core and a separate
+  private hosted-operations repository that consumes signed core releases without forking them.
+- Expanded 0.1–1.0 roadmap and landing-page phase board with features, verification strategy,
+  adversarial edge cases, measurable pass gates, and Community/Cloud critical-path ownership.
 - Public GitHub repository and direct navigation link with GitHub icon.
 - Node.js, Go, and PHP SDKs for MKS-1 heartbeat, event, and deploy delivery, with
   language guides, retry tests, and CI coverage. The website now offers Node.js,
@@ -79,6 +139,24 @@ Keep a Changelog principles, and releases use Semantic Versioning.
 - Vite `/v1` proxy routing and web-proxy smoke coverage, fixing Console session 404 responses.
 - Mascot-led Console theme using the supplied Meerkateer logo and wordmark, with a playful
   navy, cream, red, and gold design system that remains responsive and operations-focused.
+- Public product landing page separated from Community setup, login, and authenticated
+  operations routes, with honest Community/Cloud positioning, product preview, docs, and help.
+- Deterministic concurrent fleet E2E using ten real agents to prove online, stale failure
+  detection, selective refresh, random recovery, durable retry, PostgreSQL evidence, and
+  credential-safe telemetry.
+- Disposable multi-language localhost lab with real Python, Node.js, Go, PHP, and Rust
+  HTTP services, a shared failure/recovery contract, automatic workspace provisioning,
+  timeline assertions, stopped-process detection, human guidance, and an AI runbook.
+- Cloudflare Workers Static Assets deployment with a same-origin, fail-closed API gateway,
+  optional Cloudflare Access service-token injection, Wrangler dry runs, and encrypted API
+  origin configuration.
+- Reproducible GHCR server/worker image publishing, generated production credentials, and a
+  hardened production Compose topology for a loopback API and dedicated PostgreSQL 18 volume.
+- Operator runbook for Cloudflare Tunnel, immutable releases, GHCR authentication, backups,
+  health verification, upgrades, and rollback on the self-managed production host.
+- Visible `v0.1.0` Developer Preview and current Community Alpha phase on the landing page and
+  README, plus a canonical milestone-and-evidence roadmap from the current code to Community
+  `1.0.0` Stable.
 
 ### Changed
 

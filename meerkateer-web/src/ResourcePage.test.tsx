@@ -6,6 +6,21 @@ import { isResourcePath } from "./ResourcePage";
 afterEach(cleanup);
 
 describe("public resource links", () => {
+  it("renders the canonical roadmap with its current and stable milestones", async () => {
+    window.history.replaceState({}, "", "/docs/roadmap-to-1.0");
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Roadmap to 1.0", level: 1 })).toBeTruthy();
+    expect(screen.getAllByText("0.1.0", { selector: "code" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("0.2.0", { selector: "code" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("1.0.0", { selector: "code" }).length).toBeGreaterThan(0);
+    expect(
+      screen.getByText(/Stripe billing is deliberately not a Community 1.0 release gate/),
+    ).toBeTruthy();
+    expect(screen.getByText("Product and repository tracks")).toBeTruthy();
+    expect(screen.getAllByText("Test plan:").length).toBeGreaterThan(5);
+    expect(screen.getByText("Repository and architecture gate:")).toBeTruthy();
+  });
+
   it("resolves every footer link to a real section or page", () => {
     window.history.replaceState({}, "", "/about");
     const { container } = render(<App />);
@@ -18,7 +33,12 @@ describe("public resource links", () => {
       } else if (href.startsWith("https://")) {
         expect(href).toBe("https://github.com/theparitt/meerkateer");
       } else {
-        expect(["/", "/cloud"].includes(href) || isResourcePath(href), href).toBe(true);
+        expect(
+          ["/", "/cloud", "/roadmap"].includes(href) ||
+            href.startsWith("/roadmap#") ||
+            isResourcePath(href),
+          href,
+        ).toBe(true);
       }
     }
   });
@@ -42,17 +62,17 @@ describe("public resource links", () => {
     );
     expect(container.querySelectorAll(".story-art img")).toHaveLength(3);
     expect(screen.getByText(/await watch\.heartbeat\("ok"/)).toBeTruthy();
-    expect(container.querySelector(".public-nav a[href='/about#sdks']")).toBeTruthy();
+    expect(container.querySelector(".public-nav a[href='/#sdks']")).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Go SDK" }));
-    expect(screen.getByText(/meerkateer.FromEnv/)).toBeTruthy();
+    expect(screen.getByRole("tabpanel").textContent).toMatch(/meerkateer.FromEnv/);
     fireEvent.click(screen.getByRole("tab", { name: "Python SDK" }));
-    expect(screen.getByText(/watch\.heartbeat\("ok"/)).toBeTruthy();
+    expect(screen.getByRole("tabpanel").textContent).toMatch(/watch\.heartbeat\("ok"/);
     fireEvent.click(screen.getByRole("tab", { name: "PHP SDK" }));
-    expect(screen.getByText(/Client::fromEnv/)).toBeTruthy();
+    expect(screen.getByRole("tabpanel").textContent).toMatch(/Client::fromEnv/);
     fireEvent.click(screen.getByRole("tab", { name: "Host agent" }));
-    expect(screen.getByText(/meerkateer-agent -- enroll/)).toBeTruthy();
+    expect(screen.getByRole("tabpanel").textContent).toMatch(/meerkateer-agent -- enroll/);
     fireEvent.click(screen.getByRole("tab", { name: "Rust SDK" }));
-    expect(screen.getByText(/HeartbeatStatus::Ok/)).toBeTruthy();
+    expect(screen.getByRole("tabpanel").textContent).toMatch(/HeartbeatStatus::Ok/);
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
     fireEvent.click(screen.getByRole("button", { name: "Copy Rust SDK example" }));
@@ -71,6 +91,9 @@ describe("public resource links", () => {
     ["/help", "Help"],
     ["/source", "Source code"],
     ["/docs/phase-status", "Phase status"],
+    ["/docs/roadmap-to-1.0", "Roadmap to 1.0"],
+    ["/docs/ui-product-plan", "Ui product plan"],
+    ["/docs/repository-and-cloud-boundary", "Repository and cloud boundary"],
     ["/docs/commercial-readiness-plan", "Commercial readiness plan"],
     ["/docs/game-server-beta", "Game server beta"],
     ["/changelog", "Changelog"],
@@ -78,10 +101,10 @@ describe("public resource links", () => {
     ["/license", "Apache 2.0 license"],
     ["/security", "Security policy"],
     ["/governance", "Governance"],
-  ])("renders %s with its project content", (path, title) => {
+  ])("renders %s with its project content", async (path, title) => {
     window.history.replaceState({}, "", path);
     render(<App />);
-    expect(screen.getByRole("heading", { name: title, level: 1 })).toBeTruthy();
-    expect(screen.getByText("Meerkateer · Developer preview")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: title, level: 1 })).toBeTruthy();
+    expect(await screen.findByText("Meerkateer · Developer preview")).toBeTruthy();
   });
 });

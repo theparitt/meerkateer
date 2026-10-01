@@ -3,6 +3,7 @@
 .data
 .env
 target
+**/target
 **/node_modules
 **/dist
 **/coverage

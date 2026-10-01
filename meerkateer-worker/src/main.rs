@@ -1,6 +1,7 @@
 use std::{env, net::IpAddr, time::Duration};
 
 use anyhow::{Context, ensure};
+use chrono::{DateTime, Utc};
 use clap::Parser;
 use meerkateer_config::ServerConfig;
 use reqwest::{Client, Url};
@@ -132,6 +133,7 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("failed to connect to the control database")?;
     let worker_id = Uuid::new_v4();
+    let started_at = Utc::now();
     info!(
         %worker_id,
         deployment_mode = config.deployment_mode.as_str(),
@@ -141,9 +143,10 @@ async fn main() -> anyhow::Result<()> {
         "starting Meerkateer worker"
     );
 
-    run_cycle(
+    run_recorded_cycle(
         &database,
         worker_id,
+        started_at,
         i32::from(cli.batch_size),
         u32::from(cli.max_attempts),
         &alert_client,
@@ -160,9 +163,10 @@ async fn main() -> anyhow::Result<()> {
     loop {
         tokio::select! {
             _ = interval.tick() => {
-                run_cycle(
+                run_recorded_cycle(
                     &database,
                     worker_id,
+                    started_at,
                     i32::from(cli.batch_size),
                     u32::from(cli.max_attempts),
                     &alert_client,
@@ -176,6 +180,28 @@ async fn main() -> anyhow::Result<()> {
             }
         }
     }
+}
+
+async fn run_recorded_cycle(
+    database: &PgPool,
+    worker_id: Uuid,
+    started_at: DateTime<Utc>,
+    batch_size: i32,
+    max_attempts: u32,
+    alert_client: &Client,
+    alert_url: Option<&Url>,
+) -> anyhow::Result<CycleStats> {
+    let stats = run_cycle(
+        database,
+        worker_id,
+        batch_size,
+        max_attempts,
+        alert_client,
+        alert_url,
+    )
+    .await?;
+    record_worker_cycle(database, worker_id, started_at, &stats).await?;
+    Ok(stats)
 }
 
 fn validate_cli(cli: &Cli) -> anyhow::Result<()> {
@@ -400,6 +426,31 @@ async fn dead_letter(
         .await
         .context("failed to dead-letter outbox record")?;
     ensure!(changed, "outbox dead-letter lease was lost");
+    Ok(())
+}
+
+async fn record_worker_cycle(
+    database: &PgPool,
+    worker_id: Uuid,
+    started_at: DateTime<Utc>,
+    stats: &CycleStats,
+) -> anyhow::Result<()> {
+    let claimed = i32::try_from(stats.claimed).context("worker claimed count exceeded integer")?;
+    let completed =
+        i32::try_from(stats.completed).context("worker completed count exceeded integer")?;
+    let retried = i32::try_from(stats.retried).context("worker retry count exceeded integer")?;
+    let dead_lettered =
+        i32::try_from(stats.dead_lettered).context("worker dead-letter count exceeded integer")?;
+    sqlx::query("SELECT meerkateer_record_worker_cycle($1, $2, $3, $4, $5, $6)")
+        .bind(worker_id)
+        .bind(started_at)
+        .bind(claimed)
+        .bind(completed)
+        .bind(retried)
+        .bind(dead_lettered)
+        .execute(database)
+        .await
+        .context("failed to record worker progress")?;
     Ok(())
 }
 

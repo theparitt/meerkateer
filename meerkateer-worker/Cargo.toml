@@ -9,6 +9,7 @@ authors.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+chrono.workspace = true
 clap.workspace = true
 meerkateer-config = { path = "../crates/meerkateer-config" }
 secrecy.workspace = true

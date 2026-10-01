@@ -61,6 +61,48 @@ jobs:
       - name: Test
         run: cargo test --workspace --all-targets --locked
 
+  agent-platforms:
+    name: Agent (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install pinned Rust toolchain
+        run: rustup show
+
+      - name: Build and test host collector
+        run: cargo test --locked -p meerkateer-agent
+
+      - name: Test Linux background installer
+        if: runner.os == 'Linux'
+        run: ./tests/packaging/linux_installer.sh
+
+      - name: Parse Windows background installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $failed = $false
+          Get-ChildItem packaging/windows/*.ps1 | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $_.FullName,
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | Format-List
+              $failed = $true
+            }
+          }
+          if ($failed) { throw 'Windows installer syntax validation failed.' }
+
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -118,6 +160,16 @@ jobs:
 
       - name: Test PHP SDK
         run: docker run --rm -v "$PWD/sdk/php:/work" -w /work php:8.3-cli-alpine sh ./run-tests.sh
+
+  multi-language-sdk-lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Exercise five SDK servers and stopped-process recovery
+        run: make sdk-lab-test
 
   failure-lab:
     runs-on: ubuntu-latest
@@ -178,7 +230,7 @@ jobs:
             psql -h 127.0.0.1 -U meerkateer -d meerkateer_upgrade_test -v ON_ERROR_STOP=1 -f "$migration" >/dev/null
           done
           psql -h 127.0.0.1 -U meerkateer -d meerkateer_upgrade_test -v ON_ERROR_STOP=1 -f dev/seed.sql >/dev/null
-          for migration in migrations/000[8-9]_*.sql migrations/0010_*.sql; do
+          for migration in migrations/000[8-9]_*.sql migrations/0010_*.sql migrations/0011_*.sql migrations/0012_*.sql migrations/0013_*.sql; do
             psql -h 127.0.0.1 -U meerkateer -d meerkateer_upgrade_test -v ON_ERROR_STOP=1 -f "$migration" >/dev/null
           done
           test "$(psql -h 127.0.0.1 -U meerkateer -d meerkateer_upgrade_test -Atc "SELECT count(*) FROM services WHERE slug = 'fixture-server'")" = '1'

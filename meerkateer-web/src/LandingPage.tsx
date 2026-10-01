@@ -1,3 +1,4 @@
+import packageMetadata from "../package.json";
 import {
   ActionStoriesSection,
   IntegrationSection,
@@ -6,6 +7,7 @@ import {
 } from "./LandingExtras";
 
 const GITHUB_REPO_URL = "https://github.com/theparitt/meerkateer";
+const PRODUCT_VERSION = `v${packageMetadata.version}`;
 const COMMUNITY_SOURCE_DOWNLOAD_URL =
   "https://github.com/theparitt/meerkateer/archive/refs/heads/main.zip";
 const DOCS_URL = "/docs";
@@ -27,13 +29,20 @@ function GitHubLink({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Brand() {
+function Brand({ cloud = false }: { cloud?: boolean }) {
   return (
-    <a className="brand" href="/" aria-label="Meerkateer home">
+    <a
+      className={`brand${cloud ? " brand-cloud" : ""}`}
+      href="/"
+      aria-label={cloud ? "Meerkateer Cloud home" : "Meerkateer home"}
+    >
       <img className="brand-mascot" src="/logo.png" alt="" />
       <span>
-        <img className="brand-wordmark" src="/wordmark.png" alt="Meerkateer" />
-        <small>Server reliability</small>
+        <span className="brand-name-row">
+          <img className="brand-wordmark" src="/wordmark.png" alt="Meerkateer" />
+          {cloud ? <b className="brand-cloud-badge">Cloud</b> : null}
+        </span>
+        <small>{cloud ? "Managed server reliability" : "Server reliability"}</small>
       </span>
     </a>
   );
@@ -42,20 +51,20 @@ function Brand() {
 function PublicLinks() {
   return (
     <>
-      <a href="/about#how-it-works">How it works</a>
-      <a href="/about#sdks">SDKs</a>
-      <a href="/about#updates">Updates</a>
-      <a href="/about#run-it">Community</a>
+      <a href="/#how-it-works">How it works</a>
+      <a href="/#sdks">SDKs</a>
+      <a href="/roadmap">Roadmap</a>
+      <a href="/#run-it">Community</a>
       <a href={DOCS_URL}>Docs</a>
       <GitHubLink>GitHub</GitHubLink>
     </>
   );
 }
 
-function PublicHeader() {
+function PublicHeader({ cloud = false }: { cloud?: boolean }) {
   return (
     <header className="public-header page-width">
-      <Brand />
+      <Brand cloud={cloud} />
       <nav className="public-nav" aria-label="Primary navigation">
         <PublicLinks />
       </nav>
@@ -130,37 +139,37 @@ function ProductPreview() {
 
 const capabilities = [
   {
-    icon: "●",
+    friend: "/friends/machine-scout.png",
     label: "Machines",
     title: "See who's online",
     copy: "See enrolled machines and whether their latest telemetry is still fresh.",
   },
   {
-    icon: "♥",
+    friend: "/friends/heartbeat-keeper.png",
     label: "Services",
     title: "Follow heartbeats",
     copy: "Watch the services and processes that matter to each workspace.",
   },
   {
-    icon: "↗",
+    friend: "/friends/timeline-guide.png",
     label: "Timeline",
     title: "Understand the story",
     copy: "See operational events, deployments, incidents, and recovery together.",
   },
   {
-    icon: "▦",
+    friend: "/friends/workspace-organizer.png",
     label: "Workspaces",
     title: "Keep teams organized",
     copy: "Group machines and services by job or environment within one company.",
   },
   {
-    icon: "!",
+    friend: "/friends/state-watcher.png",
     label: "States",
     title: "Catch stale signals",
     copy: "See offline, degraded, stale, or unknown states without guessing what changed.",
   },
   {
-    icon: "⚿",
+    friend: "/friends/access-guardian.png",
     label: "Access",
     title: "Control credentials",
     copy: "Issue scoped enrollment tokens and one-time service keys from the Console.",
@@ -178,11 +187,22 @@ function CapabilitySection() {
       <div className="capability-grid" id="features">
         {capabilities.map((capability) => (
           <article className="capability-card" key={capability.label}>
-            <span className="capability-icon" aria-hidden="true">
-              {capability.icon}
-            </span>
-            <p className="card-label">{capability.label}</p>
-            <h3>{capability.title}</h3>
+            <div className="capability-card-head">
+              <div>
+                <p className="card-label">{capability.label}</p>
+                <h3>{capability.title}</h3>
+              </div>
+              <span className="capability-friend" aria-hidden="true">
+                <img
+                  src={capability.friend}
+                  alt=""
+                  width="104"
+                  height="104"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </span>
+            </div>
             <p>{capability.copy}</p>
           </article>
         ))}
@@ -192,11 +212,19 @@ function CapabilitySection() {
 }
 
 const communityBenefits = [
-  "Apache-2.0 open-source core",
-  "Run on your own server",
-  "Keep infrastructure and data under your control",
-  "Source available to inspect",
-  "No hosted account required",
+  "Complete Apache-2.0 reliability core",
+  "One company with many workspaces and machines",
+  "Your own PostgreSQL database and infrastructure",
+  "Agents, SDKs, Console, migrations, and tests are public",
+  "No Cloud, billing, or license-server dependency",
+];
+
+const cloudBenefits = [
+  "Many isolated tenants on a managed control plane",
+  "Pinned releases of the same public core—never a fork",
+  "Managed upgrades, backups, regions, and service SLOs",
+  "Provider quotas, abuse protection, and support operations",
+  "Free hosted beta first; billing only after it is proven",
 ];
 
 function RunOption({
@@ -254,20 +282,32 @@ function RunOptionsSection() {
       <div className="page-width">
         <SectionHeading
           eyebrow="Choose how you run it"
-          title="Community runs on your infrastructure."
-          copy="Download the free source, follow the quick start, and keep your monitoring data on systems you control."
+          title="Use Meerkateer your way."
+          copy="Community is the self-hosted open-source product. Cloud will operate immutable releases of that same core for teams that prefer a managed multi-tenant service."
         />
         <div className="run-grid">
           <RunOption
             variant="community"
             eyebrow="Meerkateer Community"
             title="Open source. Self-hosted. Free."
-            copy="For developers and teams who want full control over where Meerkateer runs. Community is a first-class product, not a limited trial."
+            copy="Run one company per installation and organize many workspaces, machines, people, and services. Community is a first-class product, not a limited trial."
             benefits={communityBenefits}
             action="Quick start"
             actionHref="/get-started"
             secondary="Explore the source"
             secondaryHref={GITHUB_REPO_URL}
+          />
+          <RunOption
+            variant="cloud"
+            eyebrow="Meerkateer Cloud"
+            title="Hosted by us. Built from public core."
+            copy="The private Cloud repository adds provisioning and provider operations around signed public artifacts; reliability and tenant security remain in open source."
+            benefits={cloudBenefits}
+            action="View Cloud status"
+            actionHref="/cloud"
+            secondary="Read project status"
+            secondaryHref="/docs/phase-status"
+            note="Cloud is planned, not generally available. The first hosted beta is free and begins only after the Operations Beta gates pass."
           />
         </div>
       </div>
@@ -430,23 +470,34 @@ function ResourcesSection() {
 
 function FinalCallToAction() {
   return (
-    <section className="final-cta page-width">
-      <img src="/logo.png" alt="" />
-      <div>
-        <p className="eyebrow">Ready to keep watch?</p>
-        <h2>Start with Community.</h2>
-        <p>Download the source, run it yourself, and follow the first monitoring journey.</p>
+    <div className="final-cta-scene">
+      <div className="final-landscape" aria-hidden="true">
+        <span className="final-sun" />
+        <span className="final-mesa final-mesa-left" />
+        <span className="final-mesa final-mesa-right" />
+        <span className="final-dune final-dune-back" />
+        <span className="final-dune final-dune-front" />
+        <span className="final-rock final-rock-left" />
+        <span className="final-rock final-rock-right" />
       </div>
-      <div className="final-actions">
-        <a className="button button-gold" href="/get-started">
-          Quick start
-        </a>
-        <a className="button button-light" href={COMMUNITY_SOURCE_DOWNLOAD_URL}>
-          Download source
-        </a>
-        <GitHubLink>View on GitHub</GitHubLink>
-      </div>
-    </section>
+      <section className="final-cta page-width">
+        <img src="/logo.png" alt="" />
+        <div>
+          <p className="eyebrow">Ready to keep watch?</p>
+          <h2>Start with Community.</h2>
+          <p>Download the source, run it yourself, and follow the first monitoring journey.</p>
+        </div>
+        <div className="final-actions">
+          <a className="button button-gold" href="/get-started">
+            Quick start
+          </a>
+          <a className="button button-light" href={COMMUNITY_SOURCE_DOWNLOAD_URL}>
+            Download source
+          </a>
+          <GitHubLink>View on GitHub</GitHubLink>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -459,7 +510,7 @@ function Footer() {
           <p>
             Open-source server reliability for teams that want a clear view of outages and recovery.
           </p>
-          <small>Apache-2.0 · Developer preview</small>
+          <small>Apache-2.0 · {PRODUCT_VERSION} · Developer Preview</small>
         </div>
         <div>
           <strong>Product</strong>
@@ -477,10 +528,12 @@ function Footer() {
         </div>
         <div>
           <strong>Open source</strong>
-          <GitHubLink>GitHub</GitHubLink>
-          <a href="#updates">Updates</a>
-          <a href="#tests">Tests</a>
-          <a href="/docs/community-first-roadmap">Roadmap</a>
+          <a href={GITHUB_REPO_URL} target="_blank" rel="noopener noreferrer">
+            GitHub
+          </a>
+          <a href="/roadmap">Road to 1.0</a>
+          <a href="/roadmap#tests">Release gates</a>
+          <a href="/docs/community-first-roadmap">Community strategy</a>
           <a href="/docs/phase-status">Project status</a>
           <a href="/changelog">Changelog</a>
           <a href="/contributing">Contributing</a>
@@ -503,11 +556,18 @@ export function LandingPage() {
       <main className="landing-main">
         <section className="landing-hero page-width">
           <div className="landing-hero-copy">
+            <aside className="version-strip" aria-label="Current Meerkateer version and phase">
+              <strong>{PRODUCT_VERSION}</strong>
+              <span>Developer Preview</span>
+              <span>Current phase: Community Alpha</span>
+              <a href="/roadmap">Road to 1.0 →</a>
+            </aside>
             <p className="eyebrow">Free, self-hosted Community preview</p>
             <h1>Know what broke, and when it recovered.</h1>
             <p>
               Watch the services you run, follow their heartbeats and host signals, and read the
-              evidence around an outage in one place. Start with Community on your own server.
+              evidence around an outage in one place. Self-host Community today; the managed Cloud
+              free beta follows after its isolation and operations gates pass.
             </p>
             <div className="hero-actions">
               <a className="button button-primary" href={COMMUNITY_SOURCE_DOWNLOAD_URL}>
@@ -524,10 +584,10 @@ export function LandingPage() {
               <li>Open source</li>
               <li>Self-hostable</li>
               <li>Community Edition</li>
-              <li>No Cloud account required</li>
+              <li>Managed Cloud planned</li>
             </ul>
             <small className="preview-note">
-              Developer preview · Follow the supported scope and current limits.
+              Current code version {PRODUCT_VERSION}. No stable GitHub release has been tagged yet.
             </small>
           </div>
           <ProductPreview />
@@ -537,7 +597,6 @@ export function LandingPage() {
         <IntegrationSection />
         <CapabilitySection />
         <DashboardPreview />
-        <UpdatesRoadmapSection />
         <RunOptionsSection />
         <OpenSourceSection />
         <ResourcesSection />
@@ -548,26 +607,99 @@ export function LandingPage() {
   );
 }
 
+export function RoadmapPage() {
+  return (
+    <div className="landing-page roadmap-page">
+      <PublicHeader />
+      <main className="roadmap-page-main">
+        <section className="roadmap-hero page-width">
+          <div className="roadmap-hero-copy">
+            <a className="roadmap-back-link" href="/">
+              ← Product overview
+            </a>
+            <p className="eyebrow">Meerkateer · Road to 1.0</p>
+            <h1>Built carefully. Proven step by step.</h1>
+            <p>
+              A transparent plan for turning today&apos;s developer preview into a stable server
+              reliability product. Every phase has a purpose, the work it includes, the difficult
+              cases we test, and a clear gate it must pass.
+            </p>
+            <ul className="roadmap-summary" aria-label="Roadmap summary">
+              <li>
+                <strong>10</strong> milestones
+              </li>
+              <li>
+                <strong>1</strong> shared open core
+              </li>
+              <li>
+                <strong>Evidence</strong> before release
+              </li>
+            </ul>
+          </div>
+          <div className="roadmap-hero-art" aria-hidden="true">
+            <span className="roadmap-orbit roadmap-orbit-one" />
+            <span className="roadmap-orbit roadmap-orbit-two" />
+            <img src="/logo.png" alt="" />
+            <strong>Onward to v1.0!</strong>
+          </div>
+        </section>
+        <UpdatesRoadmapSection />
+      </main>
+      <Footer />
+    </div>
+  );
+}
+
 export function CloudAccessPage() {
   return (
-    <div className="landing-page access-route">
-      <PublicHeader />
-      <main className="access-route-main page-width">
-        <section>
-          <p className="eyebrow">Meerkateer Cloud</p>
-          <h1>Managed Meerkateer is in developer preview.</h1>
+    <div className="landing-page access-route cloud-access-page">
+      <PublicHeader cloud />
+      <div className="cloud-sky" aria-hidden="true">
+        <span className="sky-cloud sky-cloud-one" />
+        <span className="sky-cloud sky-cloud-two" />
+        <span className="sky-cloud sky-cloud-three" />
+        <span className="sky-spark sky-spark-one">✦</span>
+        <span className="sky-spark sky-spark-two">✦</span>
+      </div>
+      <main className="access-route-main cloud-access-main page-width">
+        <section className="cloud-access-copy">
+          <div className="cloud-phase-pill">
+            <span aria-hidden="true">☁</span>
+            Hosted Beta planned after v0.5 Operations Beta
+          </div>
+          <p className="eyebrow">Meerkateer Cloud · Free beta first</p>
+          <h1>Your servers, watched from the cloud.</h1>
           <p>
-            This build does not enable public Cloud accounts yet. Community remains fully usable and
-            free to self-host while managed onboarding is completed.
+            Get the same open-source Meerkateer reliability core without running the control plane
+            yourself. We will manage upgrades, backups, regional probes, and service operations for
+            you.
           </p>
+          <ul className="cloud-benefit-list" aria-label="Planned Meerkateer Cloud benefits">
+            <li>
+              <span aria-hidden="true">✓</span>
+              Isolated companies and workspaces
+            </li>
+            <li>
+              <span aria-hidden="true">✓</span>
+              Managed updates and verified backups
+            </li>
+            <li>
+              <span aria-hidden="true">✓</span>
+              Regional checks and published service SLOs
+            </li>
+          </ul>
           <div className="button-row">
-            <a className="button button-primary" href="/setup">
-              Set up Community
+            <a className="button button-primary cloud-primary-action" href="/roadmap">
+              See the Cloud roadmap
             </a>
-            <a className="button button-secondary" href="/docs/phase-status">
-              Follow development
+            <a className="button button-secondary" href="/get-started">
+              Self-host Community now
             </a>
           </div>
+          <p className="cloud-availability-note">
+            Public Cloud accounts are not open yet. The first hosted beta will be free while we
+            prove tenant isolation, restore, support, and real operating cost. Stripe remains off.
+          </p>
           <p className="community-console-link">
             Already self-hosting? <a href="/app">Open your Community console →</a>
           </p>
@@ -575,7 +707,34 @@ export function CloudAccessPage() {
             ← Back to overview
           </a>
         </section>
-        <img src="/logo.png" alt="Meerkateer mascot" />
+        <aside className="cloud-hero-card" aria-label="Meerkateer Cloud identity">
+          <span className="cloud-card-star cloud-card-star-one" aria-hidden="true">
+            ✦
+          </span>
+          <span className="cloud-card-star cloud-card-star-two" aria-hidden="true">
+            ✦
+          </span>
+          <div className="cloud-mascot-stage">
+            <span className="cute-cloud-face" aria-hidden="true">
+              <i />
+              <i />
+              <b>⌣</b>
+            </span>
+            <img src="/logo.png" alt="Meerkateer mascot standing above a friendly cloud" />
+          </div>
+          <div className="cloud-logo-lockup">
+            <img src="/wordmark.png" alt="Meerkateer" />
+            <strong>Cloud</strong>
+          </div>
+          <p>Managed server reliability</p>
+          <div className="cloud-preview-card">
+            <span className="cloud-preview-dot" aria-hidden="true" />
+            <span>
+              <small>Availability</small>
+              <strong>Hosted Beta · planned</strong>
+            </span>
+          </div>
+        </aside>
       </main>
     </div>
   );

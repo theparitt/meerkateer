@@ -2,8 +2,8 @@
 
 DO $$
 BEGIN
-    IF (SELECT count(*) FROM ingest_messages) <> 9 THEN
-        RAISE EXCEPTION 'expected 9 durable MKS messages';
+    IF (SELECT count(*) FROM ingest_messages) <> 13 THEN
+        RAISE EXCEPTION 'expected 13 durable MKS messages';
     END IF;
     IF (SELECT count(*) FROM service_snapshots WHERE state = 'online') <> 1 THEN
         RAISE EXCEPTION 'expected one online service snapshot';
@@ -17,7 +17,7 @@ BEGIN
        OR (SELECT count(*) FROM agent_batches WHERE gap_detected) <> 1 THEN
         RAISE EXCEPTION 'agent batch or gap evidence is incorrect';
     END IF;
-    IF (SELECT count(*) FROM agent_telemetry_records) <> 5
+    IF (SELECT count(*) FROM agent_telemetry_records) <> 11
        OR (SELECT max(last_sequence) FROM agent_sequence_state) <> 44 THEN
         RAISE EXCEPTION 'agent record or sequence projection is incorrect';
     END IF;
@@ -32,15 +32,46 @@ BEGIN
     IF (SELECT count(*) FROM project_agents) <> 1 THEN
         RAISE EXCEPTION 'workspace machine assignment is incorrect';
     END IF;
-    IF (SELECT count(*) FROM outbox WHERE topic LIKE 'ingest.%') <> 9
+    IF (SELECT count(*) FROM outbox WHERE topic LIKE 'ingest.%') <> 13
        OR (SELECT count(*) FROM outbox WHERE topic = 'agent.telemetry') <> 4 THEN
         RAISE EXCEPTION 'transactional outbox evidence is incomplete';
     END IF;
     IF (SELECT count(*) FROM outbox
         WHERE (topic LIKE 'ingest.%' OR topic = 'agent.telemetry')
           AND processed_at IS NOT NULL
-          AND dead_lettered_at IS NULL) <> 13 THEN
+          AND dead_lettered_at IS NULL) <> 17 THEN
         RAISE EXCEPTION 'supported outbox records were not completed';
+    END IF;
+    IF (SELECT count(*) FROM worker_runtime) <> 1
+       OR (SELECT count(*) FROM worker_runtime
+           WHERE last_cycle_at >= now() - interval '30 seconds'
+             AND claimed = completed + retried + dead_lettered) <> 1 THEN
+        RAISE EXCEPTION 'durable worker progress evidence is missing or inconsistent';
+    END IF;
+    IF (SELECT count(*) FROM incidents) <> 2
+       OR (SELECT count(*) FROM incidents WHERE status = 'resolved') <> 2
+       OR (SELECT count(*) FROM incidents WHERE cause = 'game process exited') <> 1
+       OR (SELECT count(*) FROM incidents WHERE cause = 'planned process restart') <> 1
+       OR (SELECT count(*) FROM incidents WHERE acknowledged_at IS NOT NULL) <> 1
+       OR (SELECT count(*) FROM incidents WHERE assigned_to IS NOT NULL) <> 0 THEN
+        RAISE EXCEPTION 'incident correlation or recovery evidence is incorrect';
+    END IF;
+    IF (SELECT count(*) FROM incident_activity) <> 4
+       OR (SELECT count(*) FROM incident_activity WHERE kind = 'acknowledged') <> 1
+       OR (SELECT count(*) FROM incident_activity WHERE kind = 'assigned') <> 1
+       OR (SELECT count(*) FROM incident_activity WHERE kind = 'unassigned') <> 1
+       OR (SELECT count(*) FROM incident_activity WHERE kind = 'note'
+           AND note = 'ตรวจสอบแล้ว: process หยุดจริง') <> 1 THEN
+        RAISE EXCEPTION 'incident operator activity is incomplete or duplicated';
+    END IF;
+    IF (SELECT count(*) FROM alert_deliveries) <> 4
+       OR (SELECT count(*) FROM alert_deliveries WHERE status = 'skipped_unconfigured') <> 2
+       OR (SELECT count(*) FROM alert_deliveries WHERE status = 'suppressed') <> 2 THEN
+        RAISE EXCEPTION 'alert outcome history is incomplete';
+    END IF;
+    IF (SELECT count(*) FROM maintenance_windows WHERE cancelled_at IS NOT NULL) <> 1
+       OR (SELECT count(*) FROM alert_policies WHERE enabled = false AND cooldown_seconds = 120) <> 1 THEN
+        RAISE EXCEPTION 'maintenance or alert policy state is incorrect';
     END IF;
     IF (SELECT count(*) FROM outbox
         WHERE topic = 'test.retry'

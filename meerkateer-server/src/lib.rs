@@ -83,7 +83,22 @@ pub fn configure_routes(config: &mut web::ServiceConfig) {
                 .route("/session/password-login", web::post().to(password_login))
                 .route("/session/password-setup", web::post().to(password_setup))
                 .route("/session", web::get().to(current_session))
-                .route("/alerts/test", web::post().to(test_alert_webhook))
+                .service(alert_routes())
+                .service(incident_routes())
+                .route(
+                    "/maintenance-windows",
+                    web::get().to(list_maintenance_windows),
+                )
+                .route(
+                    "/maintenance-windows",
+                    web::post().to(create_maintenance_window),
+                )
+                .route(
+                    "/maintenance-windows/{window_id}",
+                    web::delete().to(cancel_maintenance_window),
+                )
+                .route("/audit-events", web::get().to(list_audit_events))
+                .route("/admin/summary", web::get().to(admin_summary))
                 .route("/ingest/heartbeat", web::post().to(ingest_heartbeat))
                 .route("/ingest/event", web::post().to(ingest_event))
                 .route("/ingest/deploy", web::post().to(ingest_deploy))
@@ -96,6 +111,10 @@ pub fn configure_routes(config: &mut web::ServiceConfig) {
                 )
                 .route("/agents/enroll", web::post().to(enroll_agent))
                 .route("/agents", web::get().to(list_agents))
+                .route(
+                    "/agents/{agent_id}/telemetry",
+                    web::get().to(get_agent_telemetry),
+                )
                 .route("/agents/{agent_id}", web::delete().to(revoke_agent))
                 .route(
                     "/projects/{project_id}/agents",
@@ -144,6 +163,33 @@ pub fn configure_routes(config: &mut web::ServiceConfig) {
         )
         .route("/server-info", web::get().to(server_info))
         .route("/.well-known/meerkateer.json", web::get().to(metadata));
+}
+
+fn incident_routes() -> actix_web::Scope {
+    web::scope("/incidents")
+        .route("", web::get().to(list_incidents))
+        .route("/activity", web::get().to(list_incident_activity))
+        .route(
+            "/{incident_id}/acknowledge",
+            web::post().to(acknowledge_incident),
+        )
+        .route(
+            "/{incident_id}/assignment",
+            web::put().to(update_incident_assignment),
+        )
+        .route("/{incident_id}/notes", web::post().to(add_incident_note))
+}
+
+fn alert_routes() -> actix_web::Scope {
+    web::scope("/alerts")
+        .route("/test", web::post().to(test_alert_webhook))
+        .route("/policy", web::get().to(get_alert_policy))
+        .route("/policy", web::put().to(update_alert_policy))
+        .route("/deliveries", web::get().to(list_alert_deliveries))
+        .route(
+            "/deliveries/{delivery_id}/replay",
+            web::post().to(replay_alert_delivery),
+        )
 }
 
 #[derive(Debug, Serialize)]
@@ -404,6 +450,196 @@ struct TimelineResponse {
 }
 
 #[derive(Debug, Deserialize)]
+struct ProjectListQuery {
+    project_id: uuid::Uuid,
+    limit: Option<u16>,
+}
+
+#[derive(Debug, Serialize)]
+struct IncidentResponse {
+    id: uuid::Uuid,
+    project_id: uuid::Uuid,
+    service_id: uuid::Uuid,
+    service: String,
+    status: String,
+    severity: String,
+    title: String,
+    cause: String,
+    started_at: chrono::DateTime<Utc>,
+    last_observed_at: chrono::DateTime<Utc>,
+    resolved_at: Option<chrono::DateTime<Utc>>,
+    acknowledged_at: Option<chrono::DateTime<Utc>>,
+    acknowledged_by: Option<String>,
+    assigned_to: Option<uuid::Uuid>,
+    assignee: Option<String>,
+}
+
+type IncidentRow = (
+    uuid::Uuid,
+    uuid::Uuid,
+    uuid::Uuid,
+    String,
+    String,
+    String,
+    String,
+    String,
+    chrono::DateTime<Utc>,
+    chrono::DateTime<Utc>,
+    Option<chrono::DateTime<Utc>>,
+    Option<chrono::DateTime<Utc>>,
+    Option<String>,
+    Option<uuid::Uuid>,
+    Option<String>,
+);
+
+#[derive(Debug, Serialize)]
+struct IncidentListResponse {
+    items: Vec<IncidentResponse>,
+}
+
+#[derive(Debug, Serialize)]
+struct IncidentActivityResponse {
+    id: uuid::Uuid,
+    incident_id: uuid::Uuid,
+    kind: String,
+    actor: String,
+    note: Option<String>,
+    created_at: chrono::DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+struct IncidentActivityListResponse {
+    items: Vec<IncidentActivityResponse>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateIncidentAssignmentRequest {
+    assigned: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct AddIncidentNoteRequest {
+    note: String,
+}
+
+#[derive(Debug, Serialize)]
+struct AlertDeliveryResponse {
+    id: uuid::Uuid,
+    project_id: uuid::Uuid,
+    service_id: uuid::Uuid,
+    service: String,
+    incident_id: Option<uuid::Uuid>,
+    replay_of: Option<uuid::Uuid>,
+    transition: String,
+    status: String,
+    observed_at: chrono::DateTime<Utc>,
+    created_at: chrono::DateTime<Utc>,
+    delivered_at: Option<chrono::DateTime<Utc>>,
+    attempts: i32,
+    last_error: Option<String>,
+    suppression_reason: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct AlertDeliveryListResponse {
+    items: Vec<AlertDeliveryResponse>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateAlertPolicyRequest {
+    enabled: bool,
+    notify_down: bool,
+    notify_recovered: bool,
+    cooldown_seconds: i32,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(transparent)]
+struct WebhookConfigured(bool);
+
+#[derive(Debug, Serialize)]
+struct AlertPolicyResponse {
+    enabled: bool,
+    notify_down: bool,
+    notify_recovered: bool,
+    cooldown_seconds: i32,
+    webhook_configured: WebhookConfigured,
+    updated_at: Option<chrono::DateTime<Utc>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateMaintenanceWindowRequest {
+    project_id: uuid::Uuid,
+    service_id: uuid::Uuid,
+    title: String,
+    reason: String,
+    starts_at: chrono::DateTime<Utc>,
+    ends_at: chrono::DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+struct MaintenanceWindowResponse {
+    id: uuid::Uuid,
+    project_id: uuid::Uuid,
+    service_id: uuid::Uuid,
+    service: String,
+    title: String,
+    reason: String,
+    starts_at: chrono::DateTime<Utc>,
+    ends_at: chrono::DateTime<Utc>,
+    created_at: chrono::DateTime<Utc>,
+    cancelled_at: Option<chrono::DateTime<Utc>>,
+}
+
+#[derive(Debug, Serialize)]
+struct MaintenanceWindowListResponse {
+    items: Vec<MaintenanceWindowResponse>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LimitQuery {
+    limit: Option<u16>,
+}
+
+#[derive(Debug, Serialize)]
+struct AuditEventResponse {
+    id: uuid::Uuid,
+    actor_type: String,
+    actor_id: Option<uuid::Uuid>,
+    action: String,
+    target_type: String,
+    target_id: Option<uuid::Uuid>,
+    details: serde_json::Value,
+    occurred_at: chrono::DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+struct AuditEventListResponse {
+    items: Vec<AuditEventResponse>,
+}
+
+#[derive(Debug, Serialize)]
+struct AdminSummaryResponse {
+    tenant_id: uuid::Uuid,
+    deployment_mode: &'static str,
+    projects: i64,
+    services: i64,
+    agents: i64,
+    open_incidents: i64,
+    pending_alerts: i64,
+    dead_lettered_alerts: i64,
+    active_maintenance_windows: i64,
+    oldest_pending_alert_at: Option<chrono::DateTime<Utc>>,
+    worker_status: &'static str,
+    worker_started_at: Option<chrono::DateTime<Utc>>,
+    worker_last_cycle_at: Option<chrono::DateTime<Utc>>,
+    worker_last_cycle_claimed: i32,
+    worker_last_cycle_completed: i32,
+    worker_last_cycle_retried: i32,
+    worker_last_cycle_dead_lettered: i32,
+}
+
+#[derive(Debug, Deserialize)]
 struct IssueEnrollmentTokenRequest {
     expires_in_seconds: u32,
 }
@@ -448,6 +684,37 @@ struct AgentListResponse {
 }
 
 #[derive(Debug, Serialize)]
+struct AgentCapacityResponse {
+    used_bytes: f64,
+    total_bytes: f64,
+    utilization_percent: f64,
+}
+
+#[derive(Debug, Serialize)]
+struct AgentProcessResponse {
+    name: String,
+    running: bool,
+    instances: u32,
+}
+
+#[derive(Debug, Serialize)]
+struct AgentTelemetrySnapshotResponse {
+    agent_id: uuid::Uuid,
+    connection_state: String,
+    collection_state: &'static str,
+    observed_at: Option<chrono::DateTime<Utc>>,
+    received_at: Option<chrono::DateTime<Utc>>,
+    snapshot_stale: bool,
+    platform: Option<String>,
+    architecture: Option<String>,
+    cpu_usage_percent: Option<f64>,
+    memory: Option<AgentCapacityResponse>,
+    disk: Option<AgentCapacityResponse>,
+    processes: Vec<AgentProcessResponse>,
+    missing_metrics: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
 struct RotatedAgentCredentialResponse {
     credential_id: uuid::Uuid,
     secret: String,
@@ -482,6 +749,7 @@ struct AgentTelemetryRejection {
 #[derive(Debug, Clone)]
 struct AuthenticatedService {
     tenant: uuid::Uuid,
+    project: uuid::Uuid,
     service: uuid::Uuid,
     credential: uuid::Uuid,
     service_slug: String,
@@ -1250,6 +1518,1255 @@ async fn get_service_timeline(
     }
 }
 
+async fn list_incidents(
+    request: HttpRequest,
+    query: web::Query<ProjectListQuery>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session
+        .principal
+        .authorize(session.principal.tenant_id, Action::Read)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    let limit = query.limit.unwrap_or(100);
+    if !(1..=200).contains(&limit) {
+        return HttpResponse::BadRequest().json(ErrorResponse {
+            code: "invalid_request",
+        });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, session.principal.tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let rows = sqlx::query_as::<_, IncidentRow>(
+        "SELECT incidents.id, incidents.project_id, incidents.service_id, services.slug, \
+         incidents.status, incidents.severity, incidents.title, incidents.cause, \
+         incidents.started_at, incidents.last_observed_at, incidents.resolved_at, \
+         incidents.acknowledged_at, acknowledger.display_name AS acknowledged_by, \
+         incidents.assigned_to, assignee.display_name AS assignee \
+         FROM incidents JOIN services ON services.tenant_id = incidents.tenant_id \
+          AND services.id = incidents.service_id \
+         LEFT JOIN users AS acknowledger ON acknowledger.id = incidents.acknowledged_by \
+         LEFT JOIN users AS assignee ON assignee.id = incidents.assigned_to \
+         WHERE incidents.tenant_id = $1 AND incidents.project_id = $2 \
+         ORDER BY (incidents.status = 'open') DESC, incidents.started_at DESC, incidents.id \
+         LIMIT $3",
+    )
+    .bind(session.principal.tenant_id)
+    .bind(query.project_id)
+    .bind(i64::from(limit))
+    .fetch_all(&mut *transaction)
+    .await;
+    let Ok(rows) = rows else {
+        return database_unavailable();
+    };
+    if transaction.commit().await.is_err() {
+        return database_unavailable();
+    }
+    let items = rows
+        .into_iter()
+        .map(|row| IncidentResponse {
+            id: row.0,
+            project_id: row.1,
+            service_id: row.2,
+            service: row.3,
+            status: row.4,
+            severity: row.5,
+            title: row.6,
+            cause: row.7,
+            started_at: row.8,
+            last_observed_at: row.9,
+            resolved_at: row.10,
+            acknowledged_at: row.11,
+            acknowledged_by: row.12,
+            assigned_to: row.13,
+            assignee: row.14,
+        })
+        .collect();
+    HttpResponse::Ok()
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .json(IncidentListResponse { items })
+}
+
+async fn list_incident_activity(
+    request: HttpRequest,
+    query: web::Query<ProjectListQuery>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session
+        .principal
+        .authorize(session.principal.tenant_id, Action::Read)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    let limit = query.limit.unwrap_or(200);
+    if !(1..=200).contains(&limit) {
+        return HttpResponse::BadRequest().json(ErrorResponse {
+            code: "invalid_request",
+        });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, session.principal.tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let rows = sqlx::query_as::<
+        _,
+        (
+            uuid::Uuid,
+            uuid::Uuid,
+            String,
+            String,
+            Option<String>,
+            chrono::DateTime<Utc>,
+        ),
+    >(
+        "SELECT activity.id, activity.incident_id, activity.kind, users.display_name AS actor, \
+         activity.note, activity.created_at FROM incident_activity AS activity \
+         JOIN incidents ON incidents.tenant_id = activity.tenant_id \
+          AND incidents.id = activity.incident_id \
+         JOIN users ON users.id = activity.actor_id \
+         WHERE activity.tenant_id = $1 AND incidents.project_id = $2 \
+         ORDER BY activity.created_at DESC, activity.id LIMIT $3",
+    )
+    .bind(session.principal.tenant_id)
+    .bind(query.project_id)
+    .bind(i64::from(limit))
+    .fetch_all(&mut *transaction)
+    .await;
+    let Ok(rows) = rows else {
+        return database_unavailable();
+    };
+    if transaction.commit().await.is_err() {
+        return database_unavailable();
+    }
+    let items = rows
+        .into_iter()
+        .map(|row| IncidentActivityResponse {
+            id: row.0,
+            incident_id: row.1,
+            kind: row.2,
+            actor: row.3,
+            note: row.4,
+            created_at: row.5,
+        })
+        .collect();
+    HttpResponse::Ok()
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .json(IncidentActivityListResponse { items })
+}
+
+async fn acknowledge_incident(
+    request: HttpRequest,
+    incident_id: web::Path<uuid::Uuid>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session
+        .principal
+        .authorize(session.principal.tenant_id, Action::IncidentWrite)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    if !csrf_is_valid(&request, &session) {
+        return HttpResponse::Forbidden().json(ErrorResponse {
+            code: "csrf_failed",
+        });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, session.principal.tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let incident_id = incident_id.into_inner();
+    let changed = sqlx::query_scalar::<_, uuid::Uuid>(
+        "UPDATE incidents SET acknowledged_at = now(), acknowledged_by = $3, updated_at = now() \
+         WHERE tenant_id = $1 AND id = $2 AND acknowledged_at IS NULL RETURNING id",
+    )
+    .bind(session.principal.tenant_id)
+    .bind(incident_id)
+    .bind(session.principal.user_id)
+    .fetch_optional(&mut *transaction)
+    .await;
+    let Ok(changed) = changed else {
+        return database_unavailable();
+    };
+    if changed.is_some() {
+        if record_incident_activity(
+            &mut transaction,
+            session.principal,
+            incident_id,
+            "acknowledged",
+            None,
+        )
+        .await
+        .is_err()
+            || insert_inventory_audit(
+                &mut transaction,
+                session.principal,
+                "incident.acknowledge",
+                "incident",
+                incident_id,
+            )
+            .await
+            .is_err()
+        {
+            return database_unavailable();
+        }
+    } else {
+        match incident_exists(&mut transaction, session.principal.tenant_id, incident_id).await {
+            Ok(true) => {}
+            Ok(false) => {
+                return HttpResponse::NotFound().json(ErrorResponse { code: "not_found" });
+            }
+            Err(()) => return database_unavailable(),
+        }
+    }
+    if transaction.commit().await.is_err() {
+        return database_unavailable();
+    }
+    HttpResponse::NoContent().finish()
+}
+
+async fn update_incident_assignment(
+    request: HttpRequest,
+    incident_id: web::Path<uuid::Uuid>,
+    body: web::Json<UpdateIncidentAssignmentRequest>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session
+        .principal
+        .authorize(session.principal.tenant_id, Action::IncidentWrite)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    if !csrf_is_valid(&request, &session) {
+        return HttpResponse::Forbidden().json(ErrorResponse {
+            code: "csrf_failed",
+        });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, session.principal.tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let incident_id = incident_id.into_inner();
+    let assignee = body.assigned.then_some(session.principal.user_id);
+    let changed = sqlx::query_scalar::<_, uuid::Uuid>(
+        "UPDATE incidents SET assigned_to = $3, updated_at = now() \
+         WHERE tenant_id = $1 AND id = $2 AND assigned_to IS DISTINCT FROM $3 RETURNING id",
+    )
+    .bind(session.principal.tenant_id)
+    .bind(incident_id)
+    .bind(assignee)
+    .fetch_optional(&mut *transaction)
+    .await;
+    let Ok(changed) = changed else {
+        return database_unavailable();
+    };
+    if changed.is_some() {
+        let kind = if body.assigned {
+            "assigned"
+        } else {
+            "unassigned"
+        };
+        if record_incident_activity(&mut transaction, session.principal, incident_id, kind, None)
+            .await
+            .is_err()
+            || insert_inventory_audit(
+                &mut transaction,
+                session.principal,
+                if body.assigned {
+                    "incident.assign"
+                } else {
+                    "incident.unassign"
+                },
+                "incident",
+                incident_id,
+            )
+            .await
+            .is_err()
+        {
+            return database_unavailable();
+        }
+    } else {
+        match incident_exists(&mut transaction, session.principal.tenant_id, incident_id).await {
+            Ok(true) => {}
+            Ok(false) => {
+                return HttpResponse::NotFound().json(ErrorResponse { code: "not_found" });
+            }
+            Err(()) => return database_unavailable(),
+        }
+    }
+    if transaction.commit().await.is_err() {
+        return database_unavailable();
+    }
+    HttpResponse::NoContent().finish()
+}
+
+async fn add_incident_note(
+    request: HttpRequest,
+    incident_id: web::Path<uuid::Uuid>,
+    body: web::Json<AddIncidentNoteRequest>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session
+        .principal
+        .authorize(session.principal.tenant_id, Action::IncidentWrite)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    if !csrf_is_valid(&request, &session) {
+        return HttpResponse::Forbidden().json(ErrorResponse {
+            code: "csrf_failed",
+        });
+    }
+    let note = body.note.trim();
+    if note.is_empty() || note.chars().count() > 2000 {
+        return HttpResponse::BadRequest().json(ErrorResponse {
+            code: "invalid_request",
+        });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, session.principal.tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let incident_id = incident_id.into_inner();
+    match incident_exists(&mut transaction, session.principal.tenant_id, incident_id).await {
+        Ok(true) => {}
+        Ok(false) => {
+            return HttpResponse::NotFound().json(ErrorResponse { code: "not_found" });
+        }
+        Err(()) => return database_unavailable(),
+    }
+    if record_incident_activity(
+        &mut transaction,
+        session.principal,
+        incident_id,
+        "note",
+        Some(note),
+    )
+    .await
+    .is_err()
+        || insert_inventory_audit(
+            &mut transaction,
+            session.principal,
+            "incident.note",
+            "incident",
+            incident_id,
+        )
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    if transaction.commit().await.is_err() {
+        return database_unavailable();
+    }
+    HttpResponse::NoContent().finish()
+}
+
+async fn incident_exists(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: uuid::Uuid,
+    incident_id: uuid::Uuid,
+) -> Result<bool, ()> {
+    sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM incidents WHERE tenant_id = $1 AND id = $2)",
+    )
+    .bind(tenant_id)
+    .bind(incident_id)
+    .fetch_one(&mut **transaction)
+    .await
+    .map_err(|_| ())
+}
+
+async fn record_incident_activity(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    principal: Principal,
+    incident_id: uuid::Uuid,
+    kind: &'static str,
+    note: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO incident_activity (tenant_id, incident_id, kind, actor_id, note) \
+         VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(principal.tenant_id)
+    .bind(incident_id)
+    .bind(kind)
+    .bind(principal.user_id)
+    .bind(note)
+    .execute(&mut **transaction)
+    .await?;
+    Ok(())
+}
+
+async fn list_alert_deliveries(
+    request: HttpRequest,
+    query: web::Query<ProjectListQuery>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session
+        .principal
+        .authorize(session.principal.tenant_id, Action::Read)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    let limit = query.limit.unwrap_or(100);
+    if !(1..=200).contains(&limit) {
+        return HttpResponse::BadRequest().json(ErrorResponse {
+            code: "invalid_request",
+        });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, session.principal.tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let rows = sqlx::query_as::<_, (
+        uuid::Uuid, uuid::Uuid, uuid::Uuid, String, Option<uuid::Uuid>, Option<uuid::Uuid>, String, String,
+        chrono::DateTime<Utc>, chrono::DateTime<Utc>, Option<chrono::DateTime<Utc>>, i32,
+        Option<String>, Option<String>,
+    )>(
+        "SELECT deliveries.id, deliveries.project_id, deliveries.service_id, services.slug, \
+         deliveries.incident_id, deliveries.replay_of, deliveries.transition, deliveries.status, deliveries.observed_at, \
+         deliveries.created_at, deliveries.delivered_at, deliveries.attempts, \
+         deliveries.last_error, deliveries.suppression_reason \
+         FROM alert_deliveries AS deliveries \
+         JOIN services ON services.tenant_id = deliveries.tenant_id AND services.id = deliveries.service_id \
+         WHERE deliveries.tenant_id = $1 AND deliveries.project_id = $2 \
+         ORDER BY deliveries.created_at DESC, deliveries.id LIMIT $3",
+    )
+    .bind(session.principal.tenant_id)
+    .bind(query.project_id)
+    .bind(i64::from(limit))
+    .fetch_all(&mut *transaction)
+    .await;
+    let Ok(rows) = rows else {
+        return database_unavailable();
+    };
+    if transaction.commit().await.is_err() {
+        return database_unavailable();
+    }
+    let items = rows
+        .into_iter()
+        .map(|row| AlertDeliveryResponse {
+            id: row.0,
+            project_id: row.1,
+            service_id: row.2,
+            service: row.3,
+            incident_id: row.4,
+            replay_of: row.5,
+            transition: row.6,
+            status: row.7,
+            observed_at: row.8,
+            created_at: row.9,
+            delivered_at: row.10,
+            attempts: row.11,
+            last_error: row.12,
+            suppression_reason: row.13,
+        })
+        .collect();
+    HttpResponse::Ok()
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .json(AlertDeliveryListResponse { items })
+}
+
+async fn replay_alert_delivery(
+    request: HttpRequest,
+    delivery_id: web::Path<uuid::Uuid>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session
+        .principal
+        .authorize(session.principal.tenant_id, Action::AlertWrite)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    if !csrf_is_valid(&request, &session) {
+        return HttpResponse::Forbidden().json(ErrorResponse {
+            code: "csrf_failed",
+        });
+    }
+    if !alert_webhook_url().is_ok_and(|url| url.is_some()) {
+        return HttpResponse::Conflict().json(ErrorResponse {
+            code: "alert_webhook_not_configured",
+        });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let original_id = delivery_id.into_inner();
+    match queue_alert_replay(database, session.principal, original_id).await {
+        Ok(()) => HttpResponse::NoContent().finish(),
+        Err(AlertReplayError::NotFound) => {
+            HttpResponse::NotFound().json(ErrorResponse { code: "not_found" })
+        }
+        Err(AlertReplayError::NotReplayable) => HttpResponse::Conflict().json(ErrorResponse {
+            code: "alert_not_replayable",
+        }),
+        Err(AlertReplayError::Database) => database_unavailable(),
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum AlertReplayError {
+    NotFound,
+    NotReplayable,
+    Database,
+}
+
+type AlertReplaySource = (
+    uuid::Uuid,
+    uuid::Uuid,
+    Option<uuid::Uuid>,
+    String,
+    chrono::DateTime<Utc>,
+    String,
+    String,
+    String,
+    String,
+);
+
+async fn queue_alert_replay(
+    database: &PgPool,
+    principal: Principal,
+    original_id: uuid::Uuid,
+) -> Result<(), AlertReplayError> {
+    let mut transaction = database
+        .begin()
+        .await
+        .map_err(|_| AlertReplayError::Database)?;
+    set_tenant_context(&mut transaction, principal.tenant_id)
+        .await
+        .map_err(|_| AlertReplayError::Database)?;
+    let original = sqlx::query_as::<_, AlertReplaySource>(
+        "SELECT deliveries.project_id, deliveries.service_id, deliveries.incident_id, \
+         deliveries.transition, deliveries.observed_at, deliveries.status, projects.slug, \
+         services.slug, services.environment FROM alert_deliveries AS deliveries \
+         JOIN projects ON projects.tenant_id = deliveries.tenant_id \
+          AND projects.id = deliveries.project_id \
+         JOIN services ON services.tenant_id = deliveries.tenant_id \
+          AND services.id = deliveries.service_id \
+         WHERE deliveries.tenant_id = $1 AND deliveries.id = $2",
+    )
+    .bind(principal.tenant_id)
+    .bind(original_id)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(|_| AlertReplayError::Database)?
+    .ok_or(AlertReplayError::NotFound)?;
+    if original.5 != "dead_lettered" {
+        return Err(AlertReplayError::NotReplayable);
+    }
+    let already_replayed = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM alert_deliveries \
+         WHERE tenant_id = $1 AND replay_of = $2)",
+    )
+    .bind(principal.tenant_id)
+    .bind(original_id)
+    .fetch_one(&mut *transaction)
+    .await
+    .map_err(|_| AlertReplayError::Database)?;
+    if already_replayed {
+        return Err(AlertReplayError::NotReplayable);
+    }
+    insert_alert_replay(&mut transaction, principal, original_id, &original).await?;
+    insert_inventory_audit(
+        &mut transaction,
+        principal,
+        "alert.delivery.replay",
+        "alert_delivery",
+        original_id,
+    )
+    .await
+    .map_err(|_| AlertReplayError::Database)?;
+    transaction
+        .commit()
+        .await
+        .map_err(|_| AlertReplayError::Database)
+}
+
+async fn insert_alert_replay(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    principal: Principal,
+    original_id: uuid::Uuid,
+    original: &AlertReplaySource,
+) -> Result<(), AlertReplayError> {
+    let replay_id = uuid::Uuid::new_v4();
+    let outbox_id = uuid::Uuid::new_v4();
+    let payload = serde_json::json!({
+        "delivery_id": replay_id,
+        "replay_of": original_id,
+        "service_id": original.1,
+        "project": original.6,
+        "service": original.7,
+        "environment": original.8,
+        "transition": original.3,
+        "observed_at": original.4,
+    });
+    sqlx::query(
+        "INSERT INTO outbox (id, tenant_id, topic, payload) \
+         VALUES ($1, $2, 'alert.transition', $3)",
+    )
+    .bind(outbox_id)
+    .bind(principal.tenant_id)
+    .bind(payload)
+    .execute(&mut **transaction)
+    .await
+    .map_err(|_| AlertReplayError::Database)?;
+    sqlx::query(
+        "INSERT INTO alert_deliveries \
+         (tenant_id, id, project_id, service_id, incident_id, replay_of, outbox_id, \
+          transition, status, observed_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9)",
+    )
+    .bind(principal.tenant_id)
+    .bind(replay_id)
+    .bind(original.0)
+    .bind(original.1)
+    .bind(original.2)
+    .bind(original_id)
+    .bind(outbox_id)
+    .bind(&original.3)
+    .bind(original.4)
+    .execute(&mut **transaction)
+    .await
+    .map_err(|_| AlertReplayError::Database)?;
+    Ok(())
+}
+
+async fn get_alert_policy(request: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session
+        .principal
+        .authorize(session.principal.tenant_id, Action::Read)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, session.principal.tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let row = sqlx::query_as::<_, (bool, bool, bool, i32, chrono::DateTime<Utc>)>(
+        "SELECT enabled, notify_down, notify_recovered, cooldown_seconds, updated_at \
+         FROM alert_policies WHERE tenant_id = $1",
+    )
+    .bind(session.principal.tenant_id)
+    .fetch_optional(&mut *transaction)
+    .await;
+    let Ok(row) = row else {
+        return database_unavailable();
+    };
+    if transaction.commit().await.is_err() {
+        return database_unavailable();
+    }
+    let (enabled, notify_down, notify_recovered, cooldown_seconds, updated_at) = row
+        .map_or((true, true, true, 0, None), |row| {
+            (row.0, row.1, row.2, row.3, Some(row.4))
+        });
+    HttpResponse::Ok()
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .json(AlertPolicyResponse {
+            enabled,
+            notify_down,
+            notify_recovered,
+            cooldown_seconds,
+            webhook_configured: WebhookConfigured(
+                alert_webhook_url().is_ok_and(|url| url.is_some()),
+            ),
+            updated_at,
+        })
+}
+
+async fn update_alert_policy(
+    request: HttpRequest,
+    body: web::Json<UpdateAlertPolicyRequest>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session
+        .principal
+        .authorize(session.principal.tenant_id, Action::TenantManage)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    if !csrf_is_valid(&request, &session) {
+        return HttpResponse::Forbidden().json(ErrorResponse {
+            code: "csrf_failed",
+        });
+    }
+    if !(0..=86_400).contains(&body.cooldown_seconds) {
+        return HttpResponse::BadRequest().json(ErrorResponse {
+            code: "invalid_request",
+        });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, session.principal.tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let updated_at = Utc::now();
+    let result = sqlx::query(
+        "INSERT INTO alert_policies (tenant_id, enabled, notify_down, notify_recovered, cooldown_seconds, updated_by, updated_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (tenant_id) DO UPDATE SET \
+         enabled = EXCLUDED.enabled, notify_down = EXCLUDED.notify_down, \
+         notify_recovered = EXCLUDED.notify_recovered, cooldown_seconds = EXCLUDED.cooldown_seconds, \
+         updated_by = EXCLUDED.updated_by, \
+         updated_at = EXCLUDED.updated_at",
+    ).bind(session.principal.tenant_id).bind(body.enabled).bind(body.notify_down)
+        .bind(body.notify_recovered).bind(body.cooldown_seconds)
+        .bind(session.principal.user_id).bind(updated_at)
+        .execute(&mut *transaction).await;
+    if result.is_err() {
+        return database_unavailable();
+    }
+    if insert_inventory_audit(
+        &mut transaction,
+        session.principal,
+        "alert.policy.update",
+        "tenant",
+        session.principal.tenant_id,
+    )
+    .await
+    .is_err()
+    {
+        return database_unavailable();
+    }
+    if transaction.commit().await.is_err() {
+        return database_unavailable();
+    }
+    HttpResponse::Ok().json(AlertPolicyResponse {
+        enabled: body.enabled,
+        notify_down: body.notify_down,
+        notify_recovered: body.notify_recovered,
+        cooldown_seconds: body.cooldown_seconds,
+        webhook_configured: WebhookConfigured(alert_webhook_url().is_ok_and(|url| url.is_some())),
+        updated_at: Some(updated_at),
+    })
+}
+
+async fn list_maintenance_windows(
+    request: HttpRequest,
+    query: web::Query<ProjectListQuery>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session
+        .principal
+        .authorize(session.principal.tenant_id, Action::Read)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    let limit = query.limit.unwrap_or(100);
+    if !(1..=200).contains(&limit) {
+        return HttpResponse::BadRequest().json(ErrorResponse {
+            code: "invalid_request",
+        });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, session.principal.tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let rows = sqlx::query_as::<_, (
+        uuid::Uuid, uuid::Uuid, uuid::Uuid, String, String, String, chrono::DateTime<Utc>,
+        chrono::DateTime<Utc>, chrono::DateTime<Utc>, Option<chrono::DateTime<Utc>>,
+    )>(
+        "SELECT windows.id, windows.project_id, windows.service_id, services.slug, windows.title, \
+         windows.reason, windows.starts_at, windows.ends_at, windows.created_at, windows.cancelled_at \
+         FROM maintenance_windows AS windows JOIN services \
+          ON services.tenant_id = windows.tenant_id AND services.id = windows.service_id \
+         WHERE windows.tenant_id = $1 AND windows.project_id = $2 \
+         ORDER BY windows.starts_at DESC, windows.id LIMIT $3",
+    ).bind(session.principal.tenant_id).bind(query.project_id).bind(i64::from(limit))
+        .fetch_all(&mut *transaction).await;
+    let Ok(rows) = rows else {
+        return database_unavailable();
+    };
+    if transaction.commit().await.is_err() {
+        return database_unavailable();
+    }
+    let items = rows
+        .into_iter()
+        .map(|row| MaintenanceWindowResponse {
+            id: row.0,
+            project_id: row.1,
+            service_id: row.2,
+            service: row.3,
+            title: row.4,
+            reason: row.5,
+            starts_at: row.6,
+            ends_at: row.7,
+            created_at: row.8,
+            cancelled_at: row.9,
+        })
+        .collect();
+    HttpResponse::Ok()
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .json(MaintenanceWindowListResponse { items })
+}
+
+async fn create_maintenance_window(
+    request: HttpRequest,
+    body: web::Json<CreateMaintenanceWindowRequest>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session
+        .principal
+        .authorize(session.principal.tenant_id, Action::MaintenanceWrite)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    if !csrf_is_valid(&request, &session) {
+        return HttpResponse::Forbidden().json(ErrorResponse {
+            code: "csrf_failed",
+        });
+    }
+    let title = body.title.trim();
+    let reason = body.reason.trim();
+    if title.is_empty()
+        || title.len() > 128
+        || reason.is_empty()
+        || reason.len() > 1024
+        || body.ends_at <= body.starts_at
+        || body.ends_at > body.starts_at + ChronoDuration::days(90)
+        || body.ends_at < Utc::now()
+    {
+        return HttpResponse::BadRequest().json(ErrorResponse {
+            code: "invalid_request",
+        });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, session.principal.tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let id = uuid::Uuid::new_v4();
+    let created_at = Utc::now();
+    let inserted = sqlx::query_as::<_, (uuid::Uuid, String)>(
+        "WITH selected AS ( \
+             SELECT project_id, id, slug FROM services \
+             WHERE tenant_id = $1 AND project_id = $3 AND id = $4 \
+         ), inserted AS ( \
+             INSERT INTO maintenance_windows \
+             (tenant_id, id, project_id, service_id, title, reason, starts_at, ends_at, created_by, created_at) \
+             SELECT $1, $2, selected.project_id, selected.id, $5, $6, $7, $8, $9, $10 \
+             FROM selected RETURNING id, service_id \
+         ) \
+         SELECT inserted.id, selected.slug FROM inserted \
+         JOIN selected ON selected.id = inserted.service_id",
+    ).bind(session.principal.tenant_id).bind(id).bind(body.project_id).bind(body.service_id)
+        .bind(title).bind(reason).bind(body.starts_at).bind(body.ends_at)
+        .bind(session.principal.user_id).bind(created_at).fetch_optional(&mut *transaction).await;
+    let Ok(inserted) = inserted else {
+        return database_unavailable();
+    };
+    let Some((_inserted_id, service_slug)) = inserted else {
+        return HttpResponse::NotFound().json(ErrorResponse { code: "not_found" });
+    };
+    if insert_inventory_audit(
+        &mut transaction,
+        session.principal,
+        "maintenance.create",
+        "maintenance_window",
+        id,
+    )
+    .await
+    .is_err()
+    {
+        return database_unavailable();
+    }
+    if transaction.commit().await.is_err() {
+        return database_unavailable();
+    }
+    HttpResponse::Created().json(MaintenanceWindowResponse {
+        id,
+        project_id: body.project_id,
+        service_id: body.service_id,
+        service: service_slug,
+        title: title.to_owned(),
+        reason: reason.to_owned(),
+        starts_at: body.starts_at,
+        ends_at: body.ends_at,
+        created_at,
+        cancelled_at: None,
+    })
+}
+
+async fn cancel_maintenance_window(
+    request: HttpRequest,
+    window_id: web::Path<uuid::Uuid>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session
+        .principal
+        .authorize(session.principal.tenant_id, Action::MaintenanceWrite)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    if !csrf_is_valid(&request, &session) {
+        return HttpResponse::Forbidden().json(ErrorResponse {
+            code: "csrf_failed",
+        });
+    }
+    let window_id = window_id.into_inner();
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, session.principal.tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let changed = sqlx::query_scalar::<_, uuid::Uuid>(
+        "UPDATE maintenance_windows SET cancelled_at = now() \
+         WHERE tenant_id = $1 AND id = $2 AND cancelled_at IS NULL RETURNING id",
+    )
+    .bind(session.principal.tenant_id)
+    .bind(window_id)
+    .fetch_optional(&mut *transaction)
+    .await;
+    let Ok(changed) = changed else {
+        return database_unavailable();
+    };
+    if changed.is_none() {
+        return HttpResponse::NotFound().json(ErrorResponse { code: "not_found" });
+    }
+    if insert_inventory_audit(
+        &mut transaction,
+        session.principal,
+        "maintenance.cancel",
+        "maintenance_window",
+        window_id,
+    )
+    .await
+    .is_err()
+    {
+        return database_unavailable();
+    }
+    if transaction.commit().await.is_err() {
+        return database_unavailable();
+    }
+    HttpResponse::NoContent().finish()
+}
+
+async fn list_audit_events(
+    request: HttpRequest,
+    query: web::Query<LimitQuery>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if !matches!(session.principal.role, Role::Owner | Role::Admin) {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    let limit = query.limit.unwrap_or(100);
+    if !(1..=200).contains(&limit) {
+        return HttpResponse::BadRequest().json(ErrorResponse {
+            code: "invalid_request",
+        });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, session.principal.tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let rows = sqlx::query_as::<
+        _,
+        (
+            uuid::Uuid,
+            String,
+            Option<uuid::Uuid>,
+            String,
+            String,
+            Option<uuid::Uuid>,
+            serde_json::Value,
+            chrono::DateTime<Utc>,
+        ),
+    >(
+        "SELECT id, actor_type, actor_id, action, target_type, target_id, details, occurred_at \
+         FROM audit_events WHERE tenant_id = $1 ORDER BY occurred_at DESC, id LIMIT $2",
+    )
+    .bind(session.principal.tenant_id)
+    .bind(i64::from(limit))
+    .fetch_all(&mut *transaction)
+    .await;
+    let Ok(rows) = rows else {
+        return database_unavailable();
+    };
+    if transaction.commit().await.is_err() {
+        return database_unavailable();
+    }
+    let items = rows
+        .into_iter()
+        .map(|row| AuditEventResponse {
+            id: row.0,
+            actor_type: row.1,
+            actor_id: row.2,
+            action: row.3,
+            target_type: row.4,
+            target_id: row.5,
+            details: row.6,
+            occurred_at: row.7,
+        })
+        .collect();
+    HttpResponse::Ok()
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .json(AuditEventListResponse { items })
+}
+
+async fn admin_summary(request: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if !matches!(session.principal.role, Role::Owner | Role::Admin) {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, session.principal.tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let counts = sqlx::query_as::<_, (i64, i64, i64, i64, i64, i64, i64)>(
+        "SELECT \
+         (SELECT count(*) FROM projects WHERE tenant_id = $1), \
+         (SELECT count(*) FROM services WHERE tenant_id = $1), \
+         (SELECT count(*) FROM agents WHERE tenant_id = $1), \
+         (SELECT count(*) FROM incidents WHERE tenant_id = $1 AND status = 'open'), \
+         (SELECT count(*) FROM alert_deliveries WHERE tenant_id = $1 AND status IN ('queued', 'retrying')), \
+         (SELECT count(*) FROM alert_deliveries WHERE tenant_id = $1 AND status = 'dead_lettered'), \
+         (SELECT count(*) FROM maintenance_windows WHERE tenant_id = $1 AND cancelled_at IS NULL \
+          AND starts_at <= now() AND ends_at > now())",
+    ).bind(session.principal.tenant_id).fetch_one(&mut *transaction).await;
+    let Ok(counts) = counts else {
+        return database_unavailable();
+    };
+    let oldest_pending_alert_at = sqlx::query_scalar::<_, Option<chrono::DateTime<Utc>>>(
+        "SELECT min(created_at) FROM alert_deliveries \
+         WHERE tenant_id = $1 AND status IN ('queued', 'retrying')",
+    )
+    .bind(session.principal.tenant_id)
+    .fetch_one(&mut *transaction)
+    .await;
+    let Ok(oldest_pending_alert_at) = oldest_pending_alert_at else {
+        return database_unavailable();
+    };
+    let worker = sqlx::query_as::<
+        _,
+        (
+            uuid::Uuid,
+            chrono::DateTime<Utc>,
+            chrono::DateTime<Utc>,
+            i32,
+            i32,
+            i32,
+            i32,
+        ),
+    >(
+        "SELECT worker_id, started_at, last_cycle_at, claimed, completed, retried, dead_lettered \
+         FROM worker_runtime ORDER BY last_cycle_at DESC LIMIT 1",
+    )
+    .fetch_optional(&mut *transaction)
+    .await;
+    let Ok(worker) = worker else {
+        return database_unavailable();
+    };
+    if transaction.commit().await.is_err() {
+        return database_unavailable();
+    }
+    let worker_status = worker_runtime_status(worker.as_ref().map(|row| row.2), Utc::now());
+    HttpResponse::Ok()
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .json(AdminSummaryResponse {
+            tenant_id: session.principal.tenant_id,
+            deployment_mode: state.config.deployment_mode.as_str(),
+            projects: counts.0,
+            services: counts.1,
+            agents: counts.2,
+            open_incidents: counts.3,
+            pending_alerts: counts.4,
+            dead_lettered_alerts: counts.5,
+            active_maintenance_windows: counts.6,
+            oldest_pending_alert_at,
+            worker_status,
+            worker_started_at: worker.as_ref().map(|row| row.1),
+            worker_last_cycle_at: worker.as_ref().map(|row| row.2),
+            worker_last_cycle_claimed: worker.as_ref().map_or(0, |row| row.3),
+            worker_last_cycle_completed: worker.as_ref().map_or(0, |row| row.4),
+            worker_last_cycle_retried: worker.as_ref().map_or(0, |row| row.5),
+            worker_last_cycle_dead_lettered: worker.as_ref().map_or(0, |row| row.6),
+        })
+}
+
+fn worker_runtime_status(
+    last_cycle_at: Option<chrono::DateTime<Utc>>,
+    current_time: chrono::DateTime<Utc>,
+) -> &'static str {
+    match last_cycle_at {
+        Some(last_cycle)
+            if last_cycle >= current_time - ChronoDuration::seconds(30)
+                && last_cycle <= current_time + ChronoDuration::minutes(5) =>
+        {
+            "healthy"
+        }
+        Some(_) => "stalled",
+        None => "never_seen",
+    }
+}
+
 async fn test_game_probe(
     request: HttpRequest,
     service_id: web::Path<uuid::Uuid>,
@@ -1962,6 +3479,41 @@ async fn list_agents(request: HttpRequest, state: web::Data<AppState>) -> HttpRe
     }
 }
 
+async fn get_agent_telemetry(
+    request: HttpRequest,
+    agent_id: web::Path<uuid::Uuid>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session
+        .principal
+        .authorize(session.principal.tenant_id, Action::Read)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    match select_agent_telemetry(
+        database,
+        session.principal.tenant_id,
+        agent_id.into_inner(),
+        state.config.heartbeat_stale_after_seconds,
+    )
+    .await
+    {
+        Ok(Some(snapshot)) => HttpResponse::Ok()
+            .insert_header((header::CACHE_CONTROL, "no-store"))
+            .json(snapshot),
+        Ok(None) => HttpResponse::NotFound().json(ErrorResponse { code: "not_found" }),
+        Err(()) => database_unavailable(),
+    }
+}
+
 async fn list_project_agents(
     request: HttpRequest,
     project_id: web::Path<uuid::Uuid>,
@@ -2505,6 +4057,16 @@ type AgentRow = (
     Option<chrono::DateTime<Utc>>,
 );
 
+type AgentTelemetryHeaderRow = (
+    String,
+    Option<chrono::DateTime<Utc>>,
+    Option<i64>,
+    Option<i64>,
+    Option<chrono::DateTime<Utc>>,
+);
+
+type AgentTelemetryMetricRow = (String, f64, chrono::DateTime<Utc>, serde_json::Value);
+
 async fn select_agents(
     database: &PgPool,
     tenant_id: uuid::Uuid,
@@ -2524,6 +4086,188 @@ async fn select_agents(
     .map_err(|_| ())?;
     transaction.commit().await.map_err(|_| ())?;
     Ok(agent_responses(rows, stale_after_seconds))
+}
+
+async fn select_agent_telemetry(
+    database: &PgPool,
+    tenant_id: uuid::Uuid,
+    agent_id: uuid::Uuid,
+    stale_after_seconds: u32,
+) -> Result<Option<AgentTelemetrySnapshotResponse>, ()> {
+    let mut transaction = database.begin().await.map_err(|_| ())?;
+    set_tenant_context(&mut transaction, tenant_id)
+        .await
+        .map_err(|_| ())?;
+    let header = sqlx::query_as::<_, AgentTelemetryHeaderRow>(
+        "SELECT agents.status, agents.last_seen_at, latest.first_sequence, \
+           latest.last_sequence, latest.received_at FROM agents LEFT JOIN LATERAL ( \
+             SELECT first_sequence, last_sequence, received_at FROM agent_batches \
+              WHERE tenant_id = agents.tenant_id AND agent_id = agents.id \
+              ORDER BY last_sequence DESC, received_at DESC LIMIT 1 \
+           ) latest ON true WHERE agents.tenant_id = $1 AND agents.id = $2",
+    )
+    .bind(tenant_id)
+    .bind(agent_id)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(|_| ())?;
+    let Some((status, last_seen_at, first_sequence, last_sequence, received_at)) = header else {
+        transaction.rollback().await.map_err(|_| ())?;
+        return Ok(None);
+    };
+    let rows = if let (Some(first_sequence), Some(last_sequence)) = (first_sequence, last_sequence)
+    {
+        sqlx::query_as::<_, AgentTelemetryMetricRow>(
+            "SELECT name, value, observed_at, attributes FROM agent_telemetry_records \
+             WHERE tenant_id = $1 AND agent_id = $2 \
+               AND sequence BETWEEN $3 AND $4 AND record_type = 'sample' \
+               AND name IN ('agent.heartbeat', 'host.cpu.utilization', \
+                 'host.memory.used_bytes', 'host.memory.total_bytes', \
+                 'host.disk.used_bytes', 'host.disk.total_bytes', 'process.running') \
+             ORDER BY sequence LIMIT 64",
+        )
+        .bind(tenant_id)
+        .bind(agent_id)
+        .bind(first_sequence)
+        .bind(last_sequence)
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(|_| ())?
+    } else {
+        Vec::new()
+    };
+    transaction.commit().await.map_err(|_| ())?;
+    Ok(Some(agent_telemetry_snapshot(
+        agent_id,
+        &status,
+        last_seen_at,
+        received_at,
+        rows,
+        stale_after_seconds,
+    )))
+}
+
+fn agent_telemetry_snapshot(
+    agent_id: uuid::Uuid,
+    agent_status: &str,
+    last_seen_at: Option<chrono::DateTime<Utc>>,
+    received_at: Option<chrono::DateTime<Utc>>,
+    rows: Vec<AgentTelemetryMetricRow>,
+    stale_after_seconds: u32,
+) -> AgentTelemetrySnapshotResponse {
+    let stale_before = Utc::now() - ChronoDuration::seconds(i64::from(stale_after_seconds));
+    let connection_state = agent_connection_state(agent_status, last_seen_at, stale_before);
+    let snapshot_stale = received_at.is_none_or(|value| value < stale_before);
+    let mut values = BTreeMap::new();
+    let mut observed_at = None;
+    let mut platform = None;
+    let mut architecture = None;
+    let mut processes = BTreeMap::new();
+    for (name, value, row_observed_at, attributes) in rows {
+        if name == "agent.heartbeat" {
+            observed_at = Some(row_observed_at);
+            platform = safe_agent_attribute(&attributes, "os");
+            architecture = safe_agent_attribute(&attributes, "arch");
+        } else if name == "process.running" {
+            if processes.len() < 16
+                && let (Some(process_name), Some(instances)) = (
+                    safe_agent_attribute(&attributes, "process"),
+                    process_instances(value),
+                )
+            {
+                processes.insert(process_name, instances);
+            }
+        } else {
+            values.insert(name, value);
+        }
+    }
+
+    let cpu_usage_percent = values
+        .get("host.cpu.utilization")
+        .copied()
+        .filter(|value| (0.0..=1.0).contains(value))
+        .map(|value| value * 100.0);
+    let memory = capacity_response(
+        values.get("host.memory.used_bytes").copied(),
+        values.get("host.memory.total_bytes").copied(),
+    );
+    let disk = capacity_response(
+        values.get("host.disk.used_bytes").copied(),
+        values.get("host.disk.total_bytes").copied(),
+    );
+    let mut missing_metrics = Vec::new();
+    if observed_at.is_none() {
+        missing_metrics.push("agent.heartbeat");
+    }
+    if cpu_usage_percent.is_none() {
+        missing_metrics.push("host.cpu.utilization");
+    }
+    if memory.is_none() {
+        missing_metrics.extend(["host.memory.used_bytes", "host.memory.total_bytes"]);
+    }
+    if disk.is_none() {
+        missing_metrics.extend(["host.disk.used_bytes", "host.disk.total_bytes"]);
+    }
+    let collection_state = if received_at.is_none() {
+        "unavailable"
+    } else if missing_metrics.is_empty() {
+        "complete"
+    } else {
+        "partial"
+    };
+    AgentTelemetrySnapshotResponse {
+        agent_id,
+        connection_state,
+        collection_state,
+        observed_at,
+        received_at,
+        snapshot_stale,
+        platform,
+        architecture,
+        cpu_usage_percent,
+        memory,
+        disk,
+        processes: processes
+            .into_iter()
+            .map(|(name, instances)| AgentProcessResponse {
+                name,
+                running: instances > 0,
+                instances,
+            })
+            .collect(),
+        missing_metrics,
+    }
+}
+
+fn safe_agent_attribute(attributes: &serde_json::Value, key: &str) -> Option<String> {
+    let value = attributes.get(key)?.as_str()?;
+    let length = value.chars().count();
+    ((1..=64).contains(&length) && !value.chars().any(char::is_control)).then(|| value.to_owned())
+}
+
+fn process_instances(value: f64) -> Option<u32> {
+    if !value.is_finite() || value < 0.0 || value.fract() != 0.0 || value > f64::from(u32::MAX) {
+        return None;
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    Some(value as u32)
+}
+
+fn capacity_response(
+    used_bytes: Option<f64>,
+    total_bytes: Option<f64>,
+) -> Option<AgentCapacityResponse> {
+    const MAX_EXACT_BYTES: f64 = 9_007_199_254_740_992.0;
+    let used_bytes = used_bytes.filter(|value| (0.0..=MAX_EXACT_BYTES).contains(value))?;
+    let total_bytes = total_bytes.filter(|value| (0.0..=MAX_EXACT_BYTES).contains(value))?;
+    if total_bytes <= 0.0 || used_bytes > total_bytes {
+        return None;
+    }
+    Some(AgentCapacityResponse {
+        used_bytes,
+        total_bytes,
+        utilization_percent: (used_bytes / total_bytes) * 100.0,
+    })
 }
 
 async fn select_project_agents(
@@ -2572,21 +4316,29 @@ fn agent_responses(rows: Vec<AgentRow>, stale_after_seconds: u32) -> Vec<AgentRe
             |(id, display_name, status, enrolled_at, last_seen_at)| AgentResponse {
                 id,
                 display_name,
-                connection_state: match (status.as_str(), last_seen_at) {
-                    ("revoked", _) => "revoked",
-                    ("quarantined", _) => "quarantined",
-                    ("active", None) => "never_seen",
-                    ("active", Some(last_seen)) if last_seen < stale_before => "stale",
-                    ("active", Some(_)) => "online",
-                    _ => "unknown",
-                }
-                .to_owned(),
+                connection_state: agent_connection_state(&status, last_seen_at, stale_before),
                 status,
                 enrolled_at,
                 last_seen_at,
             },
         )
         .collect()
+}
+
+fn agent_connection_state(
+    status: &str,
+    last_seen_at: Option<chrono::DateTime<Utc>>,
+    stale_before: chrono::DateTime<Utc>,
+) -> String {
+    match (status, last_seen_at) {
+        ("revoked", _) => "revoked",
+        ("quarantined", _) => "quarantined",
+        ("active", None) => "never_seen",
+        ("active", Some(last_seen)) if last_seen < stale_before => "stale",
+        ("active", Some(_)) => "online",
+        _ => "unknown",
+    }
+    .to_owned()
 }
 
 async fn set_project_agent_assignment(
@@ -3358,6 +5110,26 @@ enum IngestWriteError {
     Database,
 }
 
+struct AcceptedIngest<'a> {
+    service: &'a AuthenticatedService,
+    idempotency_key: uuid::Uuid,
+    kind: IngestKind,
+    observed_at: chrono::DateTime<Utc>,
+    payload: &'a serde_json::Value,
+    snapshot_state: Option<&'static str>,
+    webhook_configured: bool,
+}
+
+#[derive(Clone, Copy)]
+struct IncidentTransition<'a> {
+    service: &'a AuthenticatedService,
+    idempotency_key: uuid::Uuid,
+    transition: &'static str,
+    observed_at: chrono::DateTime<Utc>,
+    reported_cause: Option<&'a str>,
+    webhook_configured: bool,
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn persist_ingest(
     database: &PgPool,
@@ -3368,7 +5140,7 @@ async fn persist_ingest(
     received_at: chrono::DateTime<Utc>,
     payload: serde_json::Value,
     snapshot_state: Option<&'static str>,
-    alerts_enabled: bool,
+    webhook_configured: bool,
 ) -> Result<bool, IngestWriteError> {
     let mut transaction = database
         .begin()
@@ -3416,12 +5188,15 @@ async fn persist_ingest(
     if inserted.is_some() {
         project_accepted_ingest(
             &mut transaction,
-            service,
-            idempotency_key,
-            kind,
-            observed_at,
-            snapshot_state,
-            alerts_enabled,
+            AcceptedIngest {
+                service,
+                idempotency_key,
+                kind,
+                observed_at,
+                payload: &payload,
+                snapshot_state,
+                webhook_configured,
+            },
         )
         .await?;
     } else if !duplicate_matches(&mut transaction, service, idempotency_key, kind, &payload).await?
@@ -3441,13 +5216,17 @@ async fn persist_ingest(
 
 async fn project_accepted_ingest(
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    service: &AuthenticatedService,
-    idempotency_key: uuid::Uuid,
-    kind: IngestKind,
-    observed_at: chrono::DateTime<Utc>,
-    snapshot_state: Option<&'static str>,
-    alerts_enabled: bool,
+    ingest: AcceptedIngest<'_>,
 ) -> Result<(), IngestWriteError> {
+    let AcceptedIngest {
+        service,
+        idempotency_key,
+        kind,
+        observed_at,
+        payload,
+        snapshot_state,
+        webhook_configured,
+    } = ingest;
     if let Some(state) = snapshot_state {
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))")
             .bind(service.service)
@@ -3481,7 +5260,7 @@ async fn project_accepted_ingest(
         .execute(&mut **transaction)
         .await
         .map_err(|_| IngestWriteError::Database)?;
-        if alerts_enabled && is_newer {
+        if is_newer {
             let previous_state = previous.as_ref().map(|(state, _)| state.as_str());
             let transition = if state == "offline" && previous_state != Some("offline") {
                 Some("down")
@@ -3491,31 +5270,18 @@ async fn project_accepted_ingest(
                 None
             };
             if let Some(transition) = transition {
-                let bootstrap_tenant: Option<uuid::Uuid> = sqlx::query_scalar(
-                    "SELECT bootstrap_tenant_id FROM system_state WHERE singleton_id = 1",
+                record_incident_transition(
+                    transaction,
+                    IncidentTransition {
+                        service,
+                        idempotency_key,
+                        transition,
+                        observed_at,
+                        reported_cause: payload.get("message").and_then(serde_json::Value::as_str),
+                        webhook_configured,
+                    },
                 )
-                .fetch_one(&mut **transaction)
-                .await
-                .map_err(|_| IngestWriteError::Database)?;
-                if bootstrap_tenant == Some(service.tenant) {
-                    let alert = serde_json::json!({
-                        "service_id": service.service,
-                        "project": service.project_slug,
-                        "service": service.service_slug,
-                        "environment": service.environment,
-                        "transition": transition,
-                        "observed_at": observed_at,
-                    });
-                    sqlx::query(
-                        "INSERT INTO outbox (tenant_id, topic, payload) \
-                         VALUES ($1, 'alert.transition', $2)",
-                    )
-                    .bind(service.tenant)
-                    .bind(alert)
-                    .execute(&mut **transaction)
-                    .await
-                    .map_err(|_| IngestWriteError::Database)?;
-                }
+                .await?;
             }
         }
     }
@@ -3532,6 +5298,203 @@ async fn project_accepted_ingest(
         .await
         .map_err(|_| IngestWriteError::Database)?;
     Ok(())
+}
+
+async fn record_incident_transition(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    change: IncidentTransition<'_>,
+) -> Result<(), IngestWriteError> {
+    let incident_id = update_incident_for_transition(transaction, change).await?;
+    create_alert_delivery(transaction, change, incident_id).await
+}
+
+async fn update_incident_for_transition(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    change: IncidentTransition<'_>,
+) -> Result<Option<uuid::Uuid>, IngestWriteError> {
+    let service = change.service;
+    if change.transition == "down" {
+        let incident_id = uuid::Uuid::new_v4();
+        let title = format!("{} is offline", service.service_slug);
+        let cause = change.reported_cause.unwrap_or("heartbeat reported down");
+        let id = sqlx::query_scalar::<_, uuid::Uuid>(
+            "INSERT INTO incidents \
+             (tenant_id, id, project_id, service_id, status, severity, title, cause, \
+              started_at, last_observed_at, opened_by_ingest_key) \
+             VALUES ($1, $2, $3, $4, 'open', 'critical', $5, $6, $7, $7, $8) \
+             ON CONFLICT (tenant_id, service_id) WHERE status = 'open' DO UPDATE SET \
+               last_observed_at = GREATEST(incidents.last_observed_at, EXCLUDED.last_observed_at), \
+               updated_at = now() RETURNING id",
+        )
+        .bind(service.tenant)
+        .bind(incident_id)
+        .bind(service.project)
+        .bind(service.service)
+        .bind(title)
+        .bind(cause)
+        .bind(change.observed_at)
+        .bind(change.idempotency_key)
+        .fetch_one(&mut **transaction)
+        .await
+        .map_err(|_| IngestWriteError::Database)?;
+        sqlx::query(
+            "INSERT INTO incident_events \
+             (tenant_id, incident_id, ingest_key, kind, state, observed_at) \
+             VALUES ($1, $2, $3, 'opened', 'offline', $4) ON CONFLICT DO NOTHING",
+        )
+        .bind(service.tenant)
+        .bind(id)
+        .bind(change.idempotency_key)
+        .bind(change.observed_at)
+        .execute(&mut **transaction)
+        .await
+        .map_err(|_| IngestWriteError::Database)?;
+        Ok(Some(id))
+    } else {
+        let id = sqlx::query_scalar::<_, uuid::Uuid>(
+            "UPDATE incidents SET status = 'resolved', last_observed_at = $4, resolved_at = $4, \
+             resolved_by_ingest_key = $3, updated_at = now() \
+             WHERE tenant_id = $1 AND service_id = $2 AND status = 'open' RETURNING id",
+        )
+        .bind(service.tenant)
+        .bind(service.service)
+        .bind(change.idempotency_key)
+        .bind(change.observed_at)
+        .fetch_optional(&mut **transaction)
+        .await
+        .map_err(|_| IngestWriteError::Database)?;
+        if let Some(id) = id {
+            sqlx::query(
+                "INSERT INTO incident_events \
+                 (tenant_id, incident_id, ingest_key, kind, state, observed_at) \
+                 VALUES ($1, $2, $3, 'resolved', 'online', $4) ON CONFLICT DO NOTHING",
+            )
+            .bind(service.tenant)
+            .bind(id)
+            .bind(change.idempotency_key)
+            .bind(change.observed_at)
+            .execute(&mut **transaction)
+            .await
+            .map_err(|_| IngestWriteError::Database)?;
+        }
+        Ok(id)
+    }
+}
+
+async fn create_alert_delivery(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    change: IncidentTransition<'_>,
+    incident_id: Option<uuid::Uuid>,
+) -> Result<(), IngestWriteError> {
+    let delivery_id = uuid::Uuid::new_v4();
+    let (status, suppression_reason, outbox_id) =
+        classify_and_enqueue_alert(transaction, change, delivery_id).await?;
+    sqlx::query(
+        "INSERT INTO alert_deliveries \
+         (tenant_id, id, project_id, service_id, incident_id, outbox_id, transition, status, \
+          observed_at, suppression_reason) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+    )
+    .bind(change.service.tenant)
+    .bind(delivery_id)
+    .bind(change.service.project)
+    .bind(change.service.service)
+    .bind(incident_id)
+    .bind(outbox_id)
+    .bind(change.transition)
+    .bind(status)
+    .bind(change.observed_at)
+    .bind(suppression_reason)
+    .execute(&mut **transaction)
+    .await
+    .map_err(|_| IngestWriteError::Database)?;
+    Ok(())
+}
+
+async fn classify_and_enqueue_alert(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    change: IncidentTransition<'_>,
+    delivery_id: uuid::Uuid,
+) -> Result<(&'static str, Option<String>, Option<uuid::Uuid>), IngestWriteError> {
+    let service = change.service;
+    let policy = sqlx::query_as::<_, (bool, bool, bool, i32)>(
+        "SELECT enabled, notify_down, notify_recovered, cooldown_seconds \
+         FROM alert_policies WHERE tenant_id = $1",
+    )
+    .bind(service.tenant)
+    .fetch_optional(&mut **transaction)
+    .await
+    .map_err(|_| IngestWriteError::Database)?
+    .unwrap_or((true, true, true, 0));
+    let transition_enabled = if change.transition == "down" {
+        policy.1
+    } else {
+        policy.2
+    };
+    let maintenance_reason = sqlx::query_scalar::<_, String>(
+        "SELECT reason FROM maintenance_windows \
+         WHERE tenant_id = $1 AND service_id = $2 AND cancelled_at IS NULL \
+           AND starts_at <= $3 AND ends_at > $3 \
+         ORDER BY starts_at DESC, id LIMIT 1",
+    )
+    .bind(service.tenant)
+    .bind(service.service)
+    .bind(change.observed_at)
+    .fetch_optional(&mut **transaction)
+    .await
+    .map_err(|_| IngestWriteError::Database)?;
+    let cooldown_active = if change.transition == "down" && policy.3 > 0 {
+        sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS (SELECT 1 FROM alert_deliveries \
+             WHERE tenant_id = $1 AND service_id = $2 AND transition = 'down' \
+               AND status IN ('queued', 'retrying', 'delivered', 'dead_lettered') \
+               AND observed_at < $3 \
+               AND observed_at >= $3 - make_interval(secs => $4))",
+        )
+        .bind(service.tenant)
+        .bind(service.service)
+        .bind(change.observed_at)
+        .bind(policy.3)
+        .fetch_one(&mut **transaction)
+        .await
+        .map_err(|_| IngestWriteError::Database)?
+    } else {
+        false
+    };
+    if let Some(reason) = maintenance_reason {
+        Ok(("suppressed", Some(reason), None))
+    } else if !policy.0 || !transition_enabled {
+        Ok(("skipped_disabled", None, None))
+    } else if cooldown_active {
+        Ok((
+            "suppressed",
+            Some(format!("Alert cooldown active ({} seconds)", policy.3)),
+            None,
+        ))
+    } else if !change.webhook_configured {
+        Ok(("skipped_unconfigured", None, None))
+    } else {
+        let outbox_id = uuid::Uuid::new_v4();
+        let alert = serde_json::json!({
+            "delivery_id": delivery_id,
+            "service_id": service.service,
+            "project": service.project_slug,
+            "service": service.service_slug,
+            "environment": service.environment,
+            "transition": change.transition,
+            "observed_at": change.observed_at,
+        });
+        sqlx::query(
+            "INSERT INTO outbox (id, tenant_id, topic, payload) VALUES ($1, $2, 'alert.transition', $3)",
+        )
+        .bind(outbox_id)
+        .bind(service.tenant)
+        .bind(alert)
+        .execute(&mut **transaction)
+        .await
+        .map_err(|_| IngestWriteError::Database)?;
+        Ok(("queued", None, Some(outbox_id)))
+    }
 }
 
 async fn duplicate_matches(
@@ -3579,10 +5542,17 @@ async fn authenticate_service(
     let Some(database) = &state.database else {
         return Err(AuthenticationFailure::Database);
     };
-    let Some((credential, service, password_hash, service_slug, project_slug, environment)) =
-        find_service_credential(database, tenant_id, prefix)
-            .await
-            .map_err(|()| AuthenticationFailure::Database)?
+    let Some((
+        credential,
+        project,
+        service,
+        password_hash,
+        service_slug,
+        project_slug,
+        environment,
+    )) = find_service_credential(database, tenant_id, prefix)
+        .await
+        .map_err(|()| AuthenticationFailure::Database)?
     else {
         return Err(AuthenticationFailure::Unauthorized);
     };
@@ -3600,6 +5570,7 @@ async fn authenticate_service(
     verified.map_err(|_| AuthenticationFailure::Unauthorized)?;
     Ok(AuthenticatedService {
         tenant: tenant_id,
+        project,
         service,
         credential,
         service_slug,
@@ -3612,13 +5583,24 @@ async fn find_service_credential(
     database: &PgPool,
     tenant_id: uuid::Uuid,
     prefix: &str,
-) -> Result<Option<(uuid::Uuid, uuid::Uuid, String, String, String, String)>, ()> {
+) -> Result<
+    Option<(
+        uuid::Uuid,
+        uuid::Uuid,
+        uuid::Uuid,
+        String,
+        String,
+        String,
+        String,
+    )>,
+    (),
+> {
     let mut transaction = database.begin().await.map_err(|_| ())?;
     set_tenant_context(&mut transaction, tenant_id)
         .await
         .map_err(|_| ())?;
-    let result = sqlx::query_as::<_, (uuid::Uuid, uuid::Uuid, String, String, String, String)>(
-        "SELECT service_credentials.id, services.id, service_credentials.password_hash, \
+    let result = sqlx::query_as::<_, (uuid::Uuid, uuid::Uuid, uuid::Uuid, String, String, String, String)>(
+        "SELECT service_credentials.id, projects.id, services.id, service_credentials.password_hash, \
            services.slug, projects.slug, services.environment \
          FROM service_credentials \
          JOIN services ON services.tenant_id = service_credentials.tenant_id \
@@ -4453,12 +6435,43 @@ mod tests {
         http::{StatusCode, header},
         test, web,
     };
+    use chrono::{Duration as ChronoDuration, Utc};
     use meerkateer_config::ServerConfig;
     use meerkateer_identity::{IssuedSession, Principal, Role};
     use secrecy::ExposeSecret;
     use serde_json::Value;
 
-    use super::{AppState, AuthenticatedSession, configure_routes, csrf_is_valid};
+    use super::{
+        AppState, AuthenticatedSession, agent_telemetry_snapshot, configure_routes, csrf_is_valid,
+        worker_runtime_status,
+    };
+
+    #[actix_web::test]
+    async fn worker_progress_distinguishes_fresh_stalled_and_missing_cycles() {
+        let current_time = Utc::now();
+        assert_eq!(worker_runtime_status(None, current_time), "never_seen");
+        assert_eq!(
+            worker_runtime_status(
+                Some(current_time - ChronoDuration::seconds(30)),
+                current_time
+            ),
+            "healthy"
+        );
+        assert_eq!(
+            worker_runtime_status(
+                Some(current_time - ChronoDuration::seconds(31)),
+                current_time
+            ),
+            "stalled"
+        );
+        assert_eq!(
+            worker_runtime_status(
+                Some(current_time + ChronoDuration::minutes(6)),
+                current_time
+            ),
+            "stalled"
+        );
+    }
 
     fn config(values: &[(&str, &str)]) -> Arc<ServerConfig> {
         let result = ServerConfig::from_source(|name| {
@@ -4748,5 +6761,126 @@ mod tests {
             .insert_header(("X-Meerkateer-CSRF", "mks_csrf_wrong"))
             .to_http_request();
         assert!(!csrf_is_valid(&mismatch, &authenticated));
+    }
+
+    #[actix_web::test]
+    async fn agent_snapshot_reports_process_failure_and_capacity() {
+        let now = Utc::now();
+        let rows = vec![
+            (
+                "agent.heartbeat".to_owned(),
+                1.0,
+                now,
+                serde_json::json!({"os": "linux", "arch": "x86_64"}),
+            ),
+            (
+                "host.cpu.utilization".to_owned(),
+                0.25,
+                now,
+                serde_json::json!({}),
+            ),
+            (
+                "host.memory.used_bytes".to_owned(),
+                50.0,
+                now,
+                serde_json::json!({}),
+            ),
+            (
+                "host.memory.total_bytes".to_owned(),
+                100.0,
+                now,
+                serde_json::json!({}),
+            ),
+            (
+                "host.disk.used_bytes".to_owned(),
+                75.0,
+                now,
+                serde_json::json!({}),
+            ),
+            (
+                "host.disk.total_bytes".to_owned(),
+                100.0,
+                now,
+                serde_json::json!({}),
+            ),
+            (
+                "process.running".to_owned(),
+                0.0,
+                now,
+                serde_json::json!({"process": "game-server"}),
+            ),
+        ];
+        let result = agent_telemetry_snapshot(
+            uuid::Uuid::new_v4(),
+            "active",
+            Some(now),
+            Some(now),
+            rows,
+            180,
+        );
+        assert_eq!(result.collection_state, "complete");
+        assert!(!result.snapshot_stale);
+        assert_eq!(result.cpu_usage_percent, Some(25.0));
+        assert_eq!(
+            result.memory.map(|value| value.utilization_percent),
+            Some(50.0)
+        );
+        assert_eq!(
+            result.disk.map(|value| value.utilization_percent),
+            Some(75.0)
+        );
+        assert_eq!(result.processes.len(), 1);
+        assert!(!result.processes[0].running);
+    }
+
+    #[actix_web::test]
+    async fn agent_snapshot_fails_partial_for_invalid_or_missing_metrics() {
+        let now = Utc::now();
+        let result = agent_telemetry_snapshot(
+            uuid::Uuid::new_v4(),
+            "active",
+            Some(now),
+            Some(now - ChronoDuration::seconds(181)),
+            vec![
+                (
+                    "agent.heartbeat".to_owned(),
+                    1.0,
+                    now,
+                    serde_json::json!({"os": "linux"}),
+                ),
+                (
+                    "host.cpu.utilization".to_owned(),
+                    4.0,
+                    now,
+                    serde_json::json!({}),
+                ),
+                (
+                    "host.memory.used_bytes".to_owned(),
+                    200.0,
+                    now,
+                    serde_json::json!({}),
+                ),
+                (
+                    "host.memory.total_bytes".to_owned(),
+                    100.0,
+                    now,
+                    serde_json::json!({}),
+                ),
+                (
+                    "process.running".to_owned(),
+                    -1.0,
+                    now,
+                    serde_json::json!({"process": "invalid"}),
+                ),
+            ],
+            180,
+        );
+        assert_eq!(result.collection_state, "partial");
+        assert!(result.snapshot_stale);
+        assert!(result.cpu_usage_percent.is_none());
+        assert!(result.memory.is_none());
+        assert!(result.disk.is_none());
+        assert!(result.processes.is_empty());
+        assert!(result.missing_metrics.contains(&"host.cpu.utilization"));
     }
 }

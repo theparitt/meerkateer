@@ -1,4 +1,7 @@
-.PHONY: bootstrap source-archive dev migrate down logs test lint integration failure-lab control-plane-lab smoke agent-doctor
+.PHONY: bootstrap source-archive images publish-images production-env production-config production-pull production-up production-logs production-down dev migrate down logs test lint integration failure-lab control-plane-lab sdk-lab sdk-lab-test sdk-lab-down sdk-lab-logs smoke agent-doctor
+
+PRODUCTION_ENV ?= deploy/.env.production
+PRODUCTION_COMPOSE ?= deploy/compose.production.yaml
 
 bootstrap:
 	./scripts/bootstrap.sh
@@ -14,7 +17,34 @@ source-archive:
 		rust-toolchain.toml rustfmt.toml Dockerfile compose.yaml Makefile .env.example \
 		.gitignore .dockerignore .editorconfig .gitattributes crates meerkateer-agent \
 		meerkateer-server meerkateer-worker meerkateer-web docs migrations openapi sdk \
-		schemas scripts tests examples packaging dev art
+		schemas scripts tests examples packaging deploy dev art
+
+images:
+	@test -n "$(VERSION)" || (echo 'Usage: make images VERSION=<tag>' >&2; exit 2)
+	./scripts/publish-images.sh build "$(VERSION)"
+
+publish-images:
+	@test -n "$(VERSION)" || (echo 'Usage: make publish-images VERSION=<immutable-tag>' >&2; exit 2)
+	./scripts/publish-images.sh push "$(VERSION)"
+
+production-env:
+	@test -n "$(VERSION)" || (echo 'Usage: make production-env VERSION=<published-tag>' >&2; exit 2)
+	./scripts/bootstrap-production-env.sh "$(VERSION)"
+
+production-config:
+	docker compose --env-file "$(PRODUCTION_ENV)" -f "$(PRODUCTION_COMPOSE)" config --quiet
+
+production-pull: production-config
+	docker compose --env-file "$(PRODUCTION_ENV)" -f "$(PRODUCTION_COMPOSE)" pull
+
+production-up: production-config
+	docker compose --env-file "$(PRODUCTION_ENV)" -f "$(PRODUCTION_COMPOSE)" up -d --wait
+
+production-logs:
+	docker compose --env-file "$(PRODUCTION_ENV)" -f "$(PRODUCTION_COMPOSE)" logs --follow
+
+production-down:
+	docker compose --env-file "$(PRODUCTION_ENV)" -f "$(PRODUCTION_COMPOSE)" down
 
 dev: bootstrap source-archive
 	docker compose up --build
@@ -54,6 +84,18 @@ failure-lab: bootstrap
 
 control-plane-lab: bootstrap
 	./tests/integration/control_plane_faults.sh
+
+sdk-lab: bootstrap
+	./scripts/multilang-sdk-lab.sh up
+
+sdk-lab-test: bootstrap
+	./scripts/multilang-sdk-lab.sh test
+
+sdk-lab-down:
+	./scripts/multilang-sdk-lab.sh down
+
+sdk-lab-logs:
+	./scripts/multilang-sdk-lab.sh logs
 
 smoke:
 	./scripts/smoke.sh

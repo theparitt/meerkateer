@@ -27,6 +27,7 @@ as entitlement evidence.
 | User/session theft | OIDC Authorization Code + PKCE, Secure/HttpOnly/SameSite cookies, short sessions, rotation/revocation | Design requirement; implementation pending |
 | Bootstrap takeover | Explicit one-time bootstrap secret, disabled after first owner, no public default | Atomic one-way bootstrap and deterministic replay conflict pass PostgreSQL E2E |
 | Secrets leak in logs/errors | `SecretString`, stable public errors, no debug serialization, secret scan | Credential debug-redaction test and repository scan |
+| Control plane becomes remote shell | Keep MKA-1 telemetry-only; future actions are signed, short-lived, typed, locally allowlisted, least-privilege, replay-safe, rate-limited, and audited | Remote execution is currently absent/disabled; ADR-0008 defines mandatory gates |
 
 ## Database connection rules
 

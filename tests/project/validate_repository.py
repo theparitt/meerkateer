@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -24,6 +25,7 @@ REQUIRED_FILES = (
     "TRADEMARKS.md",
     "CHANGELOG.md",
     "docs/production-roadmap.md",
+    "docs/roadmap-to-1.0.md",
     "docs/commercial-readiness-plan.md",
     "docs/game-server-beta.md",
     "docs/standards/mks-1.md",
@@ -62,6 +64,26 @@ def main() -> int:
     ci = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     if "for migration in migrations/*.sql; do" not in ci:
         failures.append("CI must apply the full migration directory")
+
+    cargo = (ROOT / "Cargo.toml").read_text(encoding="utf-8")
+    workspace_package = cargo.split("[workspace.package]", maxsplit=1)
+    version_match = (
+        re.search(r'^version = "([^"]+)"$', workspace_package[1], re.MULTILINE)
+        if len(workspace_package) == 2
+        else None
+    )
+    workspace_version = version_match.group(1) if version_match else ""
+    if not workspace_version:
+        failures.append("Cargo.toml must declare workspace.package.version")
+    web_package = json.loads((ROOT / "meerkateer-web" / "package.json").read_text(encoding="utf-8"))
+    if web_package.get("version") != workspace_version:
+        failures.append("Rust workspace and web package versions must match")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    roadmap = (ROOT / "docs" / "roadmap-to-1.0.md").read_text(encoding="utf-8")
+    if f"| Code version | **{workspace_version}** |" not in readme:
+        failures.append("README current version must match the Rust workspace version")
+    if f"| Code version | `{workspace_version}` |" not in roadmap:
+        failures.append("roadmap current version must match the Rust workspace version")
 
     schema_ids: dict[str, Path] = {}
     for path in sorted((ROOT / "schemas").glob("*/*.schema.json")):
