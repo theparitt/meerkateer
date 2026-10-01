@@ -109,6 +109,7 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: "Download CLI ZIP" }).getAttribute("href")).toContain(
       "meerkateer-controller-windows-x86_64.zip",
     );
+    expect(screen.getByText(/The service stays quiet and headless/)).toBeTruthy();
     expect(screen.getAllByRole("link", { name: /Road to 1.0/ })[0].getAttribute("href")).toBe(
       "/roadmap",
     );

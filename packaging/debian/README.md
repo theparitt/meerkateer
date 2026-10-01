@@ -18,9 +18,15 @@ sudo apt install ./dist/meerkateer-controller_0.1.0_amd64.deb
 sudo meerkateer-controller setup
 ```
 
-The setup command provides a terminal UI suitable for headless Ubuntu servers. It keeps the
-one-time enrollment token out of command history, then asks which bounded CPU, memory, disk, and
-exact process signals may be sent. The installed service runs as the unprivileged
+The setup command opens the cross-platform Rust terminal UI suitable for headless Ubuntu servers.
+It keeps the one-time enrollment token out of command history, then shows live CPU, memory, disk,
+and exact process signals, diagnostics, and the signal allowlist. Reopen it later with:
+
+```sh
+sudo meerkateer-controller tui
+```
+
+The installed service remains headless and runs as the unprivileged
 `meerkateer-controller` account with systemd hardening and outbound network access only.
 
 The API host is entered once during first setup and stored with the exchanged machine credential in

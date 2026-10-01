@@ -7,6 +7,9 @@ Keep a Changelog principles, and releases use Semantic Versioning.
 
 ### Added
 
+- Cross-platform Rust Controller TUI for masked first enrollment, live local host/process signals,
+  an atomic signal allowlist, safe readiness diagnostics, and session-only events while keeping the
+  Windows Scheduled Task and Linux systemd daemon headless.
 - Installable Meerkateer Controller preview: a WiX-based Windows MSI with Start-menu signal setup
   UI, an Ubuntu 22.04+ DEB with guided headless setup and hardened systemd service, and a portable
   Windows CLI ZIP. A pinned GitHub Actions workflow publishes all three with SHA-256 files to a

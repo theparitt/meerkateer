@@ -477,7 +477,7 @@ const controllerDownloads = [
   {
     platform: "Windows 10 / 11 · x64",
     title: "Windows installer",
-    copy: "Install the background controller, open the friendly setup screen, and choose CPU, memory, disk, or exact process signals.",
+    copy: "Install the headless background controller, use the friendly setup screen, then open the live local dashboard whenever you need it.",
     action: "Download MSI",
     href: WINDOWS_MSI_URL,
     friend: "/friends/machine-scout.png",
@@ -486,7 +486,7 @@ const controllerDownloads = [
   {
     platform: "Ubuntu 22.04+ · amd64",
     title: "Ubuntu server package",
-    copy: "Install the hardened systemd service, then use one guided setup command to connect the host and select its signals.",
+    copy: "Install the hardened systemd service, then use the colorful Rust terminal UI for setup, live signals, diagnostics, and settings.",
     action: "Download DEB",
     href: UBUNTU_DEB_URL,
     friend: "/friends/heartbeat-keeper.png",
@@ -495,7 +495,7 @@ const controllerDownloads = [
   {
     platform: "Windows · portable x64",
     title: "Command line only",
-    copy: "Use the same outbound-only controller as a portable executable for scripts, automation, or machines without the setup UI.",
+    copy: "Keep automation-friendly commands and launch the same Rust terminal dashboard with meerkateer-controller.exe tui.",
     action: "Download CLI ZIP",
     href: WINDOWS_CLI_URL,
     friend: "/friends/access-guardian.png",
@@ -538,6 +538,10 @@ function ControllerDownloadsSection() {
             Installation and CLI guide →
           </a>
         </div>
+        <p className="controller-preview-warning">
+          The service stays quiet and headless. Run <code>meerkateer-controller tui</code> only when
+          you want the local live view; the Web Console remains the home for your whole fleet.
+        </p>
         <p className="controller-preview-warning">
           Developer-preview packages are currently unsigned. Verify the adjacent SHA-256 file from
           the preview release before installation. Signed installers are a 1.0 release gate.

@@ -9,9 +9,9 @@ or machine-control API.
 The landing page links to a rolling, unsigned `controller-preview` release with three artifacts:
 
 - **Windows MSI:** `meerkateer-controller-windows-x86_64.msi` installs the Controller, a Start-menu
-  setup UI, the background-task helper, and the CLI.
+  setup UI, a Start-menu local monitor TUI, the background-task helper, and the CLI.
 - **Ubuntu DEB:** `meerkateer-controller_0.1.0_amd64.deb` installs the CLI and a hardened systemd
-  unit. Run `sudo meerkateer-controller setup` for its guided terminal UI.
+  unit. Run `sudo meerkateer-controller setup` for its Rust terminal UI.
 - **Windows portable CLI:** `meerkateer-controller-windows-x86_64.zip` contains only the native
   executable and its instructions. It does not modify the machine.
 
@@ -40,7 +40,10 @@ Install the MSI, then open **Meerkateer Controller Setup** from the Start menu. 
 HTTPS API URL, computer name, one-time token from Console → Connect, and which CPU, memory, disk, or
 exact process signals may be sent. The token is used only through the child process environment,
 cleared immediately, and never becomes an MSI property, process argument, task argument, or log
-entry. Reopen the setup UI later to change signals without a new token.
+entry. Reopen the setup UI later to change signals without a new token. Open **Meerkateer
+Controller Monitor** from the Start menu for the live local Rust dashboard; it requests elevation
+because the packaged machine credential is readable only by Administrators, `LOCAL SERVICE`, and
+`SYSTEM`.
 
 ## Ubuntu setup UI
 
@@ -49,9 +52,39 @@ sudo apt install ./meerkateer-controller_0.1.0_amd64.deb
 sudo meerkateer-controller setup
 ```
 
-The guided terminal screen asks the same questions and enables the hardened
-`meerkateer-controller.service`. A normal removal preserves the machine credential; an explicit
-package purge removes it.
+The Rust terminal UI asks the enrollment questions, masks the one-time token, and enables the
+hardened `meerkateer-controller.service`. Run `sudo meerkateer-controller tui` later to open the
+same live local dashboard. A normal removal preserves the machine credential; an explicit package
+purge removes it.
+
+## Local Rust dashboard
+
+The background service is deliberately headless. The on-demand dashboard runs in a normal terminal
+on both Windows and Linux:
+
+```sh
+meerkateer-controller tui
+```
+
+The packaged Ubuntu command is `sudo meerkateer-controller tui`; the MSI provides a Start-menu
+shortcut that opens the protected machine config with elevation. The portable Windows ZIP can run
+`meerkateer-controller.exe tui` against its normal per-user config.
+
+The dashboard provides:
+
+- a live local CPU, memory, aggregate disk, and exact-process snapshot refreshed every five seconds;
+- the enrolled API host, short machine/workspace identifiers, local sequence, last delivery
+  success/error, retry state, and background-service registration state;
+- an explicit signal allowlist and exact process-name editor, saved atomically without exposing the
+  credential;
+- local credential, URL-policy, collector, and durable-retry diagnostics;
+- a public `/ready` connectivity check that sends no telemetry and no machine credential; and
+- a bounded in-memory event list for the current TUI session only.
+
+Use `Tab` or `1`–`4` to move between pages, `R` to refresh, `Space` to toggle a signal, `E` to edit
+process names, `S` to save, `T` to test API readiness, and `Q` to close. Closing the TUI does not
+stop the daemon. The Web Console remains the authoritative fleet view; the TUI intentionally shows
+only one computer and has no remote shell or command channel.
 
 ## Where the API host is configured
 
@@ -65,6 +98,10 @@ read-only after enrollment because moving a machine to another control plane req
 credential. Re-enroll (or explicitly purge first) to change hosts; use setup at any time to change
 only the signal allowlist. This avoids an accidental typo silently sending telemetry to a different
 server.
+
+The machine credential is never rendered by the TUI. The enrollment token is held in zeroizing
+memory only for the enrollment request and is not written to config, command arguments, environment
+variables, MSI properties, or session events.
 
 ## Build from source
 
@@ -114,6 +151,7 @@ unset MEERKATEER_ENROLLMENT_TOKEN
 meerkateer-controller configure --signals cpu,memory,disk,process \
   --watch-process java --watch-process postgres
 meerkateer-controller doctor
+meerkateer-controller tui
 meerkateer-controller run
 ```
 
@@ -126,6 +164,7 @@ Remove-Item Env:MEERKATEER_ENROLLMENT_TOKEN
 .\meerkateer-controller.exe configure --signals cpu,memory,disk,process `
   --watch-process MyGameServer.exe --watch-process postgres.exe
 .\meerkateer-controller.exe doctor
+.\meerkateer-controller.exe tui
 .\meerkateer-controller.exe run
 ```
 
@@ -141,6 +180,10 @@ Windows and `/var/lib/meerkateer-controller` on Ubuntu. Linux uses a hardened, u
 unit; Windows uses an ACL-restricted startup task under `LOCAL SERVICE`. Package signing, native OS
 secret stores, signed updates, and offline spool beyond the current exact pending batch remain
 release work.
+
+The daemon writes non-secret delivery health to `agent.status.json` beside the protected config.
+This separate atomic file lets the TUI explain the last attempt, last success, and current bounded
+error without racing signal settings or rendering the machine credential.
 
 ## Install as a background Controller
 

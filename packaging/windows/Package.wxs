@@ -26,6 +26,10 @@
             Source="$(var.SourceRoot)\MeerkateerControllerSetup.ps1"
             Name="MeerkateerControllerSetup.ps1" />
           <File
+            Id="ControllerTuiScript"
+            Source="$(var.SourceRoot)\MeerkateerControllerTui.ps1"
+            Name="MeerkateerControllerTui.ps1" />
+          <File
             Id="InstallAgentScript"
             Source="$(var.SourceRoot)\Install-MeerkateerAgent.ps1"
             Name="Install-MeerkateerAgent.ps1" />
@@ -57,6 +61,13 @@
             Description="Open a command prompt for the Meerkateer Controller CLI"
             Target="[SystemFolder]cmd.exe"
             Arguments="/K cd /d &quot;[INSTALLFOLDER]&quot;"
+            WorkingDirectory="INSTALLFOLDER" />
+          <Shortcut
+            Id="ControllerTuiShortcut"
+            Name="Meerkateer Controller Monitor"
+            Description="Open the local live dashboard, diagnostics, and signal settings"
+            Target="[System64Folder]WindowsPowerShell\v1.0\powershell.exe"
+            Arguments="-NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]MeerkateerControllerTui.ps1&quot;"
             WorkingDirectory="INSTALLFOLDER" />
           <RemoveFolder Id="RemoveApplicationProgramsFolder" On="uninstall" />
           <RegistryValue

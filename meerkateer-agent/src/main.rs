@@ -1,4 +1,5 @@
 mod collector;
+mod tui;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -20,11 +21,14 @@ use tokio::time;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 use crate::collector::HostSnapshot;
 
 const CONFIG_VERSION: u8 = 1;
+const RUNTIME_STATUS_VERSION: u8 = 1;
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
+const MAX_RUNTIME_ERROR_CHARS: usize = 240;
 const DEFAULT_INTERVAL_SECONDS: u64 = 30;
 
 #[derive(Debug, Parser)]
@@ -59,6 +63,8 @@ enum Command {
         #[arg(long = "watch-process")]
         watch_processes: Vec<String>,
     },
+    /// Open the local interactive dashboard and setup terminal UI.
+    Tui,
     /// Inspect this host locally without requiring enrollment or sending data.
     #[command(visible_alias = "status")]
     Inspect {
@@ -198,6 +204,28 @@ struct SendResult {
     accepted_through_sequence: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+struct RuntimeStatus {
+    version: u8,
+    last_attempt_at: Option<String>,
+    last_success_at: Option<String>,
+    last_error_at: Option<String>,
+    last_error: Option<String>,
+}
+
+impl Default for RuntimeStatus {
+    fn default() -> Self {
+        Self {
+            version: RUNTIME_STATUS_VERSION,
+            last_attempt_at: None,
+            last_success_at: None,
+            last_error_at: None,
+            last_error: None,
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct ConfigureResult<'a> {
     status: &'static str,
@@ -253,6 +281,7 @@ async fn main() -> anyhow::Result<()> {
             signals,
             watch_processes,
         } => configure(&config_path, &signals, watch_processes),
+        Command::Tui => tui::run(&config_path).await,
         Command::Inspect { watch_processes } => inspect(&watch_processes).await,
         Command::Run {
             once,
@@ -267,19 +296,37 @@ fn configure(
     signals: &[SignalKind],
     watched_processes: Vec<String>,
 ) -> anyhow::Result<()> {
-    let mut config = load_config(config_path)?;
-    config.signals = SignalSelection::from_cli(signals, watched_processes)?;
-    save_config(config_path, &config)?;
+    let selection = SignalSelection::from_cli(signals, watched_processes)?;
+    let selection = save_signal_selection(config_path, selection)?;
     println!(
         "{}",
         serde_json::to_string_pretty(&ConfigureResult {
             status: "configured",
             config_path: config_path.display().to_string(),
-            signals: config.signals.names(),
-            watched_processes: &config.signals.watched_processes,
+            signals: selection.names(),
+            watched_processes: &selection.watched_processes,
         })?
     );
     Ok(())
+}
+
+fn save_signal_selection(
+    config_path: &Path,
+    selection: SignalSelection,
+) -> anyhow::Result<SignalSelection> {
+    collector::validate_watched_processes(&selection.watched_processes)?;
+    ensure!(
+        selection.enabled.contains(&SignalKind::Process) || selection.watched_processes.is_empty(),
+        "configured process names require the process signal"
+    );
+    ensure!(
+        !selection.enabled.is_empty(),
+        "select at least one signal; the heartbeat is always sent"
+    );
+    let mut config = load_config(config_path)?;
+    config.signals = selection.clone();
+    save_config(config_path, &config)?;
+    Ok(selection)
 }
 
 async fn inspect(watched_processes: &[String]) -> anyhow::Result<()> {
@@ -289,14 +336,44 @@ async fn inspect(watched_processes: &[String]) -> anyhow::Result<()> {
 }
 
 async fn enroll(config_path: &Path, server: &str, name: &str) -> anyhow::Result<()> {
-    let server_url = validate_server_url(server)?;
-    validate_display_name(name)?;
-    let token = env::var("MEERKATEER_ENROLLMENT_TOKEN")
-        .context("MEERKATEER_ENROLLMENT_TOKEN is required")?;
+    let token = Zeroizing::new(
+        env::var("MEERKATEER_ENROLLMENT_TOKEN")
+            .context("MEERKATEER_ENROLLMENT_TOKEN is required")?,
+    );
     ensure!(
         !token.trim().is_empty(),
         "MEERKATEER_ENROLLMENT_TOKEN is empty"
     );
+    let outcome = enroll_with_token(config_path, server, name, token.as_str()).await?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&EnrollmentResult {
+            status: "enrolled",
+            agent_id: outcome.agent_id,
+            project_id: outcome.project_id,
+            credential_expires_at: &outcome.credential_expires_at,
+            config_path: config_path.display().to_string(),
+        })?
+    );
+    Ok(())
+}
+
+#[derive(Debug)]
+struct EnrollmentOutcome {
+    agent_id: Uuid,
+    project_id: Option<Uuid>,
+    credential_expires_at: String,
+}
+
+async fn enroll_with_token(
+    config_path: &Path,
+    server: &str,
+    name: &str,
+    token: &str,
+) -> anyhow::Result<EnrollmentOutcome> {
+    let server_url = validate_server_url(server)?;
+    validate_display_name(name)?;
+    ensure!(!token.trim().is_empty(), "enrollment token is empty");
 
     let mut config = match load_config(config_path) {
         Ok(existing) => {
@@ -371,17 +448,11 @@ async fn enroll(config_path: &Path, server: &str, name: &str) -> anyhow::Result<
         .credential_expires_at
         .as_deref()
         .context("enrollment response omitted credential expiry")?;
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&EnrollmentResult {
-            status: "enrolled",
-            agent_id: enrolled.agent_id,
-            project_id: enrolled.project_id,
-            credential_expires_at: expires_at,
-            config_path: config_path.display().to_string(),
-        })?
-    );
-    Ok(())
+    Ok(EnrollmentOutcome {
+        agent_id: enrolled.agent_id,
+        project_id: enrolled.project_id,
+        credential_expires_at: expires_at.to_owned(),
+    })
 }
 
 fn doctor(config_path: &Path) -> anyhow::Result<()> {
@@ -440,6 +511,9 @@ async fn run(
 
     loop {
         let result = send_once(&client, config_path, watched_processes).await;
+        if let Err(error) = record_runtime_status(config_path, result.as_ref().err()) {
+            warn!(error = %error, "could not persist local Controller runtime status");
+        }
         match result {
             Ok(result) => println!("{}", serde_json::to_string(&result)?),
             Err(error) if once => return Err(error),
@@ -459,6 +533,95 @@ async fn run(
             }
         }
     }
+}
+
+fn record_runtime_status(config_path: &Path, error: Option<&anyhow::Error>) -> anyhow::Result<()> {
+    let status_path = runtime_status_path(config_path);
+    let mut status = load_runtime_status(&status_path)?;
+    let now = Utc::now().to_rfc3339();
+    status.version = RUNTIME_STATUS_VERSION;
+    status.last_attempt_at = Some(now.clone());
+    if let Some(error) = error {
+        status.last_error_at = Some(now);
+        status.last_error = Some(sanitize_runtime_error(error));
+    } else {
+        status.last_success_at = Some(now);
+        status.last_error_at = None;
+        status.last_error = None;
+    }
+    save_runtime_status(&status_path, &status)
+}
+
+fn runtime_status_path(config_path: &Path) -> PathBuf {
+    let stem = config_path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("agent");
+    config_path.with_file_name(format!("{stem}.status.json"))
+}
+
+fn load_runtime_status(path: &Path) -> anyhow::Result<RuntimeStatus> {
+    match fs::read(path) {
+        Ok(bytes) => {
+            let status: RuntimeStatus = serde_json::from_slice(&bytes)
+                .with_context(|| format!("{} is not valid runtime status", path.display()))?;
+            ensure!(
+                status.version == RUNTIME_STATUS_VERSION,
+                "unsupported Controller runtime status version"
+            );
+            Ok(status)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(RuntimeStatus::default()),
+        Err(error) => Err(error).with_context(|| format!("failed to read {}", path.display())),
+    }
+}
+
+fn save_runtime_status(path: &Path, status: &RuntimeStatus) -> anyhow::Result<()> {
+    let parent = path
+        .parent()
+        .filter(|value| !value.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent).with_context(|| format!("failed to create {}", parent.display()))?;
+    secure_directory(parent)?;
+    let bytes = serde_json::to_vec_pretty(status)?;
+    #[cfg(unix)]
+    let options = {
+        use atomic_write_file::unix::OpenOptionsExt as _;
+        use std::os::unix::fs::OpenOptionsExt as _;
+        let mut options = OpenOptions::new();
+        options.preserve_mode(false).mode(0o600);
+        options
+    };
+    #[cfg(not(unix))]
+    let options = OpenOptions::new();
+    let mut file = options
+        .open(path)
+        .with_context(|| format!("failed to securely open {}", path.display()))?;
+    file.write_all(&bytes)
+        .with_context(|| format!("failed to write {}", path.display()))?;
+    file.write_all(b"\n")?;
+    file.commit()
+        .with_context(|| format!("failed to atomically save {}", path.display()))
+}
+
+fn sanitize_runtime_error(error: &anyhow::Error) -> String {
+    let value = error.to_string();
+    let normalized = value.to_ascii_lowercase();
+    if [
+        "mka_agent_",
+        "mka_enroll_",
+        "authorization",
+        "password",
+        "secret",
+        "token",
+    ]
+    .iter()
+    .any(|sensitive| normalized.contains(sensitive))
+    {
+        return "delivery failed; sensitive error detail was redacted".to_owned();
+    }
+    value.chars().take(MAX_RUNTIME_ERROR_CHARS).collect()
 }
 
 async fn send_once(
@@ -1039,5 +1202,39 @@ mod tests {
         );
         fs::remove_dir_all(directory)?;
         Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn runtime_status_is_separate_atomic_and_owner_only() -> anyhow::Result<()> {
+        let directory = env::temp_dir().join(format!("meerkateer-status-test-{}", Uuid::new_v4()));
+        let config_path = directory.join("agent.json");
+        record_runtime_status(&config_path, None)?;
+        let status_path = runtime_status_path(&config_path);
+        let status = load_runtime_status(&status_path)?;
+        assert!(status.last_attempt_at.is_some());
+        assert!(status.last_success_at.is_some());
+        assert!(status.last_error.is_none());
+        assert_eq!(
+            fs::metadata(&status_path)?.permissions().mode() & 0o777,
+            0o600
+        );
+        fs::remove_dir_all(directory)?;
+        Ok(())
+    }
+
+    #[test]
+    fn runtime_errors_are_bounded_and_secret_safe() {
+        let long = "network unavailable ".repeat(40);
+        assert!(
+            sanitize_runtime_error(&anyhow::anyhow!(long))
+                .chars()
+                .count()
+                <= 240
+        );
+        assert_eq!(
+            sanitize_runtime_error(&anyhow::anyhow!("bad token mka_agent_do_not_show")),
+            "delivery failed; sensitive error detail was redacted"
+        );
     }
 }

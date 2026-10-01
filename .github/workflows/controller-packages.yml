@@ -54,6 +54,7 @@ jobs:
           test -x package-check/usr/bin/meerkateer-controller
           test -x package-check/usr/lib/meerkateer/meerkateer-controller
           package-check/usr/lib/meerkateer/meerkateer-controller --help | grep -q '  configure  '
+          package-check/usr/lib/meerkateer/meerkateer-controller --help | grep -q '  tui  '
           rm -rf package-check
 
       - name: Upload Ubuntu artifacts
@@ -88,6 +89,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist, dist/portable | Out-Null
           Copy-Item target/release/meerkateer-agent.exe dist/portable/meerkateer-controller.exe
           Copy-Item packaging/windows/README.md dist/portable/README.md
+          $help = & dist/portable/meerkateer-controller.exe --help
+          if ($help -notmatch '(?m)^  tui\s') { throw 'Portable Controller help omitted the TUI command.' }
           Compress-Archive -Path dist/portable/* `
             -DestinationPath dist/meerkateer-controller-windows-x86_64.zip
 

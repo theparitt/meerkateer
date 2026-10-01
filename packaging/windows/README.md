@@ -2,8 +2,8 @@
 
 The release workflow produces two Windows downloads from the same Rust source:
 
-- `meerkateer-controller-windows-x86_64.msi` installs the CLI, a friendly signal-selection UI, and
-  Start-menu shortcuts.
+- `meerkateer-controller-windows-x86_64.msi` installs the CLI, a friendly first-setup GUI, the
+  cross-platform Rust local dashboard, and Start-menu shortcuts.
 - `meerkateer-controller-windows-x86_64.zip` is the CLI-only portable build.
 
 After MSI installation, open **Meerkateer Controller Setup**. It enrolls the computer without
@@ -17,6 +17,11 @@ The API host is entered once during first setup and stored in the ACL-protected
 shows the enrolled host and current signal choices; it locks host and machine identity while
 allowing the signal allowlist to be changed. Purge and enroll again to intentionally move the
 computer to another host.
+
+Open **Meerkateer Controller Monitor** from the Start menu for live local signals, diagnostics, and
+settings. The shortcut requests elevation so it can read the ACL-protected machine config. The
+portable CLI can open the same dashboard with `meerkateer-controller.exe tui`. Closing the TUI does
+not stop the headless startup task.
 
 These developer-preview artifacts are not yet signed. Verify the adjacent SHA-256 file. A signed
 MSI/executable and native OS secret protection remain 1.0 gates.
