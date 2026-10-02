@@ -7,6 +7,10 @@ Keep a Changelog principles, and releases use Semantic Versioning.
 
 ### Added
 
+- Enforced automatic Controller startup after enrollment: Windows now verifies an enabled boot
+  task, starts it immediately, and uses extended restart recovery; Linux verifies its systemd unit
+  is enabled and active and uses `Restart=always`. CI locks both startup contracts, while the
+  portable Windows ZIP remains explicitly manual and non-mutating.
 - A shared Controller Developer Preview disclaimer shipped inside MSI, portable ZIP, and DEB
   packages. Windows MSI displays the full notice, Windows Setup and the Rust TUI require explicit
   consent before first enrollment, and Debian installation prints the notice location without

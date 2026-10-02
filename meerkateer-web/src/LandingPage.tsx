@@ -485,7 +485,7 @@ const controllerDownloads = [
   {
     platform: "Windows 10 / 11 · x64",
     title: "Windows installer",
-    copy: "Install the headless background controller, use the friendly setup screen, then open the live local dashboard whenever you need it.",
+    copy: "Connect once in the friendly setup screen. The headless Controller starts immediately and at every Windows boot; open the local dashboard only when needed.",
     action: "Download MSI",
     href: WINDOWS_MSI_URL,
     friend: "/friends/machine-scout.png",
@@ -494,7 +494,7 @@ const controllerDownloads = [
   {
     platform: "Ubuntu 22.04+ · amd64",
     title: "Ubuntu server package",
-    copy: "Install the hardened systemd service, then use the colorful Rust terminal UI for setup, live signals, diagnostics, and settings.",
+    copy: "Complete the Rust terminal setup once. The hardened systemd service starts immediately and at every boot, with live signals and diagnostics on demand.",
     action: "Download DEB",
     href: UBUNTU_DEB_URL,
     friend: "/friends/heartbeat-keeper.png",
@@ -503,7 +503,7 @@ const controllerDownloads = [
   {
     platform: "Windows · portable x64",
     title: "Command line only",
-    copy: "Keep automation-friendly commands and launch the same Rust terminal dashboard with meerkateer-controller.exe tui.",
+    copy: "Keep automation-friendly commands and launch the Rust terminal dashboard manually. This portable build intentionally does not modify Windows startup.",
     action: "Download CLI ZIP",
     href: WINDOWS_CLI_URL,
     friend: "/friends/access-guardian.png",

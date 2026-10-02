@@ -3,6 +3,7 @@ Description=Meerkateer outbound monitoring controller
 Documentation=https://github.com/theparitt/meerkateer
 After=network-online.target
 Wants=network-online.target
+ConditionPathExists=/var/lib/meerkateer-controller/agent.json
 
 [Service]
 Type=simple
@@ -10,7 +11,7 @@ User=meerkateer-controller
 Group=meerkateer-controller
 UMask=0077
 ExecStart=/usr/lib/meerkateer/meerkateer-controller --config /var/lib/meerkateer-controller/agent.json run
-Restart=on-failure
+Restart=always
 RestartSec=10s
 NoNewPrivileges=true
 PrivateTmp=true

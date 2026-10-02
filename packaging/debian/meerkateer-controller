@@ -23,10 +23,18 @@ setup_controller() {
   fi
 
   systemctl enable "$service_name" >/dev/null
+  if ! systemctl is-enabled --quiet "$service_name"; then
+    echo "The Controller service could not be enabled for automatic startup." >&2
+    exit 1
+  fi
   systemctl restart "$service_name"
+  if ! systemctl is-active --quiet "$service_name"; then
+    echo "The Controller service did not remain active; inspect: journalctl -u $service_name" >&2
+    exit 1
+  fi
   runuser -u "$service_user" -- "$controller_binary" --config "$config_path" doctor
   echo
-  echo "Meerkateer Controller is installed and running."
+  echo "Meerkateer Controller is installed, running, and enabled at every system startup."
   echo "Use 'sudo meerkateer-controller tui' to monitor this host or change signals."
 }
 

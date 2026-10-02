@@ -14,6 +14,12 @@ install -d -o meerkateer-controller -g meerkateer-controller -m 0700 /var/lib/me
 
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload || true
+  # Enable the unit at package installation. It is started only after enrollment creates a
+  # protected config; reinstall/upgrade restarts an already-enrolled Controller immediately.
+  systemctl enable meerkateer-controller.service >/dev/null 2>&1 || true
+  if [ -f /var/lib/meerkateer-controller/agent.json ] && [ -d /run/systemd/system ]; then
+    systemctl restart meerkateer-controller.service || true
+  fi
 fi
 
 cat <<'EOF'
@@ -23,4 +29,5 @@ the release SHA-256 checksum. Install only on computers you are authorized to
 administer, and protect the Meerkateer API with HTTPS and firewall rules.
 Full notice: /usr/share/doc/meerkateer-controller/DISCLAIMER.md
 Run: sudo meerkateer-controller setup
+After setup, the Controller starts now and automatically at every system boot.
 EOF

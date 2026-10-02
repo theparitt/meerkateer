@@ -72,16 +72,43 @@ $taskPrincipal = New-ScheduledTaskPrincipal -UserId 'LOCALSERVICE' -LogonType Se
 $settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries `
-    -RestartCount 10 `
+    -StartWhenAvailable `
+    -RestartCount 999 `
     -RestartInterval (New-TimeSpan -Minutes 1) `
     -ExecutionTimeLimit ([TimeSpan]::Zero)
 
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
-    -Principal $taskPrincipal -Settings $settings -Force | Out-Null
+    -Principal $taskPrincipal -Settings $settings -Description `
+    'Starts the outbound-only Meerkateer Controller automatically when Windows starts.' `
+    -Force | Out-Null
+
+$registeredTask = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
+$hasStartupTrigger = @(
+    $registeredTask.Triggers | Where-Object { $_.CimClass.CimClassName -eq 'MSFT_TaskBootTrigger' }
+).Count -gt 0
+if (-not $hasStartupTrigger) {
+    throw "Startup task '$taskName' was registered without a Windows boot trigger."
+}
+if ($registeredTask.State -eq 'Disabled') {
+    Enable-ScheduledTask -TaskName $taskName | Out-Null
+}
 
 if (-not $NoStart) {
     Start-ScheduledTask -TaskName $taskName
+    $started = $false
+    for ($attempt = 0; $attempt -lt 20; $attempt++) {
+        if ((Get-ScheduledTask -TaskName $taskName -ErrorAction Stop).State -eq 'Running') {
+            $started = $true
+            break
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    if (-not $started) {
+        $taskInfo = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction Stop
+        throw "Startup task '$taskName' did not remain running. LastTaskResult=$($taskInfo.LastTaskResult)."
+    }
 }
 
 Write-Host "Meerkateer Controller installed as startup task '$taskName'."
+Write-Host 'Automatic startup: enabled (Windows boot trigger).'
 Write-Host "Configuration: $installedConfig"

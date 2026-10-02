@@ -388,9 +388,9 @@ $connectButton.Add_Click({
         Invoke-Controller -Arguments (Get-SignalArguments) | Out-Null
         Install-BackgroundController
         Invoke-Controller -Arguments @('--config', $configPath, 'doctor') | Out-Null
-        $status.Text = 'Connected. The background controller is running.'
+        $status.Text = 'Connected. Running now and enabled at every Windows startup.'
         [System.Windows.Forms.MessageBox]::Show(
-            'This computer is connected and its selected signals are now being sent.',
+            'This computer is connected. Its selected signals are being sent now, and the Controller will start automatically whenever Windows starts.',
             'Meerkateer Controller',
             'OK',
             'Information'

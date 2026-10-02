@@ -78,6 +78,11 @@ The background Controller stays headless and reliable. Open the optional cross-p
 only when you want a live local snapshot, diagnostics, or signal settings; use the Web Console to
 watch the complete multi-workspace fleet.
 
+After successful enrollment, the Windows MSI and Ubuntu DEB start the Controller immediately and
+enable it automatically for every operating-system boot. Windows verifies its enabled boot task is
+running; Linux verifies the systemd unit is both enabled and active. The portable Windows ZIP is
+the explicit exception: by design it changes no machine startup settings and runs only when called.
+
 ![Six colorful mini Meerkateer friends introducing machines, services, timelines, workspaces, states, and access](docs/images/meerkateer-friends.png)
 
 The current pilot is **Community-first**. Meerkateer Cloud is planned for teams that would rather

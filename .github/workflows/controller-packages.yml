@@ -56,6 +56,11 @@ jobs:
           test -x package-check/usr/lib/meerkateer/meerkateer-controller
           test -f package-check/usr/share/doc/meerkateer-controller/DISCLAIMER.md
           grep -q 'Developer Preview' package-check/usr/share/doc/meerkateer-controller/DISCLAIMER.md
+          grep -Fxq 'Restart=always' package-check/lib/systemd/system/meerkateer-controller.service
+          grep -Fxq 'WantedBy=multi-user.target' package-check/lib/systemd/system/meerkateer-controller.service
+          grep -Fxq 'ConditionPathExists=/var/lib/meerkateer-controller/agent.json' package-check/lib/systemd/system/meerkateer-controller.service
+          grep -Fq 'systemctl is-enabled --quiet "$service_name"' package-check/usr/bin/meerkateer-controller
+          grep -Fq 'systemctl is-active --quiet "$service_name"' package-check/usr/bin/meerkateer-controller
           package-check/usr/lib/meerkateer/meerkateer-controller --help | grep -q '  configure  '
           package-check/usr/lib/meerkateer/meerkateer-controller --help | grep -q '  tui  '
           package-check/usr/lib/meerkateer/meerkateer-controller --help | grep -q '  test-connection  '

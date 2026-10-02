@@ -102,6 +102,20 @@ jobs:
             }
           }
           if ($failed) { throw 'Windows installer syntax validation failed.' }
+          $startupInstaller = Get-Content packaging/windows/Install-MeerkateerAgent.ps1 -Raw
+          $startupContracts = @(
+            'New-ScheduledTaskTrigger\s+-AtStartup',
+            '-StartWhenAvailable',
+            '-RestartCount 999',
+            'MSFT_TaskBootTrigger',
+            'Start-ScheduledTask',
+            "State -eq 'Running'"
+          )
+          foreach ($contract in $startupContracts) {
+            if ($startupInstaller -notmatch $contract) {
+              throw "Windows automatic-startup contract is missing: $contract"
+            }
+          }
 
   web:
     runs-on: ubuntu-latest

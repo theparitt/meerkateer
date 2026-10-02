@@ -100,6 +100,10 @@ describe("App", () => {
     expect(screen.getByText("v0.1.0")).toBeTruthy();
     expect(screen.getByText("Current phase: Community Alpha")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Install one small Controller." })).toBeTruthy();
+    expect(screen.getAllByText(/starts immediately and at every/)).toHaveLength(2);
+    expect(
+      screen.getByText(/portable build intentionally does not modify Windows startup/),
+    ).toBeTruthy();
     expect(screen.getByRole("link", { name: "Download MSI" }).getAttribute("href")).toContain(
       "meerkateer-controller-windows-x86_64.msi",
     );

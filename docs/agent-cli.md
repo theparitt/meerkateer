@@ -57,6 +57,11 @@ Controller Monitor** from the Start menu for the live local Rust dashboard; it r
 because the packaged machine credential is readable only by Administrators, `LOCAL SERVICE`, and
 `SYSTEM`.
 
+Successful first enrollment registers an enabled Windows boot task under `LOCAL SERVICE`, starts
+it immediately, and verifies that it remains running. The task is configured to start when a
+missed boot trigger becomes available and to recover from repeated process exits. Reopening Setup
+updates the same startup task rather than creating duplicates.
+
 ## Ubuntu setup UI
 
 ```sh
@@ -69,6 +74,11 @@ token. Run **Test connection** before **Connect safely**; successful enrollment 
 `meerkateer-controller.service`. Run `sudo meerkateer-controller tui` later to open the same live
 local dashboard. A normal removal preserves the machine credential; an explicit package purge
 removes it.
+
+Successful first enrollment enables the unit in `multi-user.target`, starts it immediately, and
+verifies both `systemctl is-enabled` and `systemctl is-active`. The service uses `Restart=always`,
+so an unexpected clean exit or failure is restarted after a short delay. A deliberate
+`systemctl stop` still keeps it stopped until the next manual start or reboot.
 
 ## Local Rust dashboard
 

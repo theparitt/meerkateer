@@ -12,6 +12,11 @@ memory, disk, and exact process signals, and registers an automatically restarte
 under the low-privilege `LOCAL SERVICE` identity. The credential ACL permits only that identity,
 `SYSTEM`, and local Administrators.
 
+Enrollment starts the task immediately and verifies that it remains running. The registered task
+is enabled with a Windows boot trigger, starts when a missed trigger becomes available, has no
+execution time limit, and retries unexpected exits. The optional portable ZIP is deliberately
+manual and does not change startup settings.
+
 Setup explicitly shows **Local / self-hosted Community** as the available destination and keeps
 **Meerkateer Cloud** disabled until launch. Use **Test connection** before enrollment to check local
 config storage/free space, URL policy, DNS, proxy/VPN-sensitive routing, TLS, and the API readiness

@@ -89,9 +89,12 @@ install -o root -g root -m 0644 "$unit_source" "$install_unit"
 
 systemctl daemon-reload
 systemctl enable "$service_name.service" >/dev/null
+systemctl is-enabled --quiet "$service_name.service"
 if [[ "$start_service" == true ]]; then
   systemctl restart "$service_name.service"
+  systemctl is-active --quiet "$service_name.service"
   systemctl --no-pager --full status "$service_name.service"
 fi
 
 echo "Meerkateer agent installed. Configuration: $install_config"
+echo "Automatic startup: enabled (systemd multi-user target)."

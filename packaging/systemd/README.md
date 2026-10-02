@@ -27,3 +27,8 @@ agent opens outbound HTTPS connections and no inbound listener.
 The installer refuses to overwrite an existing machine credential unless `--replace-config` is
 explicitly supplied. `uninstall.sh` preserves the credential by default; `--purge` permanently
 deletes it.
+
+The default installation enables the service for `multi-user.target`, starts it immediately, and
+verifies both states. Pass `--no-start` only for image-building or another explicitly staged
+deployment; even then the service remains enabled for the next boot. The unit uses
+`Restart=always` with a ten-second delay for unexpected exits.

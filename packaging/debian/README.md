@@ -42,6 +42,11 @@ sudo meerkateer-controller test-connection --strict \
 
 The installed service remains headless and runs as the unprivileged
 `meerkateer-controller` account with systemd hardening and outbound network access only.
+Successful setup starts it immediately, verifies that it is active, and enables it under
+`multi-user.target` for every boot. `Restart=always` recovers either a failed or unexpected clean
+process exit after ten seconds; an intentional `systemctl stop` remains stopped until started or
+the machine reboots. The package enables the unit immediately, but `ConditionPathExists` keeps an
+unenrolled fresh installation quiet until setup has created its protected credential.
 
 The API host is entered once during first setup and stored with the exchanged machine credential in
 `/var/lib/meerkateer-controller/agent.json`. Later setup runs show that enrollment and update only
