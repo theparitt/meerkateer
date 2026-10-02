@@ -58,6 +58,20 @@ signals. A small heartbeat is always included. It never accepts inbound commands
 command arguments, environment values, or player/chat content. Preview packages are currently
 unsigned; verify their adjacent `.sha256` file. See the [Controller guide](docs/agent-cli.md).
 
+Setup currently offers **Local / self-hosted Community** as the working destination. **Meerkateer
+Cloud** is visible but disabled until the hosted service opens. Before enrollment, Windows Setup or
+the Rust TUI can test local config storage/free space, URL policy, DNS, proxy/VPN-sensitive routing,
+TLS, and the public API readiness endpoint without sending a credential or telemetry:
+
+```sh
+meerkateer-controller test-connection --server https://meerkateer-api.example.com
+```
+
+Runtime errors are recorded locally as a redacted code, summary, and next action—for example
+`storage_full`, `dns_failed`, `network_timeout`, `proxy_failed`, `tls_failed`,
+`authentication_rejected`, or `api_unavailable`. A failed telemetry batch remains durable and is
+retried without skipping its sequence.
+
 The background Controller stays headless and reliable. Open the optional cross-platform Rust TUI
 only when you want a live local snapshot, diagnostics, or signal settings; use the Web Console to
 watch the complete multi-workspace fleet.

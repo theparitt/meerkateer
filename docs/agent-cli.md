@@ -16,8 +16,10 @@ The landing page links to a rolling, unsigned `controller-preview` release with 
   executable and its instructions. It does not modify the machine.
 
 Every package has an adjacent `.sha256` file. Preview artifacts are not code-signed yet, so verify
-that checksum before installation. Authenticode/MSI and repository signing remain mandatory 1.0
-release gates.
+that checksum before installation. Microsoft Store signing is free for Store-distributed MSIX,
+but the Controller's always-on background component needs the restricted `packagedServices`
+capability, which Store policy says is usually not approved. An MSIX channel is therefore an
+experiment, not a replacement for the MSI/ZIP path today.
 
 ## What it collects
 
@@ -37,8 +39,11 @@ name (for example `java`); on Windows it will commonly include `.exe` (for examp
 ## Windows setup UI
 
 Install the MSI, then open **Meerkateer Controller Setup** from the Start menu. The UI asks for the
-HTTPS API URL, computer name, one-time token from Console → Connect, and which CPU, memory, disk, or
-exact process signals may be sent. The token is used only through the child process environment,
+destination, HTTPS API URL, computer name, one-time token from Console → Connect, and which CPU,
+memory, disk, or exact process signals may be sent. Local / self-hosted Community is available;
+Meerkateer Cloud is visible but disabled until the hosted service opens. **Test connection** checks
+the local state directory/free space, URL, DNS, network route, proxy/VPN-sensitive failures, TLS,
+and the public `/ready` endpoint before enrollment. The token is used only through the child process environment,
 cleared immediately, and never becomes an MSI property, process argument, task argument, or log
 entry. Reopen the setup UI later to change signals without a new token. Open **Meerkateer
 Controller Monitor** from the Start menu for the live local Rust dashboard; it requests elevation
@@ -52,10 +57,11 @@ sudo apt install ./meerkateer-controller_0.1.0_amd64.deb
 sudo meerkateer-controller setup
 ```
 
-The Rust terminal UI asks the enrollment questions, masks the one-time token, and enables the
-hardened `meerkateer-controller.service`. Run `sudo meerkateer-controller tui` later to open the
-same live local dashboard. A normal removal preserves the machine credential; an explicit package
-purge removes it.
+The Rust terminal UI asks for the same destination, API host, machine name, and masked one-time
+token. Run **Test connection** before **Connect safely**; successful enrollment enables the hardened
+`meerkateer-controller.service`. Run `sudo meerkateer-controller tui` later to open the same live
+local dashboard. A normal removal preserves the machine credential; an explicit package purge
+removes it.
 
 ## Local Rust dashboard
 
@@ -77,12 +83,14 @@ The dashboard provides:
   success/error, retry state, and background-service registration state;
 - an explicit signal allowlist and exact process-name editor, saved atomically without exposing the
   credential;
-- local credential, URL-policy, collector, and durable-retry diagnostics;
-- a public `/ready` connectivity check that sends no telemetry and no machine credential; and
+- local credential, config-directory/free-space, URL-policy, collector, and durable-retry
+  diagnostics;
+- a connection test for DNS, routing, timeout, proxy/VPN effects, TLS, and public `/ready` that
+  sends no telemetry and no machine credential; and
 - a bounded in-memory event list for the current TUI session only.
 
 Use `Tab` or `1`–`4` to move between pages, `R` to refresh, `Space` to toggle a signal, `E` to edit
-process names, `S` to save, `T` to test API readiness, and `Q` to close. Closing the TUI does not
+process names, `S` to save, `T` to run connection diagnostics, and `Q` to close. Closing the TUI does not
 stop the daemon. The Web Console remains the authoritative fleet view; the TUI intentionally shows
 only one computer and has no remote shell or command channel.
 
@@ -98,6 +106,26 @@ read-only after enrollment because moving a machine to another control plane req
 credential. Re-enroll (or explicitly purge first) to change hosts; use setup at any time to change
 only the signal allowlist. This avoids an accidental typo silently sending telemetry to a different
 server.
+
+## Test the route and understand failures
+
+Run the same redacted checks used by both setup UIs:
+
+```sh
+meerkateer-controller test-connection \
+  --server https://meerkateer-api.example.com
+```
+
+Add `--strict` in automation when a failed required check should return a non-zero exit code. The
+JSON report identifies `config_storage`, `disk_space`, `server_url`, `dns`, proxy environment, and
+`api_ready` separately. It never prints proxy values, credentials, or the enrollment token.
+
+During normal service operation, `agent.status.json` beside the protected config records only a
+redacted error code, summary, hint, and timestamps. It distinguishes storage full/permission,
+invalid config, DNS, connect/timeout, proxy, TLS, credential rejection/expiry, rate limiting, and
+API/upstream outage. Network software cannot reliably prove that a VPN is the root cause, so VPN is
+reported as an actionable routing/DNS/proxy possibility rather than a false certainty. After a
+successful retry, the current error is cleared while `last_success_at` is updated.
 
 The machine credential is never rendered by the TUI. The enrollment token is held in zeroizing
 memory only for the enrollment request and is not written to config, command arguments, environment

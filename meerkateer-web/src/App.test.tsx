@@ -110,6 +110,12 @@ describe("App", () => {
       "meerkateer-controller-windows-x86_64.zip",
     );
     expect(screen.getByText(/The service stays quiet and headless/)).toBeTruthy();
+    expect(screen.getByText("Local / self-hosted Community")).toBeTruthy();
+    expect(screen.getByText(/Visible in setup, but disabled/)).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Find the broken step, not just “connection failed.”" }),
+    ).toBeTruthy();
+    expect(screen.getByText(/unwritable\/full disk, DNS/)).toBeTruthy();
     expect(screen.getAllByRole("link", { name: /Road to 1.0/ })[0].getAttribute("href")).toBe(
       "/roadmap",
     );

@@ -12,6 +12,11 @@ memory, disk, and exact process signals, and registers an automatically restarte
 under the low-privilege `LOCAL SERVICE` identity. The credential ACL permits only that identity,
 `SYSTEM`, and local Administrators.
 
+Setup explicitly shows **Local / self-hosted Community** as the available destination and keeps
+**Meerkateer Cloud** disabled until launch. Use **Test connection** before enrollment to check local
+config storage/free space, URL policy, DNS, proxy/VPN-sensitive routing, TLS, and the API readiness
+endpoint without sending the token, machine credential, or telemetry.
+
 The API host is entered once during first setup and stored in the ACL-protected
 `%ProgramData%\Meerkateer\agent.json` alongside the exchanged machine credential. Reopening the UI
 shows the enrolled host and current signal choices; it locks host and machine identity while
@@ -23,8 +28,10 @@ settings. The shortcut requests elevation so it can read the ACL-protected machi
 portable CLI can open the same dashboard with `meerkateer-controller.exe tui`. Closing the TUI does
 not stop the headless startup task.
 
-These developer-preview artifacts are not yet signed. Verify the adjacent SHA-256 file. A signed
-MSI/executable and native OS secret protection remain 1.0 gates.
+These direct-download developer-preview artifacts are not yet signed. Verify the adjacent SHA-256
+file. Microsoft Store signing for MSIX is free, but an always-on packaged service requires a
+restricted Store capability that is usually not approved; MSIX remains a future experimental
+channel rather than replacing this MSI.
 
 For a development smoke test in PowerShell:
 

@@ -503,6 +503,29 @@ const controllerDownloads = [
   },
 ];
 
+const connectionChecks = [
+  {
+    code: "01",
+    title: "Local storage",
+    copy: "Can the Controller safely write its protected config and retry state, and is there enough disk space?",
+  },
+  {
+    code: "02",
+    title: "Address and DNS",
+    copy: "Is the API URL valid, and can this computer resolve the hostname without leaking credentials?",
+  },
+  {
+    code: "03",
+    title: "Network route",
+    copy: "Can the machine reach the port through its internet, firewall, proxy, container route, or VPN?",
+  },
+  {
+    code: "04",
+    title: "TLS and API",
+    copy: "Is the certificate trusted, and does Meerkateer's public readiness endpoint answer successfully?",
+  },
+];
+
 function ControllerDownloadsSection() {
   return (
     <section className="landing-section controller-section" id="controller">
@@ -525,6 +548,60 @@ function ControllerDownloadsSection() {
             </article>
           ))}
         </div>
+        <div className="controller-route-panel">
+          <div className="controller-route-heading">
+            <p className="card-label">Choose where signals go</p>
+            <h3>One clear destination during setup.</h3>
+            <p>
+              The destination is stored locally with the machine credential. It never silently
+              changes after enrollment.
+            </p>
+          </div>
+          <div className="controller-route-options">
+            <div className="controller-route-option active">
+              <span aria-hidden="true">✓</span>
+              <div>
+                <strong>Local / self-hosted Community</strong>
+                <p>Available now. Enter the HTTPS address of the API you operate.</p>
+              </div>
+            </div>
+            <div className="controller-route-option disabled" aria-disabled="true">
+              <span aria-hidden="true">☁</span>
+              <div>
+                <strong>Meerkateer Cloud</strong>
+                <p>Coming soon. Visible in setup, but disabled until the hosted service opens.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="controller-test-panel">
+          <div className="controller-test-copy">
+            <p className="card-label">Test before enrollment</p>
+            <h3>Find the broken step, not just “connection failed.”</h3>
+            <p>
+              Windows Setup and the Rust terminal UI test the route before using the one-time token.
+              Runtime failures keep an actionable, redacted reason beside the local config.
+            </p>
+            <code>meerkateer-controller test-connection --server https://api.example.com</code>
+          </div>
+          <div className="controller-check-grid">
+            {connectionChecks.map((check) => (
+              <article key={check.code}>
+                <span>{check.code}</span>
+                <div>
+                  <strong>{check.title}</strong>
+                  <p>{check.copy}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+        <p className="controller-error-note">
+          Clear error families include invalid config or environment, unwritable/full disk, DNS,
+          timeout, firewall or VPN route, proxy, TLS certificate, wrong API path, authentication,
+          rate limiting, and API/upstream outage. A failed telemetry batch stays on the machine and
+          retries without skipping its sequence.
+        </p>
         <div className="controller-signal-note">
           <div>
             <strong>Always visible before it starts</strong>
@@ -544,7 +621,8 @@ function ControllerDownloadsSection() {
         </p>
         <p className="controller-preview-warning">
           Developer-preview packages are currently unsigned. Verify the adjacent SHA-256 file from
-          the preview release before installation. Signed installers are a 1.0 release gate.
+          the preview release before installation. A free Microsoft Store MSIX channel is being
+          evaluated separately because background services require restricted Store approval.
         </p>
       </div>
     </section>

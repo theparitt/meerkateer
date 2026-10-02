@@ -29,9 +29,9 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use crate::{
-    AgentConfig, RuntimeStatus, SignalKind, SignalSelection, collector, enroll_with_token,
-    http_client, load_config, load_runtime_status, runtime_status_path, save_signal_selection,
-    validate_server_url,
+    AgentConfig, ControlPlane, RuntimeStatus, SignalKind, SignalSelection, collector, diagnostics,
+    enroll_with_token, load_config, load_runtime_status, runtime_status_path,
+    save_signal_selection, validate_server_url,
 };
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
@@ -82,6 +82,7 @@ impl Tab {
 
 #[derive(Debug, Clone)]
 struct ConfigView {
+    destination: ControlPlane,
     server_url: String,
     display_name: String,
     agent_id: Option<Uuid>,
@@ -94,6 +95,7 @@ struct ConfigView {
 impl From<&AgentConfig> for ConfigView {
     fn from(config: &AgentConfig) -> Self {
         Self {
+            destination: config.destination,
             server_url: config.server_url.clone(),
             display_name: config.display_name.clone(),
             agent_id: config.agent_id,
@@ -127,9 +129,9 @@ impl SetupForm {
 
     fn selected_value_mut(&mut self) -> Option<&mut String> {
         match self.selected {
-            0 => Some(&mut self.server_url),
-            1 => Some(&mut self.display_name),
-            2 => Some(&mut self.token),
+            1 => Some(&mut self.server_url),
+            2 => Some(&mut self.display_name),
+            3 => Some(&mut self.token),
             _ => None,
         }
     }
@@ -149,6 +151,7 @@ struct App {
     events: VecDeque<String>,
     service_status: String,
     runtime: RuntimeStatus,
+    connection_report: Option<diagnostics::ConnectionReport>,
     last_refresh: Instant,
     quit: bool,
 }
@@ -169,6 +172,7 @@ impl App {
             events: VecDeque::new(),
             service_status: service_status(),
             runtime: RuntimeStatus::default(),
+            connection_report: None,
             last_refresh: Instant::now(),
             quit: false,
         };
@@ -177,7 +181,7 @@ impl App {
                 let mut form = SetupForm::new();
                 form.server_url = config.server_url;
                 form.display_name = config.display_name;
-                form.selected = 2;
+                form.selected = 3;
                 app.setup = Some(form);
                 app.set_status("Previous enrollment was incomplete; paste a fresh one-time token");
             }
@@ -236,33 +240,17 @@ impl App {
         }
     }
 
-    async fn test_connection(&mut self) {
-        let Some(config) = self.config.as_ref() else {
-            self.set_status("Enroll this computer before testing the API");
-            return;
-        };
-        let result = async {
-            let base = validate_server_url(&config.server_url)?;
-            let endpoint = base.join("ready")?;
-            let response = http_client()?.get(endpoint).send().await?;
-            ensure!(
-                response.status().is_success(),
-                "readiness endpoint returned HTTP {}",
-                response.status()
-            );
-            anyhow::Ok(())
-        }
-        .await;
-        match result {
-            Ok(()) => {
-                self.set_status("API connection healthy; no telemetry was sent");
-                self.push_event("API readiness check passed");
-            }
-            Err(error) => {
-                self.status = format!("API check failed: {error}");
-                self.push_event("API readiness check failed");
-            }
-        }
+    async fn test_connection(&mut self, server_url: String) {
+        self.set_status("Testing storage, DNS, routing, TLS, and API readiness...");
+        let report = diagnostics::test_self_hosted_connection(&server_url, &self.config_path).await;
+        let ok = report.is_ok();
+        self.status = report.summary();
+        self.connection_report = Some(report);
+        self.push_event(if ok {
+            "Connection diagnostics passed; no telemetry was sent"
+        } else {
+            "Connection diagnostics found a blocking problem"
+        });
     }
 
     fn save_signals(&mut self) {
@@ -320,20 +308,39 @@ impl App {
     }
 
     async fn submit_setup(&mut self) {
-        let Some(form) = self.setup.as_mut() else {
+        let Some(form) = self.setup.as_ref() else {
             return;
         };
         let server_url = form.server_url.trim().to_owned();
         let display_name = form.display_name.trim().to_owned();
-        let token = std::mem::take(&mut form.token);
-        if token.trim().is_empty() {
-            form.selected = 2;
+        if form.token.trim().is_empty() {
+            if let Some(form) = self.setup.as_mut() {
+                form.selected = 3;
+            }
             self.set_status("Paste the one-time enrollment token");
             return;
         }
+        self.test_connection(server_url.clone()).await;
+        if self
+            .connection_report
+            .as_ref()
+            .is_none_or(|report| !report.is_ok())
+        {
+            self.status = format!(
+                "Fix the connection checks before enrollment: {}",
+                self.status
+            );
+            return;
+        }
+        let token = self
+            .setup
+            .as_mut()
+            .map(|form| std::mem::take(&mut form.token))
+            .unwrap_or_default();
         self.set_status("Enrolling this computer...");
         match enroll_with_token(
             &self.config_path,
+            ControlPlane::SelfHosted,
             &server_url,
             &display_name,
             token.as_str(),
@@ -352,7 +359,7 @@ impl App {
             Err(error) => {
                 self.status = format!("Enrollment failed: {error}");
                 if let Some(current) = self.setup.as_mut() {
-                    current.selected = 2;
+                    current.selected = 3;
                 }
             }
         }
@@ -389,7 +396,15 @@ impl App {
                 }
                 self.refresh_snapshot().await;
             }
-            KeyCode::Char('t') if self.tab == Tab::Diagnostics => self.test_connection().await,
+            KeyCode::Char('t') if self.tab == Tab::Diagnostics => {
+                if let Some(server_url) =
+                    self.config.as_ref().map(|config| config.server_url.clone())
+                {
+                    self.test_connection(server_url).await;
+                } else {
+                    self.set_status("No enrolled API URL is available");
+                }
+            }
             KeyCode::Char('s') if self.tab == Tab::Signals => self.save_signals(),
             KeyCode::Char('e') if self.tab == Tab::Signals => {
                 self.editing_processes = true;
@@ -408,13 +423,19 @@ impl App {
 
     async fn handle_setup_key(&mut self, key: KeyEvent) {
         let mut submit = false;
+        let mut test = false;
         if let Some(form) = self.setup.as_mut() {
             match key.code {
                 KeyCode::Esc => self.quit = true,
-                KeyCode::Tab | KeyCode::Down => form.selected = (form.selected + 1) % 4,
-                KeyCode::BackTab | KeyCode::Up => form.selected = (form.selected + 3) % 4,
-                KeyCode::Enter if form.selected == 3 => submit = true,
-                KeyCode::Enter => form.selected = (form.selected + 1).min(3),
+                KeyCode::Tab | KeyCode::Down => form.selected = (form.selected + 1) % 6,
+                KeyCode::BackTab | KeyCode::Up => form.selected = (form.selected + 5) % 6,
+                KeyCode::Enter if form.selected == 4 => test = true,
+                KeyCode::Enter if form.selected == 5 => submit = true,
+                KeyCode::Enter if form.selected == 0 => {
+                    "Local / self-hosted is selected. Meerkateer Cloud is coming soon."
+                        .clone_into(&mut self.status);
+                }
+                KeyCode::Enter => form.selected = (form.selected + 1).min(5),
                 KeyCode::Backspace => {
                     if let Some(value) = form.selected_value_mut() {
                         value.pop();
@@ -433,6 +454,14 @@ impl App {
         }
         if submit {
             self.submit_setup().await;
+        }
+        if test {
+            let server_url = self
+                .setup
+                .as_ref()
+                .map(|form| form.server_url.trim().to_owned())
+                .unwrap_or_default();
+            self.test_connection(server_url).await;
         }
     }
 
@@ -854,6 +883,10 @@ fn render_diagnostics(frame: &mut Frame<'_>, area: Rect, app: &App) {
     )];
     if let Some(config) = app.config.as_ref() {
         lines.push(diagnostic_line(
+            config.destination == ControlPlane::SelfHosted,
+            "Destination is Local / self-hosted Community (Cloud is not open)",
+        ));
+        lines.push(diagnostic_line(
             validate_server_url(&config.server_url).is_ok(),
             "API URL is HTTPS or loopback HTTP",
         ));
@@ -871,11 +904,23 @@ fn render_diagnostics(frame: &mut Frame<'_>, area: Rect, app: &App) {
         ));
         lines.push(diagnostic_line(
             app.runtime.last_error.is_none(),
-            app.runtime
-                .last_error
-                .as_deref()
-                .unwrap_or("Daemon has not recorded a delivery error"),
+            &match (
+                app.runtime.last_error_code.as_deref(),
+                app.runtime.last_error.as_deref(),
+            ) {
+                (Some(code), Some(message)) => format!("{code}: {message}"),
+                _ => "Daemon has not recorded a delivery error".to_owned(),
+            },
         ));
+        if let Some(hint) = app.runtime.last_error_hint.as_deref() {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    "  NEXT  ",
+                    Style::default().fg(BLUE).add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(hint),
+            ]));
+        }
     }
     lines.push(diagnostic_line(
         app.snapshot.is_some(),
@@ -889,8 +934,18 @@ fn render_diagnostics(frame: &mut Frame<'_>, area: Rect, app: &App) {
         Span::raw(&app.service_status),
     ]));
     lines.push(Line::from(""));
+    if let Some(report) = app.connection_report.as_ref() {
+        lines.push(Line::from(Span::styled(
+            "Last connection test",
+            Style::default().fg(BLUE).add_modifier(Modifier::BOLD),
+        )));
+        for check in &report.checks {
+            lines.push(connection_check_line(check));
+        }
+        lines.push(Line::from(""));
+    }
     lines.push(Line::from(Span::styled(
-        "Press T to call only the public readiness endpoint. It does not send telemetry or expose the credential.",
+        "Press T to test storage, DNS, route/proxy/VPN effects, TLS, and public /ready. No credential or telemetry is sent.",
         Style::default().fg(MUTED),
     )));
     frame.render_widget(
@@ -952,12 +1007,12 @@ fn render_help(frame: &mut Frame<'_>, area: Rect) {
 }
 
 fn render_setup(frame: &mut Frame<'_>, area: Rect, form: &SetupForm, status: &str) {
-    let outer = centered_rect(74, 78, area);
+    let outer = centered_rect(78, 86, area);
     frame.render_widget(Block::default().style(Style::default().bg(NAVY)), area);
     let [title, intro, fields, privacy, footer] = Layout::vertical([
         Constraint::Length(4),
         Constraint::Length(4),
-        Constraint::Min(10),
+        Constraint::Min(13),
         Constraint::Length(5),
         Constraint::Length(3),
     ])
@@ -979,16 +1034,21 @@ fn render_setup(frame: &mut Frame<'_>, area: Rect, form: &SetupForm, status: &st
         title,
     );
     frame.render_widget(
-        Paragraph::new("Enter the control-plane URL once. The one-time token is masked, exchanged for a machine credential, and never stored.")
+        Paragraph::new("Choose where data goes, test the route, then enroll. Cloud is visible but disabled until the hosted service opens.")
             .alignment(Alignment::Center)
             .wrap(Wrap { trim: true }),
         intro,
     );
 
     let values = [
+        (
+            "Destination",
+            "Local / self-hosted Community  [Cloud: coming soon]".to_owned(),
+        ),
         ("API URL", form.server_url.clone()),
         ("Computer name", form.display_name.clone()),
         ("One-time token", mask_secret(form.token.len())),
+        ("", "[ Test connection ]".to_owned()),
         ("", "[ Connect safely ]".to_owned()),
     ];
     let items = values
@@ -1013,7 +1073,10 @@ fn render_setup(frame: &mut Frame<'_>, area: Rect, form: &SetupForm, status: &st
     frame.render_widget(
         Paragraph::new(vec![
             Line::from("Outbound HTTPS only. No inbound listener or remote shell."),
-            Line::from("Tab moves • Enter continues/connects • Esc exits"),
+            Line::from(
+                "Test checks disk/config, DNS, proxy/VPN-sensitive routing, TLS, and /ready.",
+            ),
+            Line::from("Tab moves • Enter selects/tests/connects • Esc exits"),
             Line::from(Span::styled(status, Style::default().fg(MINT))),
         ])
         .alignment(Alignment::Center)
@@ -1045,14 +1108,30 @@ fn field_line(label: &str, value: &str) -> Line<'static> {
     ])
 }
 
-fn diagnostic_line(ok: bool, message: &str) -> Line<'_> {
+fn diagnostic_line(ok: bool, message: &str) -> Line<'static> {
     let (marker, color) = if ok { ("PASS", MINT) } else { ("WARN", GOLD) };
     Line::from(vec![
         Span::styled(
             format!("  {marker:<4}  "),
             Style::default().fg(color).add_modifier(Modifier::BOLD),
         ),
-        Span::raw(message),
+        Span::raw(message.to_owned()),
+    ])
+}
+
+fn connection_check_line(check: &diagnostics::DiagnosticCheck) -> Line<'_> {
+    let (marker, color) = match check.state {
+        diagnostics::CheckState::Pass => ("PASS", MINT),
+        diagnostics::CheckState::Info => ("INFO", BLUE),
+        diagnostics::CheckState::Warn => ("WARN", GOLD),
+        diagnostics::CheckState::Fail => ("FAIL", CORAL),
+    };
+    Line::from(vec![
+        Span::styled(
+            format!("  {marker:<4}  "),
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(format!("{}: {}", check.code, check.message)),
     ])
 }
 

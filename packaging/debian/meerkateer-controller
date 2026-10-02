@@ -41,6 +41,12 @@ case "${1:-}" in
     runuser -u "$service_user" -- "$controller_binary" --config "$config_path" doctor
     systemctl --no-pager --full status "$service_name"
     ;;
+  test-connection)
+    require_root test-connection
+    shift
+    runuser -u "$service_user" -- "$controller_binary" --config "$config_path" \
+      test-connection "$@"
+    ;;
   start|stop|restart)
     action="$1"
     shift
@@ -54,6 +60,8 @@ Meerkateer Controller
   sudo meerkateer-controller setup    First setup in the Rust terminal UI
   sudo meerkateer-controller tui      Monitor this host or change signals
   sudo meerkateer-controller status   Check enrollment and background service
+  sudo meerkateer-controller test-connection --server https://api.example.com
+                                      Test storage, network, TLS, and API readiness
   sudo meerkateer-controller restart  Restart telemetry delivery
 
 Advanced CLI:

@@ -1,4 +1,5 @@
 mod collector;
+mod diagnostics;
 mod tui;
 
 use std::{
@@ -45,6 +46,9 @@ struct Cli {
 enum Command {
     /// Enroll this machine with a one-time token from the Console.
     Enroll {
+        /// Control plane destination. Cloud is reserved but not open yet.
+        #[arg(long, value_enum, default_value_t = ControlPlane::SelfHosted)]
+        destination: ControlPlane,
         /// Meerkateer API base URL. HTTPS is required except on loopback.
         #[arg(long)]
         server: String,
@@ -54,6 +58,15 @@ enum Command {
     },
     /// Verify the local configuration without displaying credentials.
     Doctor,
+    /// Test local storage, URL, DNS, proxy/VPN-sensitive routing, TLS, and API readiness.
+    TestConnection {
+        /// Meerkateer API base URL. HTTPS is required except on loopback.
+        #[arg(long)]
+        server: String,
+        /// Return a non-zero exit code when any required check fails.
+        #[arg(long)]
+        strict: bool,
+    },
     /// Choose which bounded host signals this controller sends.
     Configure {
         /// Comma-separated signals: cpu,memory,disk,process.
@@ -93,6 +106,15 @@ enum SignalKind {
     Memory,
     Disk,
     Process,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
+#[serde(rename_all = "snake_case")]
+enum ControlPlane {
+    #[default]
+    #[value(name = "self-hosted")]
+    SelfHosted,
+    Cloud,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -150,6 +172,8 @@ impl SignalSelection {
 #[derive(Serialize, Deserialize)]
 struct AgentConfig {
     version: u8,
+    #[serde(default)]
+    destination: ControlPlane,
     server_url: String,
     installation_id: Uuid,
     display_name: String,
@@ -176,6 +200,7 @@ struct DoctorResult<'a> {
     platform: &'static str,
     architecture: &'static str,
     config_path: String,
+    destination: ControlPlane,
     server_url: &'a str,
     enrolled: bool,
     agent_id: Option<Uuid>,
@@ -185,6 +210,9 @@ struct DoctorResult<'a> {
     watched_processes: &'a [String],
     pending_batch: bool,
     next_sequence: u64,
+    last_error_code: Option<&'a str>,
+    last_error: Option<&'a str>,
+    last_error_hint: Option<&'a str>,
 }
 
 #[derive(Debug, Serialize)]
@@ -211,7 +239,9 @@ struct RuntimeStatus {
     last_attempt_at: Option<String>,
     last_success_at: Option<String>,
     last_error_at: Option<String>,
+    last_error_code: Option<String>,
     last_error: Option<String>,
+    last_error_hint: Option<String>,
 }
 
 impl Default for RuntimeStatus {
@@ -221,7 +251,9 @@ impl Default for RuntimeStatus {
             last_attempt_at: None,
             last_success_at: None,
             last_error_at: None,
+            last_error_code: None,
             last_error: None,
+            last_error_hint: None,
         }
     }
 }
@@ -275,8 +307,21 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let config_path = resolve_config_path(cli.config)?;
     match cli.command {
-        Command::Enroll { server, name } => enroll(&config_path, &server, &name).await,
+        Command::Enroll {
+            destination,
+            server,
+            name,
+        } => enroll(&config_path, destination, &server, &name).await,
         Command::Doctor => doctor(&config_path),
+        Command::TestConnection { server, strict } => {
+            let report = diagnostics::test_self_hosted_connection(&server, &config_path).await;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            ensure!(
+                !strict || report.is_ok(),
+                "connection test failed; inspect the JSON checks above"
+            );
+            Ok(())
+        }
         Command::Configure {
             signals,
             watch_processes,
@@ -335,7 +380,12 @@ async fn inspect(watched_processes: &[String]) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn enroll(config_path: &Path, server: &str, name: &str) -> anyhow::Result<()> {
+async fn enroll(
+    config_path: &Path,
+    destination: ControlPlane,
+    server: &str,
+    name: &str,
+) -> anyhow::Result<()> {
     let token = Zeroizing::new(
         env::var("MEERKATEER_ENROLLMENT_TOKEN")
             .context("MEERKATEER_ENROLLMENT_TOKEN is required")?,
@@ -344,7 +394,7 @@ async fn enroll(config_path: &Path, server: &str, name: &str) -> anyhow::Result<
         !token.trim().is_empty(),
         "MEERKATEER_ENROLLMENT_TOKEN is empty"
     );
-    let outcome = enroll_with_token(config_path, server, name, token.as_str()).await?;
+    let outcome = enroll_with_token(config_path, destination, server, name, token.as_str()).await?;
     println!(
         "{}",
         serde_json::to_string_pretty(&EnrollmentResult {
@@ -367,10 +417,15 @@ struct EnrollmentOutcome {
 
 async fn enroll_with_token(
     config_path: &Path,
+    destination: ControlPlane,
     server: &str,
     name: &str,
     token: &str,
 ) -> anyhow::Result<EnrollmentOutcome> {
+    ensure!(
+        destination == ControlPlane::SelfHosted,
+        "Meerkateer Cloud is not open yet; choose self-hosted Community"
+    );
     let server_url = validate_server_url(server)?;
     validate_display_name(name)?;
     ensure!(!token.trim().is_empty(), "enrollment token is empty");
@@ -382,7 +437,9 @@ async fn enroll_with_token(
                 "this config is already enrolled; use a different --config path for another agent"
             );
             ensure!(
-                existing.server_url == server_url.as_str() && existing.display_name == name,
+                existing.destination == destination
+                    && existing.server_url == server_url.as_str()
+                    && existing.display_name == name,
                 "an incomplete enrollment exists with different server/name settings"
             );
             existing
@@ -394,6 +451,7 @@ async fn enroll_with_token(
         {
             let pending = AgentConfig {
                 version: CONFIG_VERSION,
+                destination,
                 server_url: server_url.as_str().to_owned(),
                 installation_id: Uuid::new_v4(),
                 display_name: name.to_owned(),
@@ -458,6 +516,7 @@ async fn enroll_with_token(
 fn doctor(config_path: &Path) -> anyhow::Result<()> {
     let config = load_config(config_path)?;
     validate_complete_config(&config)?;
+    let runtime = load_runtime_status(&runtime_status_path(config_path))?;
     let expires_at = config
         .credential_expires_at
         .as_deref()
@@ -477,6 +536,7 @@ fn doctor(config_path: &Path) -> anyhow::Result<()> {
         platform: env::consts::OS,
         architecture: env::consts::ARCH,
         config_path: config_path.display().to_string(),
+        destination: config.destination,
         server_url: &config.server_url,
         enrolled: true,
         agent_id: config.agent_id,
@@ -486,6 +546,9 @@ fn doctor(config_path: &Path) -> anyhow::Result<()> {
         watched_processes: &config.signals.watched_processes,
         pending_batch: config.pending_batch.is_some(),
         next_sequence: config.next_sequence,
+        last_error_code: runtime.last_error_code.as_deref(),
+        last_error: runtime.last_error.as_deref(),
+        last_error_hint: runtime.last_error_hint.as_deref(),
     };
     println!("{}", serde_json::to_string_pretty(&result)?);
     ensure!(
@@ -542,12 +605,17 @@ fn record_runtime_status(config_path: &Path, error: Option<&anyhow::Error>) -> a
     status.version = RUNTIME_STATUS_VERSION;
     status.last_attempt_at = Some(now.clone());
     if let Some(error) = error {
+        let classified = diagnostics::classify_error(error);
         status.last_error_at = Some(now);
-        status.last_error = Some(sanitize_runtime_error(error));
+        status.last_error_code = Some(classified.code.to_owned());
+        status.last_error = Some(sanitize_runtime_message(error, &classified.message));
+        status.last_error_hint = Some(classified.hint.to_owned());
     } else {
         status.last_success_at = Some(now);
         status.last_error_at = None;
+        status.last_error_code = None;
         status.last_error = None;
+        status.last_error_hint = None;
     }
     save_runtime_status(&status_path, &status)
 }
@@ -605,7 +673,7 @@ fn save_runtime_status(path: &Path, status: &RuntimeStatus) -> anyhow::Result<()
         .with_context(|| format!("failed to atomically save {}", path.display()))
 }
 
-fn sanitize_runtime_error(error: &anyhow::Error) -> String {
+fn sanitize_runtime_message(error: &anyhow::Error, classified_message: &str) -> String {
     let value = error.to_string();
     let normalized = value.to_ascii_lowercase();
     if [
@@ -621,7 +689,10 @@ fn sanitize_runtime_error(error: &anyhow::Error) -> String {
     {
         return "delivery failed; sensitive error detail was redacted".to_owned();
     }
-    value.chars().take(MAX_RUNTIME_ERROR_CHARS).collect()
+    classified_message
+        .chars()
+        .take(MAX_RUNTIME_ERROR_CHARS)
+        .collect()
 }
 
 async fn send_once(
@@ -825,6 +896,10 @@ fn validate_complete_config(config: &AgentConfig) -> anyhow::Result<()> {
         config.version == CONFIG_VERSION,
         "unsupported agent config version"
     );
+    ensure!(
+        config.destination == ControlPlane::SelfHosted,
+        "Meerkateer Cloud is not open yet; this Controller must use self-hosted Community"
+    );
     ensure!(config.next_sequence > 0, "agent sequence state is invalid");
     collector::validate_watched_processes(&config.signals.watched_processes)?;
     ensure!(
@@ -949,28 +1024,42 @@ fn http_error(operation: &str, status: StatusCode, body: &[u8]) -> anyhow::Error
 
 fn resolve_config_path(override_path: Option<PathBuf>) -> anyhow::Result<PathBuf> {
     if let Some(path) = override_path {
-        return Ok(path);
+        return validate_config_path(path);
     }
     if let Some(path) = env::var_os("MEERKATEER_AGENT_CONFIG") {
-        return Ok(PathBuf::from(path));
+        return validate_config_path(PathBuf::from(path));
     }
     #[cfg(windows)]
     if let Some(base) = env::var_os("APPDATA") {
-        return Ok(PathBuf::from(base).join("Meerkateer").join("agent.json"));
+        return validate_config_path(PathBuf::from(base).join("Meerkateer").join("agent.json"));
     }
     #[cfg(not(windows))]
     {
         if let Some(base) = env::var_os("XDG_CONFIG_HOME") {
-            return Ok(PathBuf::from(base).join("meerkateer").join("agent.json"));
+            return validate_config_path(PathBuf::from(base).join("meerkateer").join("agent.json"));
         }
         if let Some(home) = env::var_os("HOME") {
-            return Ok(PathBuf::from(home)
-                .join(".config")
-                .join("meerkateer")
-                .join("agent.json"));
+            return validate_config_path(
+                PathBuf::from(home)
+                    .join(".config")
+                    .join("meerkateer")
+                    .join("agent.json"),
+            );
         }
     }
     bail!("could not determine the config directory; pass --config PATH")
+}
+
+fn validate_config_path(path: PathBuf) -> anyhow::Result<PathBuf> {
+    ensure!(
+        !path.as_os_str().is_empty(),
+        "Controller config path is empty; fix MEERKATEER_AGENT_CONFIG or pass --config PATH"
+    );
+    ensure!(
+        !path.is_dir(),
+        "Controller config path points to a directory; use a file such as agent.json"
+    );
+    Ok(path)
 }
 
 fn load_config(path: &Path) -> anyhow::Result<AgentConfig> {
@@ -1050,6 +1139,7 @@ mod tests {
     fn test_config() -> AgentConfig {
         AgentConfig {
             version: CONFIG_VERSION,
+            destination: ControlPlane::SelfHosted,
             server_url: "http://127.0.0.1:6510/".to_owned(),
             installation_id: Uuid::new_v4(),
             display_name: "Test host".to_owned(),
@@ -1072,6 +1162,13 @@ mod tests {
         assert!(validate_server_url("http://ops.example.com").is_err());
         assert!(validate_server_url("https://user:pass@ops.example.com").is_err());
         assert!(validate_server_url("https://ops.example.com/path").is_err());
+    }
+
+    #[test]
+    fn rejects_empty_or_directory_config_paths() {
+        assert!(validate_config_path(PathBuf::new()).is_err());
+        assert!(validate_config_path(env::temp_dir()).is_err());
+        assert!(validate_config_path(env::temp_dir().join("agent.json")).is_ok());
     }
 
     #[test]
@@ -1153,6 +1250,7 @@ mod tests {
             config.signals.names(),
             vec!["heartbeat", "cpu", "memory", "disk"]
         );
+        assert_eq!(config.destination, ControlPlane::SelfHosted);
         assert!(config.signals.watched_processes.is_empty());
         Ok(())
     }
@@ -1227,13 +1325,16 @@ mod tests {
     fn runtime_errors_are_bounded_and_secret_safe() {
         let long = "network unavailable ".repeat(40);
         assert!(
-            sanitize_runtime_error(&anyhow::anyhow!(long))
+            sanitize_runtime_message(&anyhow::anyhow!(long), &"network unavailable ".repeat(40))
                 .chars()
                 .count()
                 <= 240
         );
         assert_eq!(
-            sanitize_runtime_error(&anyhow::anyhow!("bad token mka_agent_do_not_show")),
+            sanitize_runtime_message(
+                &anyhow::anyhow!("bad token mka_agent_do_not_show"),
+                "should not appear"
+            ),
             "delivery failed; sensitive error detail was redacted"
         );
     }

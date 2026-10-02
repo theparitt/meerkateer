@@ -995,7 +995,9 @@ def enroll_agent(project_id: str) -> tuple[str, str]:
         failed_status = json.loads(status_path.read_text(encoding="utf-8"))
         assert failed_status["last_attempt_at"]
         assert failed_status["last_success_at"] is None
-        assert failed_status["last_error"] == "telemetry request failed"
+        assert failed_status["last_error_code"] == "connect_failed"
+        assert failed_status["last_error"] == "Could not open a connection to the API"
+        assert "firewall" in failed_status["last_error_hint"].lower()
         assert "mka_agent_" not in status_path.read_text(encoding="utf-8")
         pending = json.loads(config_path.read_text(encoding="utf-8"))
         assert pending["pending_batch"]["first_sequence"] == 1
@@ -1022,7 +1024,9 @@ def enroll_agent(project_id: str) -> tuple[str, str]:
         recovered_status = json.loads(status_path.read_text(encoding="utf-8"))
         assert recovered_status["last_success_at"]
         assert recovered_status["last_error_at"] is None
+        assert recovered_status["last_error_code"] is None
         assert recovered_status["last_error"] is None
+        assert recovered_status["last_error_hint"] is None
         snapshot = expect(
             call("GET", f"/v1/agents/{config['agent_id']}/telemetry"), 200
         ).body

@@ -19,11 +19,20 @@ sudo meerkateer-controller setup
 ```
 
 The setup command opens the cross-platform Rust terminal UI suitable for headless Ubuntu servers.
-It keeps the one-time enrollment token out of command history, then shows live CPU, memory, disk,
-and exact process signals, diagnostics, and the signal allowlist. Reopen it later with:
+It selects Local / self-hosted Community (Cloud stays disabled until launch), keeps the one-time
+enrollment token out of command history, and can test config storage/free space, URL, DNS,
+proxy/VPN-sensitive routing, TLS, and API readiness before enrollment. It then shows live CPU,
+memory, disk, exact process signals, diagnostics, and the signal allowlist. Reopen it later with:
 
 ```sh
 sudo meerkateer-controller tui
+```
+
+For non-interactive diagnostics:
+
+```sh
+sudo meerkateer-controller test-connection --strict \
+  --server https://meerkateer-api.example.com
 ```
 
 The installed service remains headless and runs as the unprivileged

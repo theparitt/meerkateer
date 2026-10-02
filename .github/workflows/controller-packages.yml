@@ -55,6 +55,7 @@ jobs:
           test -x package-check/usr/lib/meerkateer/meerkateer-controller
           package-check/usr/lib/meerkateer/meerkateer-controller --help | grep -q '  configure  '
           package-check/usr/lib/meerkateer/meerkateer-controller --help | grep -q '  tui  '
+          package-check/usr/lib/meerkateer/meerkateer-controller --help | grep -q '  test-connection  '
           rm -rf package-check
 
       - name: Upload Ubuntu artifacts
@@ -92,6 +93,7 @@ jobs:
           $help = & dist/portable/meerkateer-controller.exe --help
           $helpText = $help -join [Environment]::NewLine
           if ($helpText -notmatch '(?m)^  tui\s') { throw 'Portable Controller help omitted the TUI command.' }
+          if ($helpText -notmatch '(?m)^  test-connection\s') { throw 'Portable Controller help omitted connection diagnostics.' }
           Compress-Archive -Path dist/portable/* `
             -DestinationPath dist/meerkateer-controller-windows-x86_64.zip
 

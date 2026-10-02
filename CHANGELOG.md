@@ -7,6 +7,10 @@ Keep a Changelog principles, and releases use Semantic Versioning.
 
 ### Added
 
+- Explicit Local / self-hosted Controller destination with disabled Cloud placeholder, plus shared
+  pre-enrollment connection diagnostics for config storage/free space, URL/DNS, proxy/VPN-sensitive
+  routing, TLS, and API readiness across the Rust CLI/TUI and Windows Setup. Runtime failures now
+  persist a redacted code, summary, and next action while retaining the durable telemetry batch.
 - Cross-platform Rust Controller TUI for masked first enrollment, live local host/process signals,
   an atomic signal allowlist, safe readiness diagnostics, and session-only events while keeping the
   Windows Scheduled Task and Linux systemd daemon headless.
