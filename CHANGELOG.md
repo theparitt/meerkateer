@@ -184,6 +184,8 @@ Keep a Changelog principles, and releases use Semantic Versioning.
 
 ### Changed
 
+- Combined the MSI and portable CLI downloads into one Windows Controller card on the landing
+  page, leaving a simple two-card Windows-versus-Ubuntu comparison.
 - Default local host ports are now `6511` for the web UI and `6510` for the API;
   bootstrap safely migrates exact legacy defaults while preserving custom choices.
 - Vite now uses its TypeScript configuration explicitly and writes development cache to

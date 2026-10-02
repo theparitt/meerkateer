@@ -100,11 +100,14 @@ describe("App", () => {
     expect(screen.getByText("v0.1.0")).toBeTruthy();
     expect(screen.getByText("Current phase: Community Alpha")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Install one small Controller." })).toBeTruthy();
-    expect(screen.getAllByText(/starts immediately and at every/)).toHaveLength(2);
+    expect(container.querySelectorAll(".controller-download-card")).toHaveLength(2);
     expect(
       screen.getByText(/portable build intentionally does not modify Windows startup/),
     ).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Download MSI" }).getAttribute("href")).toContain(
+    const windowsMsiLink = screen.getByRole("link", { name: "Download MSI" });
+    const windowsCliLink = screen.getByRole("link", { name: "Download CLI ZIP" });
+    expect(windowsMsiLink.closest("article")).toBe(windowsCliLink.closest("article"));
+    expect(windowsMsiLink.getAttribute("href")).toContain(
       "meerkateer-controller-windows-x86_64.msi",
     );
     expect(screen.getByRole("link", { name: "Download DEB" }).getAttribute("href")).toContain(
@@ -118,7 +121,7 @@ describe("App", () => {
     expect(ubuntuInstallCommand).toContain(
       "sudo apt install ./meerkateer-controller_0.1.0_amd64.deb",
     );
-    expect(screen.getByRole("link", { name: "Download CLI ZIP" }).getAttribute("href")).toContain(
+    expect(windowsCliLink.getAttribute("href")).toContain(
       "meerkateer-controller-windows-x86_64.zip",
     );
     expect(screen.getByText(/The service stays quiet and headless/)).toBeTruthy();

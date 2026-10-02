@@ -2481,7 +2481,7 @@ body:has(.setup-page)::after {
 
 .controller-download-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
   margin-top: 48px;
 }
@@ -2503,10 +2503,6 @@ body:has(.setup-page)::after {
 
 .controller-download-card.ubuntu {
   border-top: 7px solid #e36b3d;
-}
-
-.controller-download-card.cli {
-  border-top: 7px solid #6f55bd;
 }
 
 .controller-download-card > img {
@@ -2538,7 +2534,13 @@ body:has(.setup-page)::after {
   line-height: 1.65;
 }
 
-.controller-download-card .button {
+.controller-download-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.controller-download-actions .button {
   width: 100%;
 }
 
@@ -3808,15 +3810,6 @@ body:has(.setup-page)::after {
     gap: 45px;
   }
 
-  .controller-download-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .controller-download-card:last-child {
-    grid-column: 1 / -1;
-    min-height: 350px;
-  }
-
   .controller-route-panel,
   .controller-test-panel,
   .controller-linux-command {
@@ -4072,10 +4065,6 @@ body:has(.setup-page)::after {
   .controller-download-card,
   .run-card {
     min-height: 0;
-  }
-
-  .controller-download-card:last-child {
-    grid-column: auto;
   }
 
   .controller-download-card > p:not(.card-label) {

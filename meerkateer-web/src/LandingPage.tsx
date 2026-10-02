@@ -484,10 +484,12 @@ function ResourcesSection() {
 const controllerDownloads = [
   {
     platform: "Windows 10 / 11 · x64",
-    title: "Windows installer",
-    copy: "Connect once in the friendly setup screen. The headless Controller starts immediately and at every Windows boot; open the local dashboard only when needed.",
+    title: "Windows Controller",
+    copy: "Choose the recommended MSI for friendly setup and automatic startup, or the portable CLI ZIP for manual automation. The portable build intentionally does not modify Windows startup.",
     action: "Download MSI",
     href: WINDOWS_MSI_URL,
+    secondaryAction: "Download CLI ZIP",
+    secondaryHref: WINDOWS_CLI_URL,
     friend: "/friends/machine-scout.png",
     accent: "windows",
   },
@@ -499,15 +501,6 @@ const controllerDownloads = [
     href: UBUNTU_DEB_URL,
     friend: "/friends/heartbeat-keeper.png",
     accent: "ubuntu",
-  },
-  {
-    platform: "Windows · portable x64",
-    title: "Command line only",
-    copy: "Keep automation-friendly commands and launch the Rust terminal dashboard manually. This portable build intentionally does not modify Windows startup.",
-    action: "Download CLI ZIP",
-    href: WINDOWS_CLI_URL,
-    friend: "/friends/access-guardian.png",
-    accent: "cli",
   },
 ];
 
@@ -550,9 +543,16 @@ function ControllerDownloadsSection() {
               <p className="card-label">{download.platform}</p>
               <h3>{download.title}</h3>
               <p>{download.copy}</p>
-              <a className="button button-primary" href={download.href}>
-                {download.action}
-              </a>
+              <div className="controller-download-actions">
+                <a className="button button-primary" href={download.href}>
+                  {download.action}
+                </a>
+                {download.secondaryHref ? (
+                  <a className="button button-secondary" href={download.secondaryHref}>
+                    {download.secondaryAction}
+                  </a>
+                ) : null}
+              </div>
             </article>
           ))}
         </div>
