@@ -56,10 +56,11 @@ Now every web release is one command:
 npm run deploy
 ```
 
-That command runs the TypeScript/Vite production build first and then calls
-`wrangler deploy`. The Wrangler configuration refuses a remote deploy when
-`MEERKATEER_API_ORIGIN` is absent. It serves the Vite SPA from Workers Static Assets and runs
-the gateway only for Meerkateer API paths.
+That command runs the TypeScript/Vite production build first and then calls `wrangler deploy`.
+Before a public API exists, the Worker can publish the landing page without
+`MEERKATEER_API_ORIGIN`; API paths fail closed with HTTP 503 while static routes remain available.
+After the secret is configured, the Worker proxies only Meerkateer API paths and continues serving
+the Vite SPA from Workers Static Assets.
 
 Before a release, an offline packaging check is available:
 
