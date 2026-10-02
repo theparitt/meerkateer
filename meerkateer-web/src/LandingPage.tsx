@@ -13,7 +13,15 @@ const COMMUNITY_SOURCE_DOWNLOAD_URL =
 const CONTROLLER_PREVIEW_URL = `${GITHUB_REPO_URL}/releases/download/controller-preview`;
 const WINDOWS_MSI_URL = `${CONTROLLER_PREVIEW_URL}/meerkateer-controller-windows-x86_64.msi`;
 const WINDOWS_CLI_URL = `${CONTROLLER_PREVIEW_URL}/meerkateer-controller-windows-x86_64.zip`;
-const UBUNTU_DEB_URL = `${CONTROLLER_PREVIEW_URL}/meerkateer-controller_${packageMetadata.version}_amd64.deb`;
+const UBUNTU_DEB_FILENAME = `meerkateer-controller_${packageMetadata.version}_amd64.deb`;
+const UBUNTU_DEB_URL = `${CONTROLLER_PREVIEW_URL}/${UBUNTU_DEB_FILENAME}`;
+const UBUNTU_DEB_SHA256_URL = `${UBUNTU_DEB_URL}.sha256`;
+const UBUNTU_INSTALL_COMMAND = [
+  `curl --fail --location --remote-name ${UBUNTU_DEB_URL}`,
+  `curl --fail --location --remote-name ${UBUNTU_DEB_SHA256_URL}`,
+  `sha256sum --check ${UBUNTU_DEB_FILENAME}.sha256`,
+  `sudo apt install ./${UBUNTU_DEB_FILENAME}`,
+].join("\n");
 const DOCS_URL = "/docs";
 const SELF_HOST_URL = "/get-started";
 
@@ -547,6 +555,24 @@ function ControllerDownloadsSection() {
               </a>
             </article>
           ))}
+        </div>
+        <div className="controller-linux-command">
+          <div className="controller-linux-command-copy">
+            <p className="card-label">Ubuntu / Debian terminal install</p>
+            <h3>Download, verify, and install from the command line.</h3>
+            <p>
+              Paste all four lines into a terminal. The checksum is verified before the package is
+              installed, so a damaged download stops safely.
+            </p>
+            <a className="text-link" href={UBUNTU_DEB_URL}>
+              Or download the .deb directly →
+            </a>
+          </div>
+          <section aria-label="Ubuntu install command">
+            <pre>
+              <code>{UBUNTU_INSTALL_COMMAND}</code>
+            </pre>
+          </section>
         </div>
         <div className="controller-route-panel">
           <div className="controller-route-heading">

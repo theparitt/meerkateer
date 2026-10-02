@@ -2542,6 +2542,51 @@ body:has(.setup-page)::after {
   width: 100%;
 }
 
+.controller-linux-command {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.75fr) minmax(0, 1.25fr);
+  gap: 30px;
+  align-items: center;
+  margin-top: 28px;
+  padding: 28px 30px;
+  border: 2px solid var(--navy);
+  border-top: 7px solid #e36b3d;
+  border-radius: 24px;
+  background: #fffefa;
+  box-shadow: 7px 8px 0 rgba(7, 19, 70, 0.07);
+}
+
+.controller-linux-command-copy h3 {
+  margin: 8px 0 12px;
+  color: var(--navy);
+  font-size: clamp(1.35rem, 2vw, 1.8rem);
+  line-height: 1.12;
+}
+
+.controller-linux-command-copy > p:not(.card-label) {
+  margin: 0 0 14px;
+  color: #586583;
+  line-height: 1.6;
+}
+
+.controller-linux-command pre {
+  max-width: 100%;
+  margin: 0;
+  padding: 20px;
+  overflow-x: auto;
+  border: 1px solid #294776;
+  border-radius: 16px;
+  background: #091947;
+  color: #e8f7ff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.controller-linux-command code {
+  font-size: 0.76rem;
+  line-height: 1.75;
+  white-space: pre;
+}
+
 .controller-route-panel,
 .controller-test-panel {
   display: grid;
@@ -3773,7 +3818,8 @@ body:has(.setup-page)::after {
   }
 
   .controller-route-panel,
-  .controller-test-panel {
+  .controller-test-panel,
+  .controller-linux-command {
     grid-template-columns: 1fr;
   }
 
@@ -4037,8 +4083,14 @@ body:has(.setup-page)::after {
   }
 
   .controller-route-panel,
-  .controller-test-panel {
+  .controller-test-panel,
+  .controller-linux-command {
     padding: 22px;
+  }
+
+  .controller-linux-command pre {
+    margin-inline: -8px;
+    padding: 16px;
   }
 
   .controller-check-grid {

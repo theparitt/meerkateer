@@ -106,6 +106,14 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: "Download DEB" }).getAttribute("href")).toContain(
       "meerkateer-controller_0.1.0_amd64.deb",
     );
+    const ubuntuInstallCommand = screen.getByLabelText("Ubuntu install command").textContent;
+    expect(ubuntuInstallCommand).toContain("curl --fail --location --remote-name");
+    expect(ubuntuInstallCommand).toContain(
+      "sha256sum --check meerkateer-controller_0.1.0_amd64.deb.sha256",
+    );
+    expect(ubuntuInstallCommand).toContain(
+      "sudo apt install ./meerkateer-controller_0.1.0_amd64.deb",
+    );
     expect(screen.getByRole("link", { name: "Download CLI ZIP" }).getAttribute("href")).toContain(
       "meerkateer-controller-windows-x86_64.zip",
     );

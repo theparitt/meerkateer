@@ -7,6 +7,9 @@ Keep a Changelog principles, and releases use Semantic Versioning.
 
 ### Added
 
+- Copy-ready Ubuntu/Debian terminal installation commands on the landing page that download the
+  Controller package and adjacent checksum, verify it with `sha256sum`, and install the verified
+  `.deb` with `apt`.
 - Explicit Local / self-hosted Controller destination with disabled Cloud placeholder, plus shared
   pre-enrollment connection diagnostics for config storage/free space, URL/DNS, proxy/VPN-sensitive
   routing, TLS, and API readiness across the Rust CLI/TUI and Windows Setup. Runtime failures now
