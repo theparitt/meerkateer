@@ -10,6 +10,7 @@ on:
       - "Cargo.toml"
       - "crates/meerkateer-protocol/**"
       - "meerkateer-agent/**"
+      - "packaging/CONTROLLER-DISCLAIMER.md"
       - "packaging/debian/**"
       - "packaging/windows/**"
       - "rust-toolchain.toml"
@@ -53,6 +54,8 @@ jobs:
           dpkg-deb --extract meerkateer-controller_${PRODUCT_VERSION}_amd64.deb package-check
           test -x package-check/usr/bin/meerkateer-controller
           test -x package-check/usr/lib/meerkateer/meerkateer-controller
+          test -f package-check/usr/share/doc/meerkateer-controller/DISCLAIMER.md
+          grep -q 'Developer Preview' package-check/usr/share/doc/meerkateer-controller/DISCLAIMER.md
           package-check/usr/lib/meerkateer/meerkateer-controller --help | grep -q '  configure  '
           package-check/usr/lib/meerkateer/meerkateer-controller --help | grep -q '  tui  '
           package-check/usr/lib/meerkateer/meerkateer-controller --help | grep -q '  test-connection  '
@@ -90,6 +93,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist, dist/portable | Out-Null
           Copy-Item target/release/meerkateer-agent.exe dist/portable/meerkateer-controller.exe
           Copy-Item packaging/windows/README.md dist/portable/README.md
+          Copy-Item packaging/CONTROLLER-DISCLAIMER.md dist/portable/DISCLAIMER.md
           $help = & dist/portable/meerkateer-controller.exe --help
           $helpText = $help -join [Environment]::NewLine
           if ($helpText -notmatch '(?m)^  tui\s') { throw 'Portable Controller help omitted the TUI command.' }
@@ -154,5 +158,5 @@ jobs:
           gh release create controller-preview dist/* \
             --target "$GITHUB_SHA" \
             --title "Meerkateer Controller developer preview" \
-            --notes "Unsigned developer-preview installers built from commit $GITHUB_SHA. Verify the adjacent SHA-256 file before installation." \
+            --notes "Unsigned developer-preview installers built from commit $GITHUB_SHA. Verify the adjacent SHA-256 file before installation. Each package includes the Developer Preview notice and first enrollment requires explicit consent." \
             --prerelease

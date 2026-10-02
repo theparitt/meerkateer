@@ -118,6 +118,7 @@ describe("App", () => {
       "meerkateer-controller-windows-x86_64.zip",
     );
     expect(screen.getByText(/The service stays quiet and headless/)).toBeTruthy();
+    expect(screen.getByText(/first enrollment requires explicit authorization/)).toBeTruthy();
     expect(screen.getByText("Local / self-hosted Community")).toBeTruthy();
     expect(screen.getByText(/Visible in setup, but disabled/)).toBeTruthy();
     expect(

@@ -647,8 +647,10 @@ function ControllerDownloadsSection() {
         </p>
         <p className="controller-preview-warning">
           Developer-preview packages are currently unsigned. Verify the adjacent SHA-256 file from
-          the preview release before installation. A free Microsoft Store MSIX channel is being
-          evaluated separately because background services require restricted Store approval.
+          the preview release before installation. The installer displays the Developer Preview
+          notice, and first enrollment requires explicit authorization and risk consent. A free
+          Microsoft Store MSIX channel is being evaluated separately because background services
+          require restricted Store approval.
         </p>
       </div>
     </section>

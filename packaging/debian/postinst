@@ -18,5 +18,9 @@ fi
 
 cat <<'EOF'
 Meerkateer Controller installed.
+Developer Preview: AS IS, without warranty. This package is unsigned; verify
+the release SHA-256 checksum. Install only on computers you are authorized to
+administer, and protect the Meerkateer API with HTTPS and firewall rules.
+Full notice: /usr/share/doc/meerkateer-controller/DISCLAIMER.md
 Run: sudo meerkateer-controller setup
 EOF

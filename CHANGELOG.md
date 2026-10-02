@@ -7,6 +7,10 @@ Keep a Changelog principles, and releases use Semantic Versioning.
 
 ### Added
 
+- A shared Controller Developer Preview disclaimer shipped inside MSI, portable ZIP, and DEB
+  packages. Windows MSI displays the full notice, Windows Setup and the Rust TUI require explicit
+  consent before first enrollment, and Debian installation prints the notice location without
+  breaking non-interactive package management.
 - Copy-ready Ubuntu/Debian terminal installation commands on the landing page that download the
   Controller package and adjacent checksum, verify it with `sha256sum`, and install the verified
   `.deb` with `apt`.

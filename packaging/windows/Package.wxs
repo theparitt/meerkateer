@@ -41,6 +41,10 @@
             Id="ControllerReadme"
             Source="$(var.SourceRoot)\README.md"
             Name="README.md" />
+          <File
+            Id="ControllerDisclaimer"
+            Source="$(var.SourceRoot)\..\CONTROLLER-DISCLAIMER.md"
+            Name="DISCLAIMER.md" />
         </Component>
       </Directory>
     </StandardDirectory>
@@ -87,6 +91,9 @@
     </Feature>
 
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <WixVariable
+      Id="WixUILicenseRtf"
+      Value="$(var.SourceRoot)\ControllerDisclaimer.rtf" />
     <Property
       Id="WIXUI_EXITDIALOGOPTIONALTEXT"
       Value="Open Meerkateer Controller Setup from the Start menu to connect this computer and choose its signals." />

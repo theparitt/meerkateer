@@ -21,6 +21,13 @@ but the Controller's always-on background component needs the restricted `packag
 capability, which Store policy says is usually not approved. An MSIX channel is therefore an
 experiment, not a replacement for the MSI/ZIP path today.
 
+Every package also contains the shared
+[Developer Preview notice](../packaging/CONTROLLER-DISCLAIMER.md). The MSI displays it before
+installation. Windows Setup and the cross-platform first-enrollment TUI require explicit consent
+before exchanging a token, writing a machine credential, or starting the background service. The
+Debian post-install script prints the notice location rather than blocking unattended `apt`
+operations; its first-enrollment TUI remains the consent gate.
+
 ## What it collects
 
 The setup UI lets the operator enable or disable each bounded signal:

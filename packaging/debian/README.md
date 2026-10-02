@@ -18,6 +18,11 @@ sudo apt install ./dist/meerkateer-controller_0.1.0_amd64.deb
 sudo meerkateer-controller setup
 ```
 
+`apt` prints the Developer Preview notice during installation and installs the complete notice at
+`/usr/share/doc/meerkateer-controller/DISCLAIMER.md`. First-time setup requires explicit consent in
+the TUI before enrollment. This preserves non-interactive Debian package installation while still
+putting the decision immediately before credentials are exchanged or the service is enabled.
+
 The setup command opens the cross-platform Rust terminal UI suitable for headless Ubuntu servers.
 It selects Local / self-hosted Community (Cloud stays disabled until launch), keeps the one-time
 enrollment token out of command history, and can test config storage/free space, URL, DNS,

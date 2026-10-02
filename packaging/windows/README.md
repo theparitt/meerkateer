@@ -59,6 +59,11 @@ Run the installer from an elevated PowerShell session. It copies the binary to
 never an installer argument. The task opens outbound HTTPS connections; it exposes no inbound port
 and executes no server-supplied command.
 
+The MSI shows the complete Developer Preview notice before installation. First-time Setup also
+requires an explicit authorization/risk checkbox immediately before enrollment; installed copies
+can reopen the full text from `%ProgramFiles%\Meerkateer\DISCLAIMER.md`. The portable ZIP includes
+the same file, and its first-enrollment TUI requires the same explicit consent.
+
 Uninstall preserves the credential for recovery by default. To permanently remove it:
 
 ```powershell

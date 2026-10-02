@@ -111,6 +111,7 @@ struct SetupForm {
     server_url: String,
     display_name: String,
     token: Zeroizing<String>,
+    accepted_preview_notice: bool,
     selected: usize,
 }
 
@@ -123,6 +124,7 @@ impl SetupForm {
             server_url: "https://".to_owned(),
             display_name,
             token: Zeroizing::new(String::new()),
+            accepted_preview_notice: false,
             selected: 0,
         }
     }
@@ -311,6 +313,13 @@ impl App {
         let Some(form) = self.setup.as_ref() else {
             return;
         };
+        if !form.accepted_preview_notice {
+            if let Some(form) = self.setup.as_mut() {
+                form.selected = 5;
+            }
+            self.set_status("Read and accept the Developer Preview notice before connecting");
+            return;
+        }
         let server_url = form.server_url.trim().to_owned();
         let display_name = form.display_name.trim().to_owned();
         if form.token.trim().is_empty() {
@@ -427,15 +436,24 @@ impl App {
         if let Some(form) = self.setup.as_mut() {
             match key.code {
                 KeyCode::Esc => self.quit = true,
-                KeyCode::Tab | KeyCode::Down => form.selected = (form.selected + 1) % 6,
-                KeyCode::BackTab | KeyCode::Up => form.selected = (form.selected + 5) % 6,
+                KeyCode::Tab | KeyCode::Down => form.selected = (form.selected + 1) % 7,
+                KeyCode::BackTab | KeyCode::Up => form.selected = (form.selected + 6) % 7,
                 KeyCode::Enter if form.selected == 4 => test = true,
-                KeyCode::Enter if form.selected == 5 => submit = true,
+                KeyCode::Enter | KeyCode::Char(' ') if form.selected == 5 => {
+                    form.accepted_preview_notice = !form.accepted_preview_notice;
+                    if form.accepted_preview_notice {
+                        "Developer Preview notice accepted for this enrollment session"
+                            .clone_into(&mut self.status);
+                    } else {
+                        "Developer Preview notice acceptance removed".clone_into(&mut self.status);
+                    }
+                }
+                KeyCode::Enter if form.selected == 6 => submit = true,
                 KeyCode::Enter if form.selected == 0 => {
                     "Local / self-hosted is selected. Meerkateer Cloud is coming soon."
                         .clone_into(&mut self.status);
                 }
-                KeyCode::Enter => form.selected = (form.selected + 1).min(5),
+                KeyCode::Enter => form.selected = (form.selected + 1).min(6),
                 KeyCode::Backspace => {
                     if let Some(value) = form.selected_value_mut() {
                         value.pop();
@@ -564,10 +582,13 @@ async fn run_loop(
 
 fn render(frame: &mut Frame<'_>, app: &App) {
     let area = frame.area();
-    if area.width < 72 || area.height < 22 {
+    let minimum_height = if app.setup.is_some() { 30 } else { 22 };
+    if area.width < 72 || area.height < minimum_height {
         frame.render_widget(
             Paragraph::new(
-                "Meerkateer needs a terminal at least 72 x 22. Resize the window or press Q.",
+                format!(
+                    "Meerkateer needs a terminal at least 72 x {minimum_height}. Resize the window or press Q."
+                ),
             )
             .alignment(Alignment::Center)
             .wrap(Wrap { trim: true })
@@ -1007,13 +1028,13 @@ fn render_help(frame: &mut Frame<'_>, area: Rect) {
 }
 
 fn render_setup(frame: &mut Frame<'_>, area: Rect, form: &SetupForm, status: &str) {
-    let outer = centered_rect(78, 86, area);
+    let outer = centered_rect(78, 92, area);
     frame.render_widget(Block::default().style(Style::default().bg(NAVY)), area);
     let [title, intro, fields, privacy, footer] = Layout::vertical([
         Constraint::Length(4),
         Constraint::Length(4),
         Constraint::Min(13),
-        Constraint::Length(5),
+        Constraint::Length(7),
         Constraint::Length(3),
     ])
     .areas(outer);
@@ -1049,6 +1070,17 @@ fn render_setup(frame: &mut Frame<'_>, area: Rect, form: &SetupForm, status: &st
         ("Computer name", form.display_name.clone()),
         ("One-time token", mask_secret(form.token.len())),
         ("", "[ Test connection ]".to_owned()),
+        (
+            "",
+            format!(
+                "[{}] I accept the Developer Preview notice below",
+                if form.accepted_preview_notice {
+                    "x"
+                } else {
+                    " "
+                }
+            ),
+        ),
         ("", "[ Connect safely ]".to_owned()),
     ];
     let items = values
@@ -1072,11 +1104,13 @@ fn render_setup(frame: &mut Frame<'_>, area: Rect, form: &SetupForm, status: &st
     frame.render_widget(List::new(items).block(card(" Enrollment ", MINT)), fields);
     frame.render_widget(
         Paragraph::new(vec![
-            Line::from("Outbound HTTPS only. No inbound listener or remote shell."),
+            Line::from("Developer Preview • AS IS, unsigned, and without warranty."),
+            Line::from("Install only with authorization; verify SHA-256; protect the API with HTTPS/firewall."),
+            Line::from("Outbound only. Selected signals go to the API URL; no remote shell."),
             Line::from(
                 "Test checks disk/config, DNS, proxy/VPN-sensitive routing, TLS, and /ready.",
             ),
-            Line::from("Tab moves • Enter selects/tests/connects • Esc exits"),
+            Line::from("Tab moves • Enter/Space accepts • Esc exits"),
             Line::from(Span::styled(status, Style::default().fg(MINT))),
         ])
         .alignment(Alignment::Center)
@@ -1084,9 +1118,11 @@ fn render_setup(frame: &mut Frame<'_>, area: Rect, form: &SetupForm, status: &st
         privacy,
     );
     frame.render_widget(
-        Paragraph::new("Apache-2.0 Community • local credential stays on this computer")
-            .alignment(Alignment::Center)
-            .style(Style::default().fg(MUTED)),
+        Paragraph::new(
+            "Full notice ships as DISCLAIMER.md • local credential stays on this computer",
+        )
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(MUTED)),
         footer,
     );
 }
@@ -1320,5 +1356,11 @@ mod tests {
     fn tab_navigation_wraps() {
         assert_eq!(Tab::Help.next(), Tab::Overview);
         assert_eq!(Tab::Overview.previous(), Tab::Help);
+    }
+
+    #[test]
+    fn setup_requires_explicit_preview_notice_consent() {
+        let form = SetupForm::new();
+        assert!(!form.accepted_preview_notice);
     }
 }

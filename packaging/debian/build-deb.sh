@@ -32,6 +32,7 @@ install -d -m 0755 \
   "$package_root/DEBIAN" \
   "$package_root/usr/bin" \
   "$package_root/usr/lib/meerkateer" \
+  "$package_root/usr/share/doc/meerkateer-controller" \
   "$package_root/lib/systemd/system"
 
 cat >"$package_root/DEBIAN/control" <<EOF
@@ -51,6 +52,8 @@ EOF
 install -m 0755 "$binary" "$package_root/usr/lib/meerkateer/meerkateer-controller"
 install -m 0755 "$script_directory/meerkateer-controller" "$package_root/usr/bin/meerkateer-controller"
 ln -s meerkateer-controller "$package_root/usr/bin/meerkateer-agent"
+install -m 0644 "$script_directory/../CONTROLLER-DISCLAIMER.md" \
+  "$package_root/usr/share/doc/meerkateer-controller/DISCLAIMER.md"
 install -m 0644 "$script_directory/meerkateer-controller.service" \
   "$package_root/lib/systemd/system/meerkateer-controller.service"
 install -m 0755 "$script_directory/postinst" "$package_root/DEBIAN/postinst"

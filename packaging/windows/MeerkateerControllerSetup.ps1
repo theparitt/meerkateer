@@ -21,6 +21,7 @@ $controller = Join-Path $PSScriptRoot 'meerkateer-controller.exe'
 $installer = Join-Path $PSScriptRoot 'Install-MeerkateerAgent.ps1'
 $dataDirectory = Join-Path $env:ProgramData 'Meerkateer'
 $configPath = Join-Path $dataDirectory 'agent.json'
+$disclaimerPath = Join-Path $PSScriptRoot 'DISCLAIMER.md'
 
 if (-not (Test-Path -LiteralPath $controller)) {
     [System.Windows.Forms.MessageBox]::Show(
@@ -142,8 +143,8 @@ function Invoke-ConnectionDiagnostics {
 $form = [System.Windows.Forms.Form]::new()
 $form.Text = 'Meerkateer Controller Setup'
 $form.StartPosition = 'CenterScreen'
-$form.ClientSize = [Drawing.Size]::new(630, 760)
-$form.MinimumSize = [Drawing.Size]::new(646, 799)
+$form.ClientSize = [Drawing.Size]::new(630, 850)
+$form.MinimumSize = [Drawing.Size]::new(646, 889)
 $form.BackColor = [Drawing.Color]::FromArgb(255, 250, 242)
 $form.Font = [Drawing.Font]::new('Segoe UI', 9)
 
@@ -238,18 +239,44 @@ $privacy.Size = [Drawing.Size]::new(565, 40)
 $privacy.ForeColor = [Drawing.Color]::FromArgb(73, 86, 124)
 $form.Controls.Add($privacy)
 
+$previewConsent = [System.Windows.Forms.CheckBox]::new()
+$previewConsent.Text = 'I am authorized to administer this computer and accept the Developer Preview notice: AS IS, unsigned, without warranty; I will verify the package checksum and protect the API.'
+$previewConsent.Location = [Drawing.Point]::new(30, 638)
+$previewConsent.Size = [Drawing.Size]::new(565, 58)
+$previewConsent.ForeColor = [Drawing.Color]::FromArgb(83, 61, 23)
+$form.Controls.Add($previewConsent)
+
+$noticeLink = [System.Windows.Forms.LinkLabel]::new()
+$noticeLink.Text = 'Read the complete Developer Preview notice'
+$noticeLink.Location = [Drawing.Point]::new(50, 694)
+$noticeLink.Size = [Drawing.Size]::new(360, 24)
+$noticeLink.Add_LinkClicked({
+    if (Test-Path -LiteralPath $disclaimerPath) {
+        Start-Process -FilePath 'notepad.exe' -ArgumentList ('"{0}"' -f $disclaimerPath) | Out-Null
+    } else {
+        [System.Windows.Forms.MessageBox]::Show(
+            'The installed DISCLAIMER.md file is missing. Reinstall from the official release before connecting this computer.',
+            'Meerkateer Controller',
+            'OK',
+            'Error'
+        ) | Out-Null
+    }
+})
+$form.Controls.Add($noticeLink)
+
 $connectButton = [System.Windows.Forms.Button]::new()
 $connectButton.Text = 'Connect and start'
-$connectButton.Location = [Drawing.Point]::new(30, 647)
+$connectButton.Location = [Drawing.Point]::new(30, 730)
 $connectButton.Size = [Drawing.Size]::new(270, 42)
 $connectButton.BackColor = [Drawing.Color]::FromArgb(20, 101, 183)
 $connectButton.ForeColor = [Drawing.Color]::White
 $connectButton.FlatStyle = 'Flat'
+$connectButton.Enabled = $false
 $form.Controls.Add($connectButton)
 
 $saveButton = [System.Windows.Forms.Button]::new()
 $saveButton.Text = 'Update signals only'
-$saveButton.Location = [Drawing.Point]::new(325, 647)
+$saveButton.Location = [Drawing.Point]::new(325, 730)
 $saveButton.Size = [Drawing.Size]::new(270, 42)
 $saveButton.FlatStyle = 'Flat'
 $form.Controls.Add($saveButton)
@@ -264,6 +291,8 @@ if (Test-Path -LiteralPath $configPath) {
         $nameBox.Enabled = $false
         $tokenBox.Enabled = $false
         $connectButton.Enabled = $false
+        $previewConsent.Checked = $true
+        $previewConsent.Enabled = $false
 
         if ($null -ne $existingConfig.signals) {
             for ($index = 0; $index -lt $signalList.Items.Count; $index++) {
@@ -293,10 +322,16 @@ $status.Text = if ($null -ne $existingConfig) {
 } else {
     'Not connected yet.'
 }
-$status.Location = [Drawing.Point]::new(30, 707)
+$status.Location = [Drawing.Point]::new(30, 790)
 $status.Size = [Drawing.Size]::new(565, 32)
 $status.ForeColor = [Drawing.Color]::FromArgb(7, 113, 83)
 $form.Controls.Add($status)
+
+$previewConsent.Add_CheckedChanged({
+    if ($null -eq $existingConfig) {
+        $connectButton.Enabled = $previewConsent.Checked
+    }
+})
 
 $testButton.Add_Click({
     try {
@@ -330,6 +365,9 @@ $connectButton.Add_Click({
     try {
         if (Test-Path -LiteralPath $configPath) {
             throw 'This computer is already enrolled. Use Update signals only, or uninstall and purge before enrolling it again.'
+        }
+        if (-not $previewConsent.Checked) {
+            throw 'Read and accept the Developer Preview notice before connecting this computer.'
         }
         if ([string]::IsNullOrWhiteSpace($tokenBox.Text)) {
             throw 'Paste the one-time enrollment token from the Meerkateer Console.'

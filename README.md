@@ -56,7 +56,9 @@ The rolling developer preview provides ready-to-install packages built from this
 You choose whether the Controller sends CPU, memory, aggregate disk, or selected process-running
 signals. A small heartbeat is always included. It never accepts inbound commands or collects files,
 command arguments, environment values, or player/chat content. Preview packages are currently
-unsigned; verify their adjacent `.sha256` file. See the [Controller guide](docs/agent-cli.md).
+unsigned; verify their adjacent `.sha256` file. Installers show the
+[Developer Preview notice](packaging/CONTROLLER-DISCLAIMER.md), and first enrollment requires
+explicit authorization/risk consent. See the [Controller guide](docs/agent-cli.md).
 
 Setup currently offers **Local / self-hosted Community** as the working destination. **Meerkateer
 Cloud** is visible but disabled until the hosted service opens. Before enrollment, Windows Setup or
