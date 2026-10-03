@@ -50,7 +50,7 @@ The rolling developer preview provides ready-to-install packages built from this
 | Platform | Download | Setup experience |
 | --- | --- | --- |
 | Windows 10/11 x64 | [MSI installer](https://github.com/theparitt/meerkateer/releases/download/controller-preview/meerkateer-controller-windows-x86_64.msi) | Setup GUI plus a Start-menu Rust live dashboard |
-| Ubuntu 22.04+ amd64 | [DEB package](https://github.com/theparitt/meerkateer/releases/download/controller-preview/meerkateer-controller_0.1.0_amd64.deb) | `sudo meerkateer-controller setup` opens the Rust terminal UI |
+| Ubuntu 22.04+ amd64 | [DEB package](https://github.com/theparitt/meerkateer/releases/download/controller-preview/meerkateer-controller_0.2.0_amd64.deb) | `sudo meerkateer-controller setup` opens the Rust terminal UI |
 | Windows x64 automation | [Portable CLI ZIP](https://github.com/theparitt/meerkateer/releases/download/controller-preview/meerkateer-controller-windows-x86_64.zip) | CLI automation plus `meerkateer-controller.exe tui` |
 
 You choose whether the Controller sends CPU, memory, aggregate disk, or selected process-running
@@ -119,12 +119,12 @@ its [game-server beta plan](docs/game-server-beta.md) is currently paused.
 
 | | |
 | --- | --- |
-| Code version | **0.1.0** |
+| Code version | **0.2.0** |
 | Release channel | **Developer Preview** |
 | Current delivery phase | **0.2 Community Alpha** |
 | Stable target | **1.0.0 Community** |
 
-`0.1.0` is the version declared in the Rust workspace and web package. A signed `v0.1.0`
+`0.2.0` is the version declared in the Rust workspace and web package. A signed `v0.2.0`
 GitHub Release has not been published yet. See the canonical
 [roadmap to 1.0](docs/roadmap-to-1.0.md) for milestone scope and measurable exit gates.
 
@@ -161,8 +161,8 @@ versioned public images by digest; public core never imports private Cloud code.
 
 | Milestone | Outcome | State |
 | --- | --- | --- |
-| `0.1` Foundation preview | Multi-workspace core, durable ingest, SDKs, agent, Console, test labs, and deploy packaging | Current code |
-| `0.2` Community Alpha | Clean failure → evidence → alert → recovery journey | In progress |
+| `0.1` Foundation preview | Multi-workspace core, durable ingest, SDKs, agent, Console, test labs, and deploy packaging | Delivered |
+| `0.2` Community Alpha | Clean failure → evidence → alert → recovery journey | Current developer preview |
 | `0.3` Monitoring Alpha | Production agent collectors, probes, and initial game/SME adapters | Planned |
 | `0.4` Security Beta | Multi-user access, complete tenant tests, abuse controls, signed config, security review | Planned |
 | `0.5` Operations Beta | Restore, upgrade, retention, alert operations, observability, and fault drills | Planned |

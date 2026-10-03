@@ -6,15 +6,15 @@ Build an amd64 package from the pinned Rust workspace:
 cargo build --locked --release -p meerkateer-agent
 packaging/debian/build-deb.sh \
   --binary target/release/meerkateer-agent \
-  --version 0.1.0 \
+  --version 0.2.0 \
   --architecture amd64 \
-  --output dist/meerkateer-controller_0.1.0_amd64.deb
+  --output dist/meerkateer-controller_0.2.0_amd64.deb
 ```
 
 Install and configure it:
 
 ```sh
-sudo apt install ./dist/meerkateer-controller_0.1.0_amd64.deb
+sudo apt install ./dist/meerkateer-controller_0.2.0_amd64.deb
 sudo meerkateer-controller setup
 ```
 

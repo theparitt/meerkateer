@@ -175,7 +175,7 @@ class Meerkateer:
                 "Authorization": f"Bearer {self._service_key}",
                 "Content-Type": "application/json",
                 "Idempotency-Key": key,
-                "User-Agent": "meerkateer-python-sdk/0.1.0",
+                "User-Agent": "meerkateer-python-sdk/0.2.0",
             },
         )
         last_error: BaseException | None = None

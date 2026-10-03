@@ -5,6 +5,9 @@ Keep a Changelog principles, and releases use Semantic Versioning.
 
 ## [Unreleased]
 
+Current developer-preview code version: `0.2.0` (Community Alpha). This is not a stable release
+or a claim that the `v0.2.0` release gates have passed.
+
 ### Added
 
 - Enforced automatic Controller startup after enrollment: Windows now verifies an enabled boot

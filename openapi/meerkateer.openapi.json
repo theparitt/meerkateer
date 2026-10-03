@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Meerkateer API",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "description": "Tenant-isolated Meerkateer control-plane API. Browser mutations require both the session cookie and the X-Meerkateer-CSRF header."
   },
   "servers": [{ "url": "/" }],

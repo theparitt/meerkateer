@@ -1,8 +1,8 @@
 # Delivery status
 
-Last verified: 2026-09-30
+Last verified: 2026-10-03
 
-Current code version: `0.1.0` Developer Preview. Current delivery phase:
+Current code version: `0.2.0` Developer Preview. Current delivery phase:
 `0.2 Community Alpha`. Version scope and exit gates are defined in the
 [roadmap to 1.0](roadmap-to-1.0.md).
 Repository ownership and the one-company Community versus multi-tenant Cloud architecture are

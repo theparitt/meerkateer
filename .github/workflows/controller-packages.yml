@@ -23,7 +23,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PRODUCT_VERSION: "0.1.0"
+  PRODUCT_VERSION: "0.2.0"
 
 jobs:
   ubuntu-deb:

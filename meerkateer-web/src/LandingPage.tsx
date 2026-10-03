@@ -189,6 +189,36 @@ const capabilities = [
   },
 ];
 
+function PlatformIcon({ platform }: { platform: "windows" | "ubuntu" }) {
+  if (platform === "windows") {
+    return (
+      <span className="controller-platform-icon windows-icon" role="img" aria-label="Windows">
+        <svg aria-hidden="true" viewBox="0 0 64 64">
+          <path d="M7 10.5 29 7v22H7V10.5Zm25-4L57 3v26H32V6.5ZM7 32h22v22L7 50.5V32Zm25 0h25v26l-25-3.5V32Z" />
+        </svg>
+      </span>
+    );
+  }
+
+  return (
+    <span className="controller-platform-icon ubuntu-icon" role="img" aria-label="Ubuntu Linux">
+      <svg aria-hidden="true" viewBox="0 0 64 64">
+        <circle cx="32" cy="32" r="12" fill="none" stroke="currentColor" strokeWidth="6" />
+        <circle cx="32" cy="7" r="6" />
+        <circle cx="10.5" cy="44.5" r="6" />
+        <circle cx="53.5" cy="44.5" r="6" />
+        <path
+          d="M29 13.5a19.5 19.5 0 0 0-15.8 20.2M18.5 48.8A19.5 19.5 0 0 0 46 49M50.8 33.7A19.5 19.5 0 0 0 35 13.5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="6"
+          strokeLinecap="round"
+        />
+      </svg>
+    </span>
+  );
+}
+
 function CapabilitySection() {
   return (
     <section className="landing-section page-width" id="product">
@@ -490,7 +520,7 @@ const controllerDownloads = [
     href: WINDOWS_MSI_URL,
     secondaryAction: "Download CLI ZIP",
     secondaryHref: WINDOWS_CLI_URL,
-    friend: "/friends/machine-scout.png",
+    icon: "windows" as const,
     accent: "windows",
   },
   {
@@ -499,7 +529,7 @@ const controllerDownloads = [
     copy: "Complete the Rust terminal setup once. The hardened systemd service starts immediately and at every boot, with live signals and diagnostics on demand.",
     action: "Download DEB",
     href: UBUNTU_DEB_URL,
-    friend: "/friends/heartbeat-keeper.png",
+    icon: "ubuntu" as const,
     accent: "ubuntu",
   },
 ];
@@ -539,7 +569,7 @@ function ControllerDownloadsSection() {
         <div className="controller-download-grid">
           {controllerDownloads.map((download) => (
             <article className={`controller-download-card ${download.accent}`} key={download.title}>
-              <img src={download.friend} alt="" width="112" height="112" loading="lazy" />
+              <PlatformIcon platform={download.icon} />
               <p className="card-label">{download.platform}</p>
               <h3>{download.title}</h3>
               <p>{download.copy}</p>

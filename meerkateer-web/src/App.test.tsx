@@ -9,7 +9,7 @@ const health = {
   environment: "development",
   interface: "meerkateer",
   interface_version: "1",
-  version: "0.1.0",
+  version: "0.2.0",
   timestamp: "2026-09-28T00:00:00Z",
   checks: { config: { ok: true } },
 };
@@ -97,10 +97,12 @@ describe("App", () => {
     expect(
       screen.getByRole("heading", { name: "Hosted by us. Built from public core." }),
     ).toBeTruthy();
-    expect(screen.getByText("v0.1.0")).toBeTruthy();
+    expect(screen.getByText("v0.2.0")).toBeTruthy();
     expect(screen.getByText("Current phase: Community Alpha")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Install one small Controller." })).toBeTruthy();
     expect(container.querySelectorAll(".controller-download-card")).toHaveLength(2);
+    expect(screen.getByRole("img", { name: "Windows" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Ubuntu Linux" })).toBeTruthy();
     expect(
       screen.getByText(/portable build intentionally does not modify Windows startup/),
     ).toBeTruthy();
@@ -111,15 +113,15 @@ describe("App", () => {
       "meerkateer-controller-windows-x86_64.msi",
     );
     expect(screen.getByRole("link", { name: "Download DEB" }).getAttribute("href")).toContain(
-      "meerkateer-controller_0.1.0_amd64.deb",
+      "meerkateer-controller_0.2.0_amd64.deb",
     );
     const ubuntuInstallCommand = screen.getByLabelText("Ubuntu install command").textContent;
     expect(ubuntuInstallCommand).toContain("curl --fail --location --remote-name");
     expect(ubuntuInstallCommand).toContain(
-      "sha256sum --check meerkateer-controller_0.1.0_amd64.deb.sha256",
+      "sha256sum --check meerkateer-controller_0.2.0_amd64.deb.sha256",
     );
     expect(ubuntuInstallCommand).toContain(
-      "sudo apt install ./meerkateer-controller_0.1.0_amd64.deb",
+      "sudo apt install ./meerkateer-controller_0.2.0_amd64.deb",
     );
     expect(windowsCliLink.getAttribute("href")).toContain(
       "meerkateer-controller-windows-x86_64.zip",

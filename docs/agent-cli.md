@@ -10,7 +10,7 @@ The landing page links to a rolling, unsigned `controller-preview` release with 
 
 - **Windows MSI:** `meerkateer-controller-windows-x86_64.msi` installs the Controller, a Start-menu
   setup UI, a Start-menu local monitor TUI, the background-task helper, and the CLI.
-- **Ubuntu DEB:** `meerkateer-controller_0.1.0_amd64.deb` installs the CLI and a hardened systemd
+- **Ubuntu DEB:** `meerkateer-controller_0.2.0_amd64.deb` installs the CLI and a hardened systemd
   unit. Run `sudo meerkateer-controller setup` for its Rust terminal UI.
 - **Windows portable CLI:** `meerkateer-controller-windows-x86_64.zip` contains only the native
   executable and its instructions. It does not modify the machine.
@@ -65,7 +65,7 @@ updates the same startup task rather than creating duplicates.
 ## Ubuntu setup UI
 
 ```sh
-sudo apt install ./meerkateer-controller_0.1.0_amd64.deb
+sudo apt install ./meerkateer-controller_0.2.0_amd64.deb
 sudo meerkateer-controller setup
 ```
 

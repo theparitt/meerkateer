@@ -108,26 +108,26 @@ unset CR_PAT
 Use an immutable SemVer or commit tag. Publishing builds locally and then pushes both tags:
 
 ```sh
-make publish-images VERSION=0.1.0
+make publish-images VERSION=0.2.0
 ```
 
 To build without pushing:
 
 ```sh
-make images VERSION=0.1.0
+make images VERSION=0.2.0
 ```
 
 The default target platform is `linux/amd64`. Override it only when the production host has a
 different architecture:
 
 ```sh
-MEERKATEER_IMAGE_PLATFORM=linux/arm64 make publish-images VERSION=0.1.0
+MEERKATEER_IMAGE_PLATFORM=linux/arm64 make publish-images VERSION=0.2.0
 ```
 
 Publishing `latest` is opt-in because production should pin an immutable tag:
 
 ```sh
-MEERKATEER_PUBLISH_LATEST=true make publish-images VERSION=0.1.0
+MEERKATEER_PUBLISH_LATEST=true make publish-images VERSION=0.2.0
 ```
 
 If the GHCR packages are private, log in on the production host with a separate read-only
@@ -142,8 +142,8 @@ Generate production credentials on the production machine, not on a laptop:
 ```sh
 git clone https://github.com/theparitt/meerkateer.git
 cd meerkateer
-git checkout 0.1.0
-make production-env VERSION=0.1.0
+git checkout <release-commit-or-tag>
+make production-env VERSION=0.2.0
 make production-config
 ```
 

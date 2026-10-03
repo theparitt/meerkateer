@@ -13,7 +13,7 @@
 
 body {
   margin: 0;
-  min-width: 320px;
+  min-width: 0;
   min-height: 100vh;
   background:
     radial-gradient(circle at 80% 0%, rgba(50, 209, 157, 0.12), transparent 34rem),
@@ -2505,13 +2505,31 @@ body:has(.setup-page)::after {
   border-top: 7px solid #e36b3d;
 }
 
-.controller-download-card > img {
+.controller-platform-icon {
   position: absolute;
   top: 20px;
   right: 18px;
-  width: 92px;
-  height: 92px;
-  object-fit: contain;
+  display: grid;
+  width: 82px;
+  height: 82px;
+  place-items: center;
+  border-radius: 22px;
+}
+
+.controller-platform-icon svg {
+  width: 54px;
+  height: 54px;
+  fill: currentColor;
+}
+
+.controller-platform-icon.windows-icon {
+  color: #1473e6;
+  background: #eaf4ff;
+}
+
+.controller-platform-icon.ubuntu-icon {
+  color: #e95420;
+  background: #fff0e9;
 }
 
 .controller-download-card .card-label {
@@ -2558,6 +2576,11 @@ body:has(.setup-page)::after {
   box-shadow: 7px 8px 0 rgba(7, 19, 70, 0.07);
 }
 
+.controller-linux-command > *,
+.controller-linux-command-copy {
+  min-width: 0;
+}
+
 .controller-linux-command-copy h3 {
   margin: 8px 0 12px;
   color: var(--navy);
@@ -2572,6 +2595,7 @@ body:has(.setup-page)::after {
 }
 
 .controller-linux-command pre {
+  width: 100%;
   max-width: 100%;
   margin: 0;
   padding: 20px;
@@ -4373,6 +4397,11 @@ body:has(.resource-page)::after {
   line-height: 1.75;
 }
 
+.resource-markdown {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .resource-panel a:not(.button),
 .resource-markdown a {
   color: #1757b9;
@@ -4390,6 +4419,8 @@ body:has(.resource-page)::after {
 
 .resource-panel pre,
 .resource-markdown pre {
+  width: 100%;
+  max-width: 100%;
   overflow-x: auto;
   padding: 19px 22px;
   border-radius: 14px;
@@ -4418,6 +4449,8 @@ body:has(.resource-page)::after {
 
 .resource-markdown table {
   display: block;
+  width: 100%;
+  max-width: 100%;
   overflow-x: auto;
   border-collapse: collapse;
 }
@@ -4505,8 +4538,60 @@ body:has(.resource-page)::after {
     padding-top: 24px;
   }
 
+  .resource-prose,
+  .resource-panel {
+    min-width: 0;
+  }
+
   .resource-card-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 380px) {
+  .page-width {
+    width: calc(100% - 20px);
+  }
+
+  .public-header {
+    gap: 10px;
+  }
+
+  .public-header .brand {
+    gap: 7px;
+  }
+
+  .public-header .brand-mascot {
+    width: 38px;
+    height: 38px;
+  }
+
+  .public-header .brand-wordmark {
+    width: 112px;
+  }
+
+  .landing-hero h1 {
+    font-size: clamp(2.65rem, 15vw, 3.5rem);
+  }
+
+  .trust-list {
+    grid-template-columns: 1fr;
+  }
+
+  .controller-route-panel,
+  .controller-test-panel,
+  .controller-linux-command,
+  .resource-panel {
+    padding: 18px 16px;
+  }
+
+  .controller-linux-command pre {
+    margin-inline: 0;
+    padding: 14px;
+  }
+
+  .resource-markdown pre {
+    padding: 16px;
   }
 }
 

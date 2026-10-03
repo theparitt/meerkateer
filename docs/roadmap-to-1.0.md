@@ -2,15 +2,15 @@
 
 | Item | Current value |
 | --- | --- |
-| Code version | `0.1.0` |
+| Code version | `0.2.0` |
 | Release channel | Developer Preview |
 | Current delivery phase | `0.2` Community Alpha |
 | Stable target | `1.0.0` Community |
-| Last reviewed | 2026-09-29 |
+| Last reviewed | 2026-10-03 |
 
-`0.1.0` is the version declared by the Rust workspace and web package. It is the current
+`0.2.0` is the version declared by the Rust workspace and web package. It is the current
 code version, not a claim that a signed GitHub release has been published. There is no
-`v0.1.0` Git tag yet.
+`v0.2.0` Git tag yet.
 
 This document is the canonical release sequence. [Delivery status](phase-status.md) records
 what has actually passed, the [Community plan](community-first-roadmap.md) expands the current
@@ -88,8 +88,8 @@ and automatic remediation. Each would require a separate threat model and approv
 
 | Version | Phase | Main outcome | Status | Planning range* |
 | --- | --- | --- | --- | --- |
-| `0.1.0` | Foundation preview | Executable multi-workspace core, durable ingest, SDKs, agent, Console, failure labs, and deployment packaging | Current code | Implemented |
-| `0.2.0` | Community Alpha | One clean install reliably detects, explains, alerts, and recovers from a real fixture failure | In progress | 3–5 weeks |
+| `0.1.0` | Foundation preview | Executable multi-workspace core, durable ingest, SDKs, agent, Console, failure labs, and deployment packaging | Delivered | Implemented |
+| `0.2.0` | Community Alpha | One clean install reliably detects, explains, alerts, and recovers from a real fixture failure | Current developer preview | 3–5 weeks |
 | `0.3.0` | Monitoring Alpha | Production-shaped agent collectors, scheduled probes, and first supported game/SME adapters | Planned | 4–6 weeks |
 | `0.4.0` | Security Beta | Multi-user access, complete tenant matrix, distributed abuse controls, signed config, and security review | Planned | 3–5 weeks |
 | `0.5.0` | Operations Beta | Tested restore/upgrade, retention, alert operations, observability, and fault tolerance | Planned | 4–6 weeks |

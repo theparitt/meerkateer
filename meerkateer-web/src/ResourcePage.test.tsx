@@ -10,7 +10,7 @@ describe("public resource links", () => {
     window.history.replaceState({}, "", "/docs/roadmap-to-1.0");
     render(<App />);
     expect(await screen.findByRole("heading", { name: "Roadmap to 1.0", level: 1 })).toBeTruthy();
-    expect(screen.getAllByText("0.1.0", { selector: "code" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("0.2.0", { selector: "code" }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("0.2.0", { selector: "code" }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("1.0.0", { selector: "code" }).length).toBeGreaterThan(0);
     expect(
