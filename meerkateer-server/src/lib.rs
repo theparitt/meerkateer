@@ -705,6 +705,13 @@ struct AgentProcessResponse {
 }
 
 #[derive(Debug, Serialize)]
+struct AgentServiceResponse {
+    name: String,
+    running: Option<bool>,
+    state: String,
+}
+
+#[derive(Debug, Serialize)]
 struct AgentTelemetrySnapshotResponse {
     agent_id: uuid::Uuid,
     connection_state: String,
@@ -719,6 +726,7 @@ struct AgentTelemetrySnapshotResponse {
     disk: Option<AgentCapacityResponse>,
     inodes: Option<AgentCountCapacityResponse>,
     processes: Vec<AgentProcessResponse>,
+    services: Vec<AgentServiceResponse>,
     missing_metrics: Vec<&'static str>,
 }
 
@@ -4132,7 +4140,8 @@ async fn select_agent_telemetry(
                AND name IN ('agent.heartbeat', 'host.cpu.utilization', \
                  'host.memory.used_bytes', 'host.memory.total_bytes', \
                  'host.disk.used_bytes', 'host.disk.total_bytes', \
-                 'host.disk.inodes_used', 'host.disk.inodes_total', 'process.running') \
+                 'host.disk.inodes_used', 'host.disk.inodes_total', 'process.running', \
+                 'os.service.running') \
              ORDER BY sequence LIMIT 64",
         )
         .bind(tenant_id)
@@ -4172,20 +4181,16 @@ fn agent_telemetry_snapshot(
     let mut platform = None;
     let mut architecture = None;
     let mut processes = BTreeMap::new();
+    let mut services = BTreeMap::new();
     for (name, value, row_observed_at, attributes) in rows {
         if name == "agent.heartbeat" {
             observed_at = Some(row_observed_at);
             platform = safe_agent_attribute(&attributes, "os");
             architecture = safe_agent_attribute(&attributes, "arch");
         } else if name == "process.running" {
-            if processes.len() < 16
-                && let (Some(process_name), Some(instances)) = (
-                    safe_agent_attribute(&attributes, "process"),
-                    process_instances(value),
-                )
-            {
-                processes.insert(process_name, instances);
-            }
+            insert_agent_process(&mut processes, value, &attributes);
+        } else if name == "os.service.running" {
+            insert_agent_service(&mut services, value, &attributes);
         } else {
             values.insert(name, value);
         }
@@ -4249,7 +4254,49 @@ fn agent_telemetry_snapshot(
                 instances,
             })
             .collect(),
+        services: services
+            .into_iter()
+            .map(|(name, (running, state))| AgentServiceResponse {
+                name,
+                running,
+                state,
+            })
+            .collect(),
         missing_metrics,
+    }
+}
+
+fn insert_agent_process(
+    processes: &mut BTreeMap<String, u32>,
+    value: f64,
+    attributes: &serde_json::Value,
+) {
+    if processes.len() < 16
+        && let (Some(process_name), Some(instances)) = (
+            safe_agent_attribute(attributes, "process"),
+            process_instances(value),
+        )
+    {
+        processes.insert(process_name, instances);
+    }
+}
+
+fn insert_agent_service(
+    services: &mut BTreeMap<String, (Option<bool>, String)>,
+    value: f64,
+    attributes: &serde_json::Value,
+) {
+    if services.len() < 16
+        && let (Some(service_name), Some(state)) = (
+            safe_agent_attribute(attributes, "service"),
+            safe_service_state(attributes),
+        )
+    {
+        let running = match safe_agent_attribute(attributes, "known").as_deref() {
+            Some("true") => Some(value >= 1.0),
+            _ => None,
+        };
+        services.insert(service_name, (running, state));
     }
 }
 
@@ -4257,6 +4304,27 @@ fn safe_agent_attribute(attributes: &serde_json::Value, key: &str) -> Option<Str
     let value = attributes.get(key)?.as_str()?;
     let length = value.chars().count();
     ((1..=64).contains(&length) && !value.chars().any(char::is_control)).then(|| value.to_owned())
+}
+
+fn safe_service_state(attributes: &serde_json::Value) -> Option<String> {
+    let state = safe_agent_attribute(attributes, "state")?;
+    [
+        "active",
+        "reloading",
+        "activating",
+        "deactivating",
+        "inactive",
+        "failed",
+        "not_found",
+        "permission_denied",
+        "manager_unavailable",
+        "query_timeout",
+        "unsupported_platform",
+        "query_failed",
+        "unknown",
+    ]
+    .contains(&state.as_str())
+    .then_some(state)
 }
 
 fn process_instances(value: f64) -> Option<u32> {
@@ -6854,6 +6922,18 @@ mod tests {
                 now,
                 serde_json::json!({"process": "game-server"}),
             ),
+            (
+                "os.service.running".to_owned(),
+                0.0,
+                now,
+                serde_json::json!({"service": "minecraft.service", "state": "failed", "known": "true"}),
+            ),
+            (
+                "os.service.running".to_owned(),
+                0.0,
+                now,
+                serde_json::json!({"service": "private.service", "state": "permission_denied", "known": "false"}),
+            ),
         ];
         let result = agent_telemetry_snapshot(
             uuid::Uuid::new_v4(),
@@ -6880,6 +6960,23 @@ mod tests {
         );
         assert_eq!(result.processes.len(), 1);
         assert!(!result.processes[0].running);
+        assert_eq!(result.services.len(), 2);
+        assert!(
+            result
+                .services
+                .iter()
+                .any(|service| service.name == "minecraft.service"
+                    && service.running == Some(false)
+                    && service.state == "failed")
+        );
+        assert!(
+            result
+                .services
+                .iter()
+                .any(|service| service.name == "private.service"
+                    && service.running.is_none()
+                    && service.state == "permission_denied")
+        );
     }
 
     #[actix_web::test]

@@ -53,8 +53,9 @@ The rolling developer preview provides ready-to-install packages built from this
 | Ubuntu 22.04+ amd64 | [DEB package](https://github.com/theparitt/meerkateer/releases/download/controller-preview/meerkateer-controller_0.2.0_amd64.deb) | `sudo meerkateer-controller setup` opens the Rust terminal UI |
 | Windows x64 automation | [Portable CLI ZIP](https://github.com/theparitt/meerkateer/releases/download/controller-preview/meerkateer-controller-windows-x86_64.zip) | CLI automation plus `meerkateer-controller.exe tui` |
 
-You choose whether the Controller sends CPU, memory, aggregate disk/inode capacity, or selected
-process-running signals. A small heartbeat is always included. It never accepts inbound commands or collects files,
+You choose whether the Controller sends CPU, memory, aggregate disk/inode capacity, selected
+process-running signals, or exact systemd/Windows Service states. A small heartbeat is always
+included. It never accepts inbound commands or collects files,
 command arguments, environment values, or player/chat content. Preview packages are currently
 unsigned; verify their adjacent `.sha256` file. Installers show the
 [Developer Preview notice](packaging/CONTROLLER-DISCLAIMER.md), and first enrollment requires

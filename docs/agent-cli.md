@@ -34,8 +34,9 @@ The setup UI lets the operator enable or disable each bounded signal:
 
 - CPU utilization;
 - used and total memory;
-- aggregate used and total fixed-filesystem capacity, including inode pressure on Linux; and
-- the running instance count for up to 16 explicitly named processes.
+- aggregate used and total fixed-filesystem capacity, including inode pressure on Linux;
+- the running instance count for up to 16 explicitly named processes; and
+- bounded state checks for up to 16 exact systemd `.service` units or Windows Service names.
 
 An agent heartbeat is always sent so disconnects can be detected. The Controller does not collect
 command lines, environment variables, usernames, file paths, process IDs, or file contents.
@@ -95,11 +96,12 @@ shortcut that opens the protected machine config with elevation. The portable Wi
 
 The dashboard provides:
 
-- a live local CPU, memory, aggregate disk/inode, and exact-process snapshot refreshed every five seconds;
+- a live local CPU, memory, aggregate disk/inode, exact-process, and OS-service snapshot refreshed
+  every five seconds;
 - the enrolled API host, short machine/workspace identifiers, local sequence, last delivery
   success/error, retry state, and background-service registration state;
-- an explicit signal allowlist and exact process-name editor, saved atomically without exposing the
-  credential;
+- an explicit signal allowlist plus exact process/service-name editors, saved atomically without
+  exposing the credential;
 - local credential, config-directory/free-space, URL-policy, collector, and durable-retry
   diagnostics;
 - a connection test for DNS, routing, timeout, proxy/VPN effects, TLS, and public `/ready` that
@@ -107,7 +109,7 @@ The dashboard provides:
 - a bounded in-memory event list for the current TUI session only.
 
 Use `Tab` or `1`–`4` to move between pages, `R` to refresh, `Space` to toggle a signal, `E` to edit
-process names, `S` to save, `T` to run connection diagnostics, and `Q` to close. Closing the TUI does not
+process names, `V` to edit service names, `S` to save, `T` to run connection diagnostics, and `Q` to close. Closing the TUI does not
 stop the daemon. The Web Console remains the authoritative fleet view; the TUI intentionally shows
 only one computer and has no remote shell or command channel.
 
@@ -172,11 +174,13 @@ cargo build --locked --release -p meerkateer-agent
 and automation:
 
 ```sh
-meerkateer-controller inspect --watch-process java --watch-process postgres
+meerkateer-controller inspect --watch-process java --watch-process postgres \
+  --watch-service apache2.service
 ```
 
 ```powershell
-.\meerkateer-controller.exe inspect --watch-process MyGameServer.exe --watch-process postgres.exe
+.\meerkateer-controller.exe inspect --watch-process MyGameServer.exe --watch-process postgres.exe `
+  --watch-service MyGameServer
 ```
 
 A missing process is reported as `running: false` and `instances: 0`. An invalid or duplicate
@@ -193,8 +197,9 @@ Linux:
 read -rsp 'Enrollment token: ' MEERKATEER_ENROLLMENT_TOKEN && export MEERKATEER_ENROLLMENT_TOKEN
 meerkateer-controller enroll --server https://monitor.example.com --name game-host-01
 unset MEERKATEER_ENROLLMENT_TOKEN
-meerkateer-controller configure --signals cpu,memory,disk,process \
-  --watch-process java --watch-process postgres
+meerkateer-controller configure --signals cpu,memory,disk,process,service \
+  --watch-process java --watch-process postgres \
+  --watch-service minecraft.service --watch-service postgresql.service
 meerkateer-controller doctor
 meerkateer-controller tui
 meerkateer-controller run
@@ -206,8 +211,9 @@ Windows PowerShell 7:
 $env:MEERKATEER_ENROLLMENT_TOKEN = Read-Host 'Enrollment token' -MaskInput
 .\meerkateer-controller.exe enroll --server https://monitor.example.com --name game-host-01
 Remove-Item Env:MEERKATEER_ENROLLMENT_TOKEN
-.\meerkateer-controller.exe configure --signals cpu,memory,disk,process `
-  --watch-process MyGameServer.exe --watch-process postgres.exe
+.\meerkateer-controller.exe configure --signals cpu,memory,disk,process,service `
+  --watch-process MyGameServer.exe --watch-process postgres.exe `
+  --watch-service MyGameServer --watch-service postgresql-x64-18
 .\meerkateer-controller.exe doctor
 .\meerkateer-controller.exe tui
 .\meerkateer-controller.exe run
@@ -263,8 +269,8 @@ design and its security gates are documented in [ADR-0008](adr/0008-bounded-remo
 1. Run `inspect` and compare memory/filesystem totals with the OS tools.
 2. Watch one known-running and one deliberately absent process; verify true and false results.
 3. Enroll into the intended workspace and run `doctor`.
-4. Run `configure --signals cpu,memory,disk,process --watch-process NAME`, followed by `run --once`;
-   verify an accepted sequence is printed.
+4. Run `configure --signals cpu,memory,disk,process,service --watch-process NAME
+   --watch-service NAME`, followed by `run --once`; verify an accepted sequence is printed.
 5. Stop the watched test process, run once again, and verify the stored `process.running` sample is
    zero. Restart it and verify the next fresh sample is non-zero.
 6. Stop the API while continuous mode is collecting, then restart it; queued batches must drain in
@@ -273,7 +279,7 @@ design and its security gates are documented in [ADR-0008](adr/0008-bounded-remo
    succeeds while the previous credential is no longer accepted after its grace window.
 
 The Console Machine detail route reads only the latest durable batch and shows CPU, memory, disk,
-platform, snapshot freshness/completeness, and watched processes. A stopped process is called out by
-name. If the newest batch is old or incomplete, the Console says so instead of filling missing
+platform, snapshot freshness/completeness, watched processes, and OS services. A stopped process or
+failed/missing/unknown service is called out by name. If the newest batch is old or incomplete, the Console says so instead of filling missing
 values from an older batch. Historical host charts, alert-policy integration for process failure,
 and retention downsampling remain later work.

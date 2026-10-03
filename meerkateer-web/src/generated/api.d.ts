@@ -1229,6 +1229,25 @@ export interface components {
       running: boolean;
       instances: number;
     };
+    AgentServiceResponse: {
+      name: string;
+      running: boolean | null;
+      /** @enum {unknown} */
+      state:
+        | "active"
+        | "reloading"
+        | "activating"
+        | "deactivating"
+        | "inactive"
+        | "failed"
+        | "not_found"
+        | "permission_denied"
+        | "manager_unavailable"
+        | "query_timeout"
+        | "unsupported_platform"
+        | "query_failed"
+        | "unknown";
+    };
     AgentTelemetrySnapshotResponse: {
       /** Format: uuid */
       agent_id: string;
@@ -1248,6 +1267,7 @@ export interface components {
       disk: components["schemas"]["AgentCapacityResponse"] | null;
       inodes: components["schemas"]["AgentCountCapacityResponse"] | null;
       processes: components["schemas"]["AgentProcessResponse"][];
+      services: components["schemas"]["AgentServiceResponse"][];
       missing_metrics: (
         | "agent.heartbeat"
         | "host.cpu.utilization"

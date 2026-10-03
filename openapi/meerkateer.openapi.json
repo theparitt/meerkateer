@@ -1705,13 +1705,29 @@
           "instances": { "type": "integer", "minimum": 0, "maximum": 4294967295 }
         }
       },
+      "AgentServiceResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "running", "state"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "running": { "type": ["boolean", "null"] },
+          "state": {
+            "enum": [
+              "active", "reloading", "activating", "deactivating", "inactive", "failed",
+              "not_found", "permission_denied", "manager_unavailable", "query_timeout",
+              "unsupported_platform", "query_failed", "unknown"
+            ]
+          }
+        }
+      },
       "AgentTelemetrySnapshotResponse": {
         "type": "object",
         "additionalProperties": false,
         "required": [
           "agent_id", "connection_state", "collection_state", "observed_at", "received_at",
           "snapshot_stale", "platform", "architecture", "cpu_usage_percent", "memory", "disk", "inodes",
-          "processes", "missing_metrics"
+          "processes", "services", "missing_metrics"
         ],
         "properties": {
           "agent_id": { "type": "string", "format": "uuid" },
@@ -1745,6 +1761,11 @@
             "type": "array",
             "maxItems": 16,
             "items": { "$ref": "#/components/schemas/AgentProcessResponse" }
+          },
+          "services": {
+            "type": "array",
+            "maxItems": 16,
+            "items": { "$ref": "#/components/schemas/AgentServiceResponse" }
           },
           "missing_metrics": {
             "type": "array",

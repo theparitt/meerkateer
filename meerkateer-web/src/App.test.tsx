@@ -494,6 +494,11 @@ describe("App", () => {
                 { name: "java", running: false, instances: 0 },
                 { name: "postgres", running: true, instances: 1 },
               ],
+              services: [
+                { name: "minecraft.service", running: false, state: "failed" },
+                { name: "postgresql.service", running: true, state: "active" },
+                { name: "docker.service", running: null, state: "permission_denied" },
+              ],
               missing_metrics: [],
             }),
           );
@@ -603,6 +608,12 @@ describe("App", () => {
     expect(screen.getByText("Not running")).toBeTruthy();
     expect(screen.getByText("postgres")).toBeTruthy();
     expect(screen.getByText("1 instance")).toBeTruthy();
+    expect(screen.getByText("minecraft.service")).toBeTruthy();
+    expect(screen.getByText("Failed")).toBeTruthy();
+    expect(screen.getByText("postgresql.service")).toBeTruthy();
+    expect(screen.getByText("Running")).toBeTruthy();
+    expect(screen.getByText("docker.service")).toBeTruthy();
+    expect(screen.getByText("Permission denied")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Arena Host 01" }).getAttribute("aria-current")).toBe(
       "page",
     );

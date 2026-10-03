@@ -37,11 +37,12 @@ use crate::{
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 const EVENT_LIMIT: usize = 8;
-const SIGNALS: [SignalKind; 4] = [
+const SIGNALS: [SignalKind; 5] = [
     SignalKind::Cpu,
     SignalKind::Memory,
     SignalKind::Disk,
     SignalKind::Process,
+    SignalKind::Service,
 ];
 
 const NAVY: Color = Color::Rgb(7, 25, 82);
@@ -150,7 +151,9 @@ struct App {
     tab: Tab,
     selected_signal: usize,
     editing_processes: bool,
+    editing_services: bool,
     process_editor: String,
+    service_editor: String,
     status: String,
     events: VecDeque<String>,
     service_status: String,
@@ -171,7 +174,9 @@ impl App {
             tab: Tab::Overview,
             selected_signal: 0,
             editing_processes: false,
+            editing_services: false,
             process_editor: String::new(),
+            service_editor: String::new(),
             status: "Starting local lookout...".to_owned(),
             events: VecDeque::new(),
             service_status: service_status(),
@@ -215,6 +220,7 @@ impl App {
         self.config = Some(ConfigView::from(config));
         self.selection = config.signals.clone();
         self.process_editor = config.signals.watched_processes.join(", ");
+        self.service_editor = config.signals.watched_services.join(", ");
         self.set_status("Controller ready");
     }
 
@@ -231,7 +237,12 @@ impl App {
         } else {
             Vec::new()
         };
-        match collector::collect(&watched).await {
+        let watched_services = if self.selection.enabled.contains(&SignalKind::Service) {
+            self.selection.watched_services.clone()
+        } else {
+            Vec::new()
+        };
+        match collector::collect(&watched, &watched_services).await {
             Ok(snapshot) => {
                 self.status = format!("Local signals refreshed at {}", snapshot.collected_at);
                 self.snapshot = Some(snapshot);
@@ -269,17 +280,29 @@ impl App {
         } else {
             Vec::new()
         };
+        let watched_services = if self.selection.enabled.contains(&SignalKind::Service) {
+            match parse_service_names(&self.service_editor) {
+                Ok(values) => values,
+                Err(error) => {
+                    self.status = format!("Signals not saved: {error}");
+                    return;
+                }
+            }
+        } else {
+            Vec::new()
+        };
         let signals = SIGNALS
             .iter()
             .copied()
             .filter(|signal| self.selection.enabled.contains(signal))
             .collect::<Vec<_>>();
-        match SignalSelection::from_cli(&signals, watched_processes)
+        match SignalSelection::from_cli(&signals, watched_processes, watched_services)
             .and_then(|selection| save_signal_selection(&self.config_path, selection))
         {
             Ok(selection) => {
                 self.selection = selection;
                 self.process_editor = self.selection.watched_processes.join(", ");
+                self.service_editor = self.selection.watched_services.join(", ");
                 self.set_status("Signal allowlist saved; the daemon reads it on its next cycle");
                 self.push_event("Signal allowlist updated");
                 if let Err(error) = self.reload_config() {
@@ -392,6 +415,10 @@ impl App {
             self.handle_process_editor_key(key);
             return;
         }
+        if self.editing_services {
+            self.handle_service_editor_key(key);
+            return;
+        }
         match key.code {
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Tab => self.tab = self.tab.next(),
@@ -420,6 +447,10 @@ impl App {
             KeyCode::Char('e') if self.tab == Tab::Signals => {
                 self.editing_processes = true;
                 self.set_status("Editing exact process names; Enter applies locally, S saves");
+            }
+            KeyCode::Char('v') if self.tab == Tab::Signals => {
+                self.editing_services = true;
+                self.set_status("Editing exact service names; Enter applies locally, S saves");
             }
             KeyCode::Char(' ') if self.tab == Tab::Signals => self.toggle_signal(),
             KeyCode::Up if self.tab == Tab::Signals => {
@@ -511,6 +542,37 @@ impl App {
                     && !key.modifiers.contains(KeyModifiers::ALT) =>
             {
                 self.process_editor.push(character);
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_service_editor_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.service_editor = self.selection.watched_services.join(", ");
+                self.editing_services = false;
+                self.set_status("Service edit cancelled");
+            }
+            KeyCode::Enter => match parse_service_names(&self.service_editor) {
+                Ok(values) => {
+                    self.selection.watched_services = values;
+                    if !self.selection.watched_services.is_empty() {
+                        self.selection.enabled.insert(SignalKind::Service);
+                    }
+                    self.editing_services = false;
+                    self.set_status("Unsaved service allowlist; press S to save");
+                }
+                Err(error) => self.status = format!("Invalid service list: {error}"),
+            },
+            KeyCode::Backspace => {
+                self.service_editor.pop();
+            }
+            KeyCode::Char(character)
+                if !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT) =>
+            {
+                self.service_editor.push(character);
             }
             _ => {}
         }
@@ -753,7 +815,7 @@ fn render_overview(frame: &mut Frame<'_>, area: Rect, app: &App) {
         events,
     );
 
-    let [gauges, processes] = Layout::vertical([Constraint::Length(12), Constraint::Min(5)])
+    let [gauges, watched] = Layout::vertical([Constraint::Length(12), Constraint::Min(5)])
         .spacing(1)
         .areas(live_area);
     if let Some(snapshot) = app.snapshot.as_ref() {
@@ -820,9 +882,37 @@ fn render_overview(frame: &mut Frame<'_>, area: Rect, app: &App) {
                 })
                 .collect()
         };
+        let service_items = if snapshot.watched_services.is_empty() {
+            vec![ListItem::new("No OS service names selected")]
+        } else {
+            snapshot
+                .watched_services
+                .iter()
+                .map(|service| {
+                    let (icon, color) = match service.running {
+                        Some(true) => ("●", MINT),
+                        Some(false) => ("●", CORAL),
+                        None => ("?", GOLD),
+                    };
+                    ListItem::new(Line::from(vec![
+                        Span::styled(format!("{icon} "), Style::default().fg(color)),
+                        Span::styled(&service.name, Style::default().add_modifier(Modifier::BOLD)),
+                        Span::raw(format!("   {}", service.state)),
+                    ]))
+                })
+                .collect()
+        };
+        let [processes, services] =
+            Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .spacing(1)
+                .areas(watched);
         frame.render_widget(
             List::new(process_items).block(card(" Watched processes ", CORAL)),
             processes,
+        );
+        frame.render_widget(
+            List::new(service_items).block(card(" Watched OS services ", GOLD)),
+            services,
         );
     } else {
         frame.render_widget(
@@ -863,6 +953,11 @@ fn render_signals(frame: &mut Frame<'_>, area: Rect, app: &App) {
     } else {
         Style::default().fg(Color::White)
     };
+    let service_editor_style = if app.editing_services {
+        Style::default().fg(GOLD).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::White)
+    };
     let details = vec![
         Line::from(Span::styled(
             "Heartbeat is always sent so disconnects can be detected.",
@@ -877,6 +972,16 @@ fn render_signals(frame: &mut Frame<'_>, area: Rect, app: &App) {
                 &app.process_editor
             },
             editor_style,
+        )),
+        Line::from(""),
+        Line::from("OS services (exact, comma-separated, maximum 16):"),
+        Line::from(Span::styled(
+            if app.service_editor.is_empty() {
+                "<none>"
+            } else {
+                &app.service_editor
+            },
+            service_editor_style,
         )),
         Line::from(""),
         Line::from(Span::styled(
@@ -955,7 +1060,7 @@ fn render_diagnostics(frame: &mut Frame<'_>, area: Rect, app: &App) {
     }
     lines.push(diagnostic_line(
         app.snapshot.is_some(),
-        "Local CPU, memory, disk, and process collector works",
+        "Local CPU, memory, disk, process, and OS-service collector works",
     ));
     lines.push(Line::from(vec![
         Span::styled(
@@ -1014,6 +1119,7 @@ fn render_help(frame: &mut Frame<'_>, area: Rect) {
         help_line("R", "reload protected config and refresh local signals"),
         help_line("Space", "toggle the selected signal on the Signals page"),
         help_line("E", "edit exact process names"),
+        help_line("V", "edit exact systemd / Windows Service names"),
         help_line("S", "atomically save the signal allowlist"),
         help_line(
             "T",
@@ -1218,12 +1324,24 @@ fn parse_process_names(value: &str) -> anyhow::Result<Vec<String>> {
     Ok(values)
 }
 
+fn parse_service_names(value: &str) -> anyhow::Result<Vec<String>> {
+    let values = value
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+    collector::validate_watched_services(&values)?;
+    Ok(values)
+}
+
 fn signal_label(signal: SignalKind) -> &'static str {
     match signal {
         SignalKind::Cpu => "CPU utilization percentage",
         SignalKind::Memory => "Memory used and total bytes",
         SignalKind::Disk => "Aggregate disk used and total bytes",
         SignalKind::Process => "Exact process running state",
+        SignalKind::Service => "Exact systemd / Windows Service state",
     }
 }
 

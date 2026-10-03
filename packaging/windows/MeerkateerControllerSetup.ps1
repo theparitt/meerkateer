@@ -76,6 +76,7 @@ function Get-SignalArguments {
     if ($signalList.GetItemChecked(1)) { $signals.Add('memory') }
     if ($signalList.GetItemChecked(2)) { $signals.Add('disk') }
     if ($signalList.GetItemChecked(3)) { $signals.Add('process') }
+    if ($signalList.GetItemChecked(4)) { $signals.Add('service') }
     if ($signals.Count -eq 0) {
         throw 'Choose at least one signal. A bounded heartbeat is always included.'
     }
@@ -99,6 +100,19 @@ function Get-SignalArguments {
     foreach ($processName in $processNames) {
         $arguments.Add('--watch-process')
         $arguments.Add($processName)
+    }
+    $serviceNames = @()
+    if ($signalList.GetItemChecked(4)) {
+        $serviceNames = $serviceBox.Text.Split(',', [StringSplitOptions]::RemoveEmptyEntries) |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ }
+    }
+    if ($serviceNames.Count -gt 16) {
+        throw 'At most 16 exact Windows Service names can be monitored.'
+    }
+    foreach ($serviceName in $serviceNames) {
+        $arguments.Add('--watch-service')
+        $arguments.Add($serviceName)
     }
     return $arguments.ToArray()
 }
@@ -143,8 +157,8 @@ function Invoke-ConnectionDiagnostics {
 $form = [System.Windows.Forms.Form]::new()
 $form.Text = 'Meerkateer Controller Setup'
 $form.StartPosition = 'CenterScreen'
-$form.ClientSize = [Drawing.Size]::new(630, 850)
-$form.MinimumSize = [Drawing.Size]::new(646, 889)
+$form.ClientSize = [Drawing.Size]::new(630, 930)
+$form.MinimumSize = [Drawing.Size]::new(646, 969)
 $form.BackColor = [Drawing.Color]::FromArgb(255, 250, 242)
 $form.Font = [Drawing.Font]::new('Segoe UI', 9)
 
@@ -213,42 +227,51 @@ $signalLabel = Add-FieldLabel 'Signals sent every 30 seconds' 380
 $form.Controls.Add($signalLabel)
 $signalList = [System.Windows.Forms.CheckedListBox]::new()
 $signalList.Location = [Drawing.Point]::new(30, 405)
-$signalList.Size = [Drawing.Size]::new(565, 112)
+$signalList.Size = [Drawing.Size]::new(565, 138)
 $signalList.CheckOnClick = $true
 $signalList.Items.Add('CPU utilization - percentage only') | Out-Null
 $signalList.Items.Add('Memory capacity and usage - byte counts only') | Out-Null
 $signalList.Items.Add('Disk capacity and usage - totals only; no filenames') | Out-Null
 $signalList.Items.Add('Selected process running state - exact names you enter below') | Out-Null
+$signalList.Items.Add('Windows Service state - exact service names you enter below') | Out-Null
 $signalList.SetItemChecked(0, $true)
 $signalList.SetItemChecked(1, $true)
 $signalList.SetItemChecked(2, $true)
 $form.Controls.Add($signalList)
 
-$processLabel = Add-FieldLabel 'Process names (comma-separated, maximum 16)' 531
+$processLabel = Add-FieldLabel 'Process names (comma-separated, maximum 16)' 553
 $form.Controls.Add($processLabel)
 $processBox = [System.Windows.Forms.TextBox]::new()
-$processBox.Location = [Drawing.Point]::new(30, 555)
+$processBox.Location = [Drawing.Point]::new(30, 577)
 $processBox.Size = [Drawing.Size]::new(565, 28)
 $processBox.Text = ''
 $form.Controls.Add($processBox)
 
+$serviceLabel = Add-FieldLabel 'Windows Service names (comma-separated, maximum 16)' 617
+$form.Controls.Add($serviceLabel)
+$serviceBox = [System.Windows.Forms.TextBox]::new()
+$serviceBox.Location = [Drawing.Point]::new(30, 641)
+$serviceBox.Size = [Drawing.Size]::new(565, 28)
+$serviceBox.Text = ''
+$form.Controls.Add($serviceBox)
+
 $privacy = [System.Windows.Forms.Label]::new()
 $privacy.Text = 'Never collected: command-line arguments, files, environment variables, player/chat content, or arbitrary remote commands.'
-$privacy.Location = [Drawing.Point]::new(30, 595)
+$privacy.Location = [Drawing.Point]::new(30, 680)
 $privacy.Size = [Drawing.Size]::new(565, 40)
 $privacy.ForeColor = [Drawing.Color]::FromArgb(73, 86, 124)
 $form.Controls.Add($privacy)
 
 $previewConsent = [System.Windows.Forms.CheckBox]::new()
 $previewConsent.Text = 'I am authorized to administer this computer and accept the Developer Preview notice: AS IS, unsigned, without warranty; I will verify the package checksum and protect the API.'
-$previewConsent.Location = [Drawing.Point]::new(30, 638)
+$previewConsent.Location = [Drawing.Point]::new(30, 723)
 $previewConsent.Size = [Drawing.Size]::new(565, 58)
 $previewConsent.ForeColor = [Drawing.Color]::FromArgb(83, 61, 23)
 $form.Controls.Add($previewConsent)
 
 $noticeLink = [System.Windows.Forms.LinkLabel]::new()
 $noticeLink.Text = 'Read the complete Developer Preview notice'
-$noticeLink.Location = [Drawing.Point]::new(50, 694)
+$noticeLink.Location = [Drawing.Point]::new(50, 779)
 $noticeLink.Size = [Drawing.Size]::new(360, 24)
 $noticeLink.Add_LinkClicked({
     if (Test-Path -LiteralPath $disclaimerPath) {
@@ -266,7 +289,7 @@ $form.Controls.Add($noticeLink)
 
 $connectButton = [System.Windows.Forms.Button]::new()
 $connectButton.Text = 'Connect and start'
-$connectButton.Location = [Drawing.Point]::new(30, 730)
+$connectButton.Location = [Drawing.Point]::new(30, 815)
 $connectButton.Size = [Drawing.Size]::new(270, 42)
 $connectButton.BackColor = [Drawing.Color]::FromArgb(20, 101, 183)
 $connectButton.ForeColor = [Drawing.Color]::White
@@ -276,7 +299,7 @@ $form.Controls.Add($connectButton)
 
 $saveButton = [System.Windows.Forms.Button]::new()
 $saveButton.Text = 'Update signals only'
-$saveButton.Location = [Drawing.Point]::new(325, 730)
+$saveButton.Location = [Drawing.Point]::new(325, 815)
 $saveButton.Size = [Drawing.Size]::new(270, 42)
 $saveButton.FlatStyle = 'Flat'
 $form.Controls.Add($saveButton)
@@ -303,7 +326,9 @@ if (Test-Path -LiteralPath $configPath) {
             $signalList.SetItemChecked(1, $enabledSignals -contains 'memory')
             $signalList.SetItemChecked(2, $enabledSignals -contains 'disk')
             $signalList.SetItemChecked(3, $enabledSignals -contains 'process')
+            $signalList.SetItemChecked(4, $enabledSignals -contains 'service')
             $processBox.Text = (@($existingConfig.signals.watched_processes) -join ', ')
+            $serviceBox.Text = (@($existingConfig.signals.watched_services) -join ', ')
         }
     } catch {
         [System.Windows.Forms.MessageBox]::Show(
@@ -322,7 +347,7 @@ $status.Text = if ($null -ne $existingConfig) {
 } else {
     'Not connected yet.'
 }
-$status.Location = [Drawing.Point]::new(30, 790)
+$status.Location = [Drawing.Point]::new(30, 875)
 $status.Size = [Drawing.Size]::new(565, 32)
 $status.ForeColor = [Drawing.Color]::FromArgb(7, 113, 83)
 $form.Controls.Add($status)

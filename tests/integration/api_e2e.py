@@ -1051,6 +1051,7 @@ def enroll_agent(project_id: str) -> tuple[str, str]:
         assert snapshot["processes"][0]["name"] == "python3"
         assert snapshot["processes"][0]["running"] is True
         assert snapshot["processes"][0]["instances"] >= 1
+        assert snapshot["services"] == []
         expect(call("GET", f"/v1/agents/{uuid.uuid4()}/telemetry"), 404, "not_found")
         old_agent_secret = persisted["credential"]
         local_rotation = run_agent(

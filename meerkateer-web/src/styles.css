@@ -5851,7 +5851,8 @@ body:has(.resource-page)::after {
   color: #6f530d;
 }
 
-.telemetry-process-down {
+.telemetry-process-down,
+.telemetry-service-down {
   border: 1px solid #efa5a5;
   background: #fff0ed;
   color: #8e2929;
@@ -5986,6 +5987,16 @@ body:has(.resource-page)::after {
 .process-down .process-dot {
   background: #ed6a67;
   box-shadow: 0 0 0 3px rgba(237, 106, 103, 0.15);
+}
+
+.process-evidence li.service-unknown {
+  background: #fff8df;
+  color: #74570a;
+}
+
+.service-unknown .process-dot {
+  background: var(--gold);
+  box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.18);
 }
 
 .missing-metrics {

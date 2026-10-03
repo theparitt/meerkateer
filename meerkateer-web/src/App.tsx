@@ -2837,8 +2837,29 @@ function MachineDetail({ agent }: { agent: AgentResponse | null }) {
   );
 }
 
+function serviceStateLabel(state: string, running: boolean | null) {
+  if (running === true) return state === "reloading" ? "Reloading (available)" : "Running";
+  if (running === false) {
+    if (state === "activating") return "Starting";
+    if (state === "deactivating") return "Stopping";
+    if (state === "failed") return "Failed";
+    return "Not running";
+  }
+  const labels: Record<string, string> = {
+    not_found: "Service not found",
+    permission_denied: "Permission denied",
+    manager_unavailable: "Service manager unavailable",
+    query_timeout: "Status check timed out",
+    unsupported_platform: "Unsupported platform",
+    query_failed: "Status check failed",
+    unknown: "State unknown",
+  };
+  return labels[state] ?? "State unknown";
+}
+
 function MachineTelemetry({ telemetry }: { telemetry: AgentTelemetrySnapshotResponse }) {
   const stopped = telemetry.processes.filter((process) => !process.running);
+  const unhealthyServices = telemetry.services.filter((service) => service.running !== true);
   return (
     <section className="machine-telemetry" aria-labelledby="machine-telemetry-title">
       <div className="machine-telemetry-heading">
@@ -2864,6 +2885,12 @@ function MachineTelemetry({ telemetry }: { telemetry: AgentTelemetrySnapshotResp
             running.
           </strong>
           <span>{stopped.map((process) => process.name).join(", ")}</span>
+        </div>
+      ) : null}
+      {unhealthyServices.length > 0 ? (
+        <div className="telemetry-notice telemetry-service-down" role="alert">
+          <strong>OS service attention needed.</strong>{" "}
+          {unhealthyServices.map((service) => `${service.name} (${service.state})`).join(", ")}
         </div>
       ) : null}
 
@@ -2921,6 +2948,35 @@ function MachineTelemetry({ telemetry }: { telemetry: AgentTelemetrySnapshotResp
                     ? `${process.instances} ${process.instances === 1 ? "instance" : "instances"}`
                     : "Not running"}
                 </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="process-evidence service-evidence">
+        <div className="process-evidence-heading">
+          <h4>Watched OS services</h4>
+          <small>{telemetry.services.length} configured in the latest batch</small>
+        </div>
+        {telemetry.services.length === 0 ? (
+          <p>No systemd or Windows Service names were configured for this agent run.</p>
+        ) : (
+          <ul>
+            {telemetry.services.map((service) => (
+              <li
+                key={service.name}
+                className={
+                  service.running === true
+                    ? "process-up"
+                    : service.running === false
+                      ? "process-down"
+                      : "service-unknown"
+                }
+              >
+                <span className="process-dot" aria-hidden="true" />
+                <strong>{service.name}</strong>
+                <span>{serviceStateLabel(service.state, service.running)}</span>
               </li>
             ))}
           </ul>

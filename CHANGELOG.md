@@ -10,6 +10,10 @@ or a claim that the `v0.2.0` release gates have passed.
 
 ### Added
 
+- Bounded OS-service monitoring for exact systemd `.service` units and Windows Service names.
+  Queries run concurrently with a three-second ceiling, never invoke a shell, distinguish active,
+  transitional, failed, missing, permission, manager, and timeout states, and expose the result in
+  the local TUI, machine telemetry API, and responsive Console without treating unknown as down.
 - Monitoring Alpha resilience foundation: the Controller now keeps an ordered, disk-backed,
   four-MiB/128-batch offline spool, migrates legacy one-batch state, drains accepted batches in
   order after an outage, rotates expiring machine credentials automatically (or explicitly with

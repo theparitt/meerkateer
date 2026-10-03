@@ -48,9 +48,11 @@ $env:MEERKATEER_ENROLLMENT_TOKEN = Read-Host "Enrollment token" -MaskInput
 Remove-Item Env:MEERKATEER_ENROLLMENT_TOKEN
 .\meerkateer-agent.exe --config $stagedConfig doctor
 .\meerkateer-agent.exe --config $stagedConfig configure `
-  --signals cpu,memory,disk,process `
+  --signals cpu,memory,disk,process,service `
   --watch-process MyGameServer.exe `
-  --watch-process postgres.exe
+  --watch-process postgres.exe `
+  --watch-service MyGameServer `
+  --watch-service postgresql-x64-18
 .\packaging\windows\Install-MeerkateerAgent.ps1 `
   -BinaryPath .\meerkateer-agent.exe `
   -ConfigPath $stagedConfig `

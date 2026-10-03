@@ -76,12 +76,15 @@ enum Command {
     },
     /// Choose which bounded host signals this controller sends.
     Configure {
-        /// Comma-separated signals: cpu,memory,disk,process.
+        /// Comma-separated signals: cpu,memory,disk,process,service.
         #[arg(long, value_delimiter = ',', required = true)]
         signals: Vec<SignalKind>,
         /// Exact process name to monitor when the process signal is enabled.
         #[arg(long = "watch-process")]
         watch_processes: Vec<String>,
+        /// Exact systemd unit or Windows Service name to monitor.
+        #[arg(long = "watch-service")]
+        watch_services: Vec<String>,
     },
     /// Restore the previous bounded signal selection without changing machine identity.
     RollbackConfig,
@@ -93,6 +96,9 @@ enum Command {
         /// Exact process name to count (repeatable, for example java or server.exe).
         #[arg(long = "watch-process")]
         watch_processes: Vec<String>,
+        /// Exact systemd unit or Windows Service name to inspect.
+        #[arg(long = "watch-service")]
+        watch_services: Vec<String>,
     },
     /// Send bounded host and process telemetry until stopped.
     Run {
@@ -105,6 +111,9 @@ enum Command {
         /// Exact process name to count (repeatable, for example java or server.exe).
         #[arg(long = "watch-process")]
         watch_processes: Vec<String>,
+        /// Exact systemd unit or Windows Service name to count (repeatable).
+        #[arg(long = "watch-service")]
+        watch_services: Vec<String>,
     },
 }
 
@@ -115,6 +124,7 @@ enum SignalKind {
     Memory,
     Disk,
     Process,
+    Service,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
@@ -131,6 +141,8 @@ struct SignalSelection {
     enabled: BTreeSet<SignalKind>,
     #[serde(default)]
     watched_processes: Vec<String>,
+    #[serde(default)]
+    watched_services: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,17 +156,27 @@ impl Default for SignalSelection {
         Self {
             enabled: BTreeSet::from([SignalKind::Cpu, SignalKind::Memory, SignalKind::Disk]),
             watched_processes: Vec::new(),
+            watched_services: Vec::new(),
         }
     }
 }
 
 impl SignalSelection {
-    fn from_cli(signals: &[SignalKind], watched_processes: Vec<String>) -> anyhow::Result<Self> {
+    fn from_cli(
+        signals: &[SignalKind],
+        watched_processes: Vec<String>,
+        watched_services: Vec<String>,
+    ) -> anyhow::Result<Self> {
         collector::validate_watched_processes(&watched_processes)?;
+        collector::validate_watched_services(&watched_services)?;
         let enabled = signals.iter().copied().collect::<BTreeSet<_>>();
         ensure!(
             enabled.contains(&SignalKind::Process) || watched_processes.is_empty(),
             "--watch-process requires the process signal"
+        );
+        ensure!(
+            enabled.contains(&SignalKind::Service) || watched_services.is_empty(),
+            "--watch-service requires the service signal"
         );
         ensure!(
             !signals.is_empty(),
@@ -163,6 +185,7 @@ impl SignalSelection {
         Ok(Self {
             enabled,
             watched_processes,
+            watched_services,
         })
     }
 
@@ -179,6 +202,9 @@ impl SignalSelection {
         }
         if self.enabled.contains(&SignalKind::Process) {
             names.push("process");
+        }
+        if self.enabled.contains(&SignalKind::Service) {
+            names.push("service");
         }
         names
     }
@@ -227,6 +253,7 @@ struct DoctorResult<'a> {
     credential_expires_at: Option<&'a str>,
     signals: Vec<&'static str>,
     watched_processes: &'a [String],
+    watched_services: &'a [String],
     pending_batch: bool,
     spool_batches: usize,
     spool_bytes: usize,
@@ -297,6 +324,7 @@ struct ConfigureResult<'a> {
     config_path: String,
     signals: Vec<&'static str>,
     watched_processes: &'a [String],
+    watched_services: &'a [String],
 }
 
 #[derive(Debug, Serialize)]
@@ -367,15 +395,29 @@ async fn main() -> anyhow::Result<()> {
         Command::Configure {
             signals,
             watch_processes,
-        } => configure(&config_path, &signals, watch_processes),
+            watch_services,
+        } => configure(&config_path, &signals, watch_processes, watch_services),
         Command::RollbackConfig => rollback_signal_selection(&config_path),
         Command::Tui => tui::run(&config_path).await,
-        Command::Inspect { watch_processes } => inspect(&watch_processes).await,
+        Command::Inspect {
+            watch_processes,
+            watch_services,
+        } => inspect(&watch_processes, &watch_services).await,
         Command::Run {
             once,
             interval_seconds,
             watch_processes,
-        } => run(&config_path, once, interval_seconds, &watch_processes).await,
+            watch_services,
+        } => {
+            run(
+                &config_path,
+                once,
+                interval_seconds,
+                &watch_processes,
+                &watch_services,
+            )
+            .await
+        }
     }
 }
 
@@ -383,8 +425,9 @@ fn configure(
     config_path: &Path,
     signals: &[SignalKind],
     watched_processes: Vec<String>,
+    watched_services: Vec<String>,
 ) -> anyhow::Result<()> {
-    let selection = SignalSelection::from_cli(signals, watched_processes)?;
+    let selection = SignalSelection::from_cli(signals, watched_processes, watched_services)?;
     let selection = save_signal_selection(config_path, selection)?;
     println!(
         "{}",
@@ -393,6 +436,7 @@ fn configure(
             config_path: config_path.display().to_string(),
             signals: selection.names(),
             watched_processes: &selection.watched_processes,
+            watched_services: &selection.watched_services,
         })?
     );
     Ok(())
@@ -403,9 +447,14 @@ fn save_signal_selection(
     selection: SignalSelection,
 ) -> anyhow::Result<SignalSelection> {
     collector::validate_watched_processes(&selection.watched_processes)?;
+    collector::validate_watched_services(&selection.watched_services)?;
     ensure!(
         selection.enabled.contains(&SignalKind::Process) || selection.watched_processes.is_empty(),
         "configured process names require the process signal"
+    );
+    ensure!(
+        selection.enabled.contains(&SignalKind::Service) || selection.watched_services.is_empty(),
+        "configured service names require the service signal"
     );
     ensure!(
         !selection.enabled.is_empty(),
@@ -436,6 +485,7 @@ fn rollback_signal_selection(config_path: &Path) -> anyhow::Result<()> {
             config_path: config_path.display().to_string(),
             signals: selection.names(),
             watched_processes: &selection.watched_processes,
+            watched_services: &selection.watched_services,
         })?
     );
     Ok(())
@@ -464,6 +514,7 @@ fn load_signal_backup(path: &Path) -> anyhow::Result<SignalBackup> {
         "unsupported signal backup version"
     );
     collector::validate_watched_processes(&backup.signals.watched_processes)?;
+    collector::validate_watched_services(&backup.signals.watched_services)?;
     Ok(backup)
 }
 
@@ -495,8 +546,8 @@ fn save_signal_backup(path: &Path, backup: &SignalBackup) -> anyhow::Result<()> 
         .with_context(|| format!("failed to atomically save {}", path.display()))
 }
 
-async fn inspect(watched_processes: &[String]) -> anyhow::Result<()> {
-    let snapshot = collector::collect(watched_processes).await?;
+async fn inspect(watched_processes: &[String], watched_services: &[String]) -> anyhow::Result<()> {
+    let snapshot = collector::collect(watched_processes, watched_services).await?;
     println!("{}", serde_json::to_string_pretty(&snapshot)?);
     Ok(())
 }
@@ -741,6 +792,7 @@ fn doctor(config_path: &Path) -> anyhow::Result<()> {
         credential_expires_at: Some(expires_at),
         signals: config.signals.names(),
         watched_processes: &config.signals.watched_processes,
+        watched_services: &config.signals.watched_services,
         pending_batch: !config.pending_batches.is_empty(),
         spool_batches: config.pending_batches.len(),
         spool_bytes: spool_size_bytes(&config)?,
@@ -764,17 +816,27 @@ async fn run(
     once: bool,
     interval_seconds: u64,
     watched_processes: &[String],
+    watched_services: &[String],
 ) -> anyhow::Result<()> {
     collector::validate_watched_processes(watched_processes)?;
+    collector::validate_watched_services(watched_services)?;
     let client = http_client()?;
     info!(
         config_path = %config_path.display(),
         watched_processes = watched_processes.len(),
+        watched_services = watched_services.len(),
         "starting Meerkateer Controller"
     );
 
     loop {
-        let result = send_cycle(&client, config_path, watched_processes, !once).await;
+        let result = send_cycle(
+            &client,
+            config_path,
+            watched_processes,
+            watched_services,
+            !once,
+        )
+        .await;
         if let Err(error) = record_runtime_status(config_path, result.as_ref().err()) {
             warn!(error = %error, "could not persist local Controller runtime status");
         }
@@ -900,6 +962,7 @@ async fn send_cycle(
     client: &Client,
     config_path: &Path,
     watched_process_overrides: &[String],
+    watched_service_overrides: &[String],
     collect_while_backlogged: bool,
 ) -> anyhow::Result<SendResult> {
     let mut config = load_config(config_path)?;
@@ -932,8 +995,14 @@ async fn send_cycle(
             signals.enabled.insert(SignalKind::Process);
             signals.watched_processes = watched_process_overrides.to_vec();
         }
+        if !watched_service_overrides.is_empty() {
+            collector::validate_watched_services(watched_service_overrides)?;
+            signals.enabled.insert(SignalKind::Service);
+            signals.watched_services = watched_service_overrides.to_vec();
+        }
         if config.pending_batches.len() < MAX_SPOOL_BATCHES {
-            let snapshot = collector::collect(&signals.watched_processes).await?;
+            let snapshot =
+                collector::collect(&signals.watched_processes, &signals.watched_services).await?;
             let sequence = next_collection_sequence(&config)?;
             let batch = build_host_batch(agent_id, sequence, &snapshot, &signals)?;
             config.pending_batches.push(batch);
@@ -1098,7 +1167,12 @@ fn build_host_batch(
     } else {
         0
     };
-    let mut records = Vec::with_capacity(metrics.len() + process_capacity);
+    let service_capacity = if signals.enabled.contains(&SignalKind::Service) {
+        snapshot.watched_services.len()
+    } else {
+        0
+    };
+    let mut records = Vec::with_capacity(metrics.len() + process_capacity + service_capacity);
     for (offset, (metric, value)) in metrics.into_iter().enumerate() {
         let record_sequence = sequence
             .checked_add(u64::try_from(offset)?)
@@ -1113,19 +1187,10 @@ fn build_host_batch(
         });
     }
     if signals.enabled.contains(&SignalKind::Process) {
-        for process in &snapshot.watched_processes {
-            let record_sequence = sequence
-                .checked_add(u64::try_from(records.len())?)
-                .context("agent sequence exhausted")?;
-            records.push(TelemetryRecord::Sample {
-                sequence: record_sequence,
-                record_id: Uuid::new_v4(),
-                observed_at: snapshot.collected_at.clone(),
-                metric: "process.running".to_owned(),
-                value: f64::from(process.instances),
-                attributes: BTreeMap::from([("process".to_owned(), process.name.clone())]),
-            });
-        }
+        append_process_records(&mut records, sequence, snapshot)?;
+    }
+    if signals.enabled.contains(&SignalKind::Service) {
+        append_service_records(&mut records, sequence, snapshot)?;
     }
     let last_sequence = records
         .last()
@@ -1145,6 +1210,56 @@ fn build_host_batch(
         "agent produced an invalid telemetry batch"
     );
     Ok(batch)
+}
+
+fn append_process_records(
+    records: &mut Vec<TelemetryRecord>,
+    sequence: u64,
+    snapshot: &HostSnapshot,
+) -> anyhow::Result<()> {
+    for process in &snapshot.watched_processes {
+        let record_sequence = sequence
+            .checked_add(u64::try_from(records.len())?)
+            .context("agent sequence exhausted")?;
+        records.push(TelemetryRecord::Sample {
+            sequence: record_sequence,
+            record_id: Uuid::new_v4(),
+            observed_at: snapshot.collected_at.clone(),
+            metric: "process.running".to_owned(),
+            value: f64::from(process.instances),
+            attributes: BTreeMap::from([("process".to_owned(), process.name.clone())]),
+        });
+    }
+    Ok(())
+}
+
+fn append_service_records(
+    records: &mut Vec<TelemetryRecord>,
+    sequence: u64,
+    snapshot: &HostSnapshot,
+) -> anyhow::Result<()> {
+    for service in &snapshot.watched_services {
+        let record_sequence = sequence
+            .checked_add(u64::try_from(records.len())?)
+            .context("agent sequence exhausted")?;
+        records.push(TelemetryRecord::Sample {
+            sequence: record_sequence,
+            record_id: Uuid::new_v4(),
+            observed_at: snapshot.collected_at.clone(),
+            metric: "os.service.running".to_owned(),
+            value: if service.running == Some(true) {
+                1.0
+            } else {
+                0.0
+            },
+            attributes: BTreeMap::from([
+                ("service".to_owned(), service.name.clone()),
+                ("state".to_owned(), service.state.clone()),
+                ("known".to_owned(), service.running.is_some().to_string()),
+            ]),
+        });
+    }
+    Ok(())
 }
 
 fn bytes_as_metric(value: u64) -> f64 {
@@ -1179,10 +1294,16 @@ fn validate_complete_config(config: &AgentConfig) -> anyhow::Result<()> {
         "offline spool exceeds its disk ceiling"
     );
     collector::validate_watched_processes(&config.signals.watched_processes)?;
+    collector::validate_watched_services(&config.signals.watched_services)?;
     ensure!(
         config.signals.enabled.contains(&SignalKind::Process)
             || config.signals.watched_processes.is_empty(),
         "configured process names require the process signal"
+    );
+    ensure!(
+        config.signals.enabled.contains(&SignalKind::Service)
+            || config.signals.watched_services.is_empty(),
+        "configured service names require the service signal"
     );
     ensure!(
         config.agent_id.is_some(),
@@ -1451,6 +1572,7 @@ mod tests {
             inode_total: Some(10_000),
             inode_used: Some(4_000),
             watched_processes,
+            watched_services: Vec::new(),
         }
     }
 
@@ -1493,30 +1615,46 @@ mod tests {
     #[test]
     fn host_batch_uses_contiguous_sequences_and_safe_metrics() -> anyhow::Result<()> {
         let agent_id = Uuid::new_v4();
-        let snapshot = test_snapshot(vec![collector::ProcessObservation {
+        let mut snapshot = test_snapshot(vec![collector::ProcessObservation {
             name: "java".to_owned(),
             running: true,
             instances: 2,
         }]);
+        snapshot
+            .watched_services
+            .push(collector::ServiceObservation {
+                name: "minecraft.service".to_owned(),
+                running: Some(false),
+                state: "failed".to_owned(),
+            });
         let signals = SignalSelection {
             enabled: BTreeSet::from([
                 SignalKind::Cpu,
                 SignalKind::Memory,
                 SignalKind::Disk,
                 SignalKind::Process,
+                SignalKind::Service,
             ]),
             watched_processes: vec!["java".to_owned()],
+            watched_services: vec!["minecraft.service".to_owned()],
         };
         let batch = build_host_batch(agent_id, 42, &snapshot, &signals)?;
         assert_eq!(batch.agent_id, agent_id);
         assert_eq!(batch.first_sequence, 42);
-        assert_eq!(batch.last_sequence, 50);
-        assert_eq!(batch.records.len(), 9);
+        assert_eq!(batch.last_sequence, 51);
+        assert_eq!(batch.records.len(), 10);
         assert!(batch.has_valid_shape());
         assert!(batch.records.iter().any(|record| matches!(
             record,
             TelemetryRecord::Sample { metric, value, .. }
                 if metric == "process.running" && (*value - 2.0).abs() < f64::EPSILON
+        )));
+        assert!(batch.records.iter().any(|record| matches!(
+            record,
+            TelemetryRecord::Sample { metric, value, attributes, .. }
+                if metric == "os.service.running"
+                    && (*value).abs() < f64::EPSILON
+                    && attributes.get("state").is_some_and(|state| state == "failed")
         )));
         Ok(())
     }
@@ -1531,6 +1669,7 @@ mod tests {
         let signals = SignalSelection {
             enabled: BTreeSet::from([SignalKind::Memory]),
             watched_processes: Vec::new(),
+            watched_services: Vec::new(),
         };
         let batch = build_host_batch(Uuid::new_v4(), 1, &snapshot, &signals)?;
         let metrics = batch
@@ -1704,6 +1843,7 @@ mod tests {
             SignalSelection {
                 enabled: BTreeSet::from([SignalKind::Cpu, SignalKind::Process]),
                 watched_processes: vec!["java".to_owned()],
+                watched_services: Vec::new(),
             },
         )?;
         rollback_signal_selection(&path)?;
