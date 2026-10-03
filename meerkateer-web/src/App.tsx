@@ -47,6 +47,7 @@ import {
   type ServiceResponse,
   type SessionResponse,
   setupOwnerPassword,
+  signOut,
   type TimelineItemResponse,
   testAlertWebhook,
   type UpdateAlertPolicyRequest,
@@ -282,6 +283,7 @@ function ConsoleApp({ route }: { route: ConsoleRoute }) {
   const { view } = route;
   const [health, setHealth] = useState<HealthState>({ phase: "loading" });
   const [dashboard, setDashboard] = useState<DashboardState>({ phase: "loading" });
+  const [signOutState, setSignOutState] = useState<"idle" | "pending" | "failed">("idle");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -463,6 +465,17 @@ function ConsoleApp({ route }: { route: ConsoleRoute }) {
     setDashboard({ ...dashboard, alertDeliveries });
   }
 
+  async function signOutAction() {
+    setSignOutState("pending");
+    try {
+      await signOut();
+      setSignOutState("idle");
+      setDashboard({ phase: "signed-out" });
+    } catch {
+      setSignOutState("failed");
+    }
+  }
+
   if (dashboard.phase === "signed-out") {
     return <CommunityAccessPage mode="login" returnTo={window.location.pathname} />;
   }
@@ -480,10 +493,31 @@ function ConsoleApp({ route }: { route: ConsoleRoute }) {
             <small>Server reliability</small>
           </span>
         </a>
-        <span className="preview-badge">
-          <span className="preview-dot" aria-hidden="true" />
-          {dashboard.phase === "ready" ? dashboard.session.role : "Developer preview"}
-        </span>
+        <div className="topbar-session-actions">
+          <span className="preview-badge">
+            <span className="preview-dot" aria-hidden="true" />
+            {dashboard.phase === "ready" ? dashboard.session.role : "Developer preview"}
+          </span>
+          {dashboard.phase === "ready" ? (
+            <button
+              className="console-sign-out"
+              disabled={signOutState === "pending"}
+              onClick={() => void signOutAction()}
+              type="button"
+            >
+              {signOutState === "pending"
+                ? "Signing out…"
+                : signOutState === "failed"
+                  ? "Retry sign out"
+                  : "Sign out"}
+            </button>
+          ) : null}
+          {signOutState === "failed" ? (
+            <small className="topbar-session-error" role="alert">
+              Sign out failed. Try again.
+            </small>
+          ) : null}
+        </div>
       </header>
 
       <main className="console-main">

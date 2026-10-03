@@ -10,6 +10,11 @@ or a claim that the `v0.2.0` release gates have passed.
 
 ### Added
 
+- Security Beta foundations: the Docker integration suite now provisions a disposable second
+  company and proves tenant isolation across collection, direct-ID, nested-ID, write, and
+  machine-credential paths before rechecking the untouched rival data. Browser sign-out now
+  revokes the server-side PostgreSQL session, requires CSRF proof, expires both cookies, records
+  an immutable `session.logout` audit event, and is available from the responsive Console header.
 - Bounded OS-service monitoring for exact systemd `.service` units and Windows Service names.
   Queries run concurrently with a three-second ceiling, never invoke a shell, distinguish active,
   transitional, failed, missing, permission, manager, and timeout states, and expose the result in

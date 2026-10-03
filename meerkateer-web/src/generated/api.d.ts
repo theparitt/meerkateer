@@ -304,7 +304,8 @@ export interface paths {
     get: operations["getCurrentSession"];
     put?: never;
     post?: never;
-    delete?: never;
+    /** @description Revoke the current browser session, record an audit event, and expire both session cookies. */
+    delete: operations["logoutCurrentSession"];
     options?: never;
     head?: never;
     patch?: never;
@@ -2337,6 +2338,46 @@ export interface operations {
       };
       /** @description The session is missing, expired, revoked, or malformed. */
       401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      429: components["responses"]["RateLimited"];
+      /** @description The control database is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  logoutCurrentSession: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The current session was revoked and its cookies were expired. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The session is missing, expired, revoked, or malformed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The double-submit CSRF proof is missing or invalid. */
+      403: {
         headers: {
           [name: string]: unknown;
         };

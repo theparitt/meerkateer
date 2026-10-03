@@ -263,6 +263,10 @@ export async function fetchSession(signal: AbortSignal): Promise<SessionResponse
   return body as SessionResponse;
 }
 
+export async function signOut(): Promise<void> {
+  await mutateJson("DELETE", "/v1/session");
+}
+
 async function authenticationMutation(
   path: string,
   adminToken: string,

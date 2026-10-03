@@ -38,6 +38,21 @@ a {
   border-bottom: 1px solid #1e2936;
 }
 
+.topbar-session-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+  min-width: 0;
+}
+
+.topbar-session-error {
+  max-width: 150px;
+  color: #a72c38;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
 .brand {
   display: inline-flex;
   gap: 12px;
@@ -1390,6 +1405,11 @@ a:focus-visible {
     max-width: 128px;
     overflow: hidden;
     white-space: nowrap;
+  }
+
+  .topbar-session-actions .preview-badge,
+  .topbar-session-error {
+    display: none;
   }
 
   main {
@@ -4713,6 +4733,35 @@ body:has(.resource-page)::after {
   font-size: 0.68rem;
   font-weight: 800;
   text-transform: capitalize;
+}
+
+.console-sign-out {
+  width: fit-content;
+  margin-top: 8px;
+  padding: 7px 10px;
+  border: 1px solid #b9c9e0;
+  border-radius: 10px;
+  color: var(--navy);
+  background: #fff;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.topbar-session-actions .console-sign-out {
+  margin-top: 0;
+}
+
+.console-sign-out:hover:not(:disabled) {
+  border-color: var(--blue);
+  color: var(--blue);
+  background: #f4f9ff;
+}
+
+.console-sign-out:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .console-content {

@@ -1352,11 +1352,42 @@ def rate_limit_boundary() -> None:
     assert limited.headers.get("Retry-After") == "60", limited.headers
 
 
+def session_revocation() -> None:
+    active = {cookie.name: cookie.value for cookie in cookies}
+    assert "meerkateer_session" in active and "meerkateer_csrf" in active
+    expect(call("DELETE", "/v1/session"), 403, "csrf_failed")
+    expect(call("DELETE", "/v1/session", headers=browser_headers()), 204)
+
+    old_cookie = (
+        f"meerkateer_session={active['meerkateer_session']}; "
+        f"meerkateer_csrf={active['meerkateer_csrf']}"
+    )
+    expect(
+        call("GET", "/v1/session", headers={"Cookie": old_cookie}),
+        401,
+        "authentication_required",
+    )
+    expect(
+        call(
+            "POST",
+            "/v1/session/password-login",
+            body={
+                "email": "e2e-owner@example.com",
+                "password": "new-test-only-password-456",
+            },
+        ),
+        200,
+    )
+    audit = expect(call("GET", "/v1/audit-events?limit=100"), 200).body["items"]
+    assert any(item["action"] == "session.logout" for item in audit), audit
+
+
 def main() -> None:
     project_id, service_id, credential_id, service_secret = bootstrap_and_inventory()
     mks_ingestion(project_id, service_id, credential_id, service_secret)
     agent_id, agent_secret = enroll_agent(project_id)
     mka_ingestion(agent_id, agent_secret)
+    session_revocation()
     rate_limit_boundary()
     print("Meerkateer identity, ingestion, and abuse-control E2E passed.")
 

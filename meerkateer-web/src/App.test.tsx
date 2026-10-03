@@ -303,6 +303,27 @@ describe("App", () => {
     expect(screen.queryByText("Control plane")).toBeNull();
   });
 
+  it("revokes the server session when signing out", async () => {
+    // biome-ignore lint/suspicious/noDocumentCookie: exercise the browser double-submit CSRF path.
+    document.cookie = "meerkateer_csrf=test-csrf; path=/";
+    const fallback = emptyConsoleFetch();
+    const fetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      if (String(input) === "/v1/session" && init?.method === "DELETE") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      return fallback(input);
+    });
+    vi.stubGlobal("fetch", fetch);
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+    expect(await screen.findByRole("button", { name: "Sign in" })).toBeTruthy();
+    const request = fetch.mock.calls.find(
+      ([input, init]) => String(input) === "/v1/session" && init?.method === "DELETE",
+    );
+    expect(request?.[1]?.headers).toMatchObject({ "X-Meerkateer-CSRF": "test-csrf" });
+  });
+
   it("reports an unavailable API without leaking details", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network unavailable")));
     render(<App />);

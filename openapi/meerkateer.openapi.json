@@ -334,6 +334,18 @@
           "429": { "$ref": "#/components/responses/RateLimited" },
           "503": { "description": "The control database is unavailable." }
         }
+      },
+      "delete": {
+        "operationId": "logoutCurrentSession",
+        "description": "Revoke the current browser session, record an audit event, and expire both session cookies.",
+        "security": [{ "sessionCookie": [], "csrfHeader": [] }],
+        "responses": {
+          "204": { "description": "The current session was revoked and its cookies were expired." },
+          "401": { "description": "The session is missing, expired, revoked, or malformed." },
+          "403": { "description": "The double-submit CSRF proof is missing or invalid." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The control database is unavailable." }
+        }
       }
     },
     "/v1/ingest/heartbeat": {

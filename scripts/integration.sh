@@ -79,12 +79,20 @@ docker compose -p "$project" exec -T postgres \
     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
     < tests/integration/assert_e2e.sql
 
+docker compose -p "$project" exec -T postgres \
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+    < tests/integration/seed_second_tenant.sql
+
 # Reset the bounded in-memory authentication budget exhausted by the abuse-control case,
-# then exercise a concurrent real-agent fleet against the same isolated database.
+# prove the shared Cloud-ready core cannot cross company boundaries, then exercise a
+# concurrent real-agent fleet against the same isolated database.
 docker compose -p "$project" restart server >/dev/null
 until curl --fail --silent --max-time 2 "http://127.0.0.1:${api_port}/ready" >/dev/null; do
     sleep 1
 done
+MEERKATEER_E2E_URL="http://127.0.0.1:${api_port}" \
+python3 tests/integration/tenant_isolation.py
+
 MEERKATEER_E2E_URL="http://127.0.0.1:${api_port}" \
 MEERKATEER_AGENT_BIN="$(pwd)/target/debug/meerkateer-agent" \
 MEERKATEER_FLEET_STALE_AFTER_SECONDS="$fleet_stale_after_seconds" \

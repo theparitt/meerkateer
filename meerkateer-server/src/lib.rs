@@ -80,9 +80,7 @@ pub fn configure_routes(config: &mut web::ServiceConfig) {
                 .app_data(web::JsonConfig::default().limit(16 * 1024))
                 .app_data(web::PayloadConfig::new(16 * 1024))
                 .route("/bootstrap", web::post().to(bootstrap))
-                .route("/session/password-login", web::post().to(password_login))
-                .route("/session/password-setup", web::post().to(password_setup))
-                .route("/session", web::get().to(current_session))
+                .service(session_routes())
                 .service(alert_routes())
                 .service(incident_routes())
                 .route(
@@ -163,6 +161,14 @@ pub fn configure_routes(config: &mut web::ServiceConfig) {
         )
         .route("/server-info", web::get().to(server_info))
         .route("/.well-known/meerkateer.json", web::get().to(metadata));
+}
+
+fn session_routes() -> actix_web::Scope {
+    web::scope("")
+        .route("/session/password-login", web::post().to(password_login))
+        .route("/session/password-setup", web::post().to(password_setup))
+        .route("/session", web::get().to(current_session))
+        .route("/session", web::delete().to(logout))
 }
 
 fn incident_routes() -> actix_web::Scope {
@@ -799,6 +805,7 @@ impl IngestKind {
 
 #[derive(Debug)]
 struct AuthenticatedSession {
+    session_id: uuid::Uuid,
     principal: Principal,
     csrf_digest: [u8; 32],
     email: String,
@@ -831,6 +838,78 @@ async fn current_session(request: HttpRequest, state: web::Data<AppState>) -> Ht
             })
         }
     }
+}
+
+async fn logout(request: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if !csrf_is_valid(&request, &session) {
+        return HttpResponse::Forbidden().json(ErrorResponse {
+            code: "csrf_failed",
+        });
+    }
+    let Some(database) = &state.database else {
+        return HttpResponse::ServiceUnavailable().json(ErrorResponse {
+            code: "database_unavailable",
+        });
+    };
+    if revoke_session(database, &session).await.is_err() {
+        return HttpResponse::ServiceUnavailable().json(ErrorResponse {
+            code: "database_unavailable",
+        });
+    }
+
+    HttpResponse::NoContent()
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .cookie(expired_session_cookie(&state, "meerkateer_session", true))
+        .cookie(expired_session_cookie(&state, "meerkateer_csrf", false))
+        .finish()
+}
+
+fn expired_session_cookie(
+    state: &AppState,
+    name: &'static str,
+    http_only: bool,
+) -> Cookie<'static> {
+    Cookie::build(name, "")
+        .http_only(http_only)
+        .secure(state.config.environment == "production")
+        .same_site(SameSite::Lax)
+        .path("/")
+        .max_age(CookieDuration::ZERO)
+        .finish()
+}
+
+async fn revoke_session(database: &PgPool, session: &AuthenticatedSession) -> Result<(), ()> {
+    let mut transaction = database.begin().await.map_err(|_| ())?;
+    set_tenant_context(&mut transaction, session.principal.tenant_id)
+        .await
+        .map_err(|_| ())?;
+    let result = sqlx::query(
+        "UPDATE sessions SET revoked_at = now() \
+         WHERE tenant_id = $1 AND id = $2 AND revoked_at IS NULL",
+    )
+    .bind(session.principal.tenant_id)
+    .bind(session.session_id)
+    .execute(&mut *transaction)
+    .await
+    .map_err(|_| ())?;
+    if result.rows_affected() == 1 {
+        sqlx::query(
+            "INSERT INTO audit_events \
+             (tenant_id, actor_type, actor_id, action, target_type, target_id) \
+             VALUES ($1, 'user', $2, 'session.logout', 'session', $3)",
+        )
+        .bind(session.principal.tenant_id)
+        .bind(session.principal.user_id)
+        .bind(session.session_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|_| ())?;
+    }
+    transaction.commit().await.map_err(|_| ())
 }
 
 fn valid_local_password(value: &str) -> bool {
@@ -1202,7 +1281,7 @@ async fn authenticate_session(
         return Err(AuthenticationFailure::Database);
     };
     let digest = IssuedSession::digest(&presented);
-    let Some((user_id, role, email, display_name, csrf_digest)) =
+    let Some((session_id, user_id, role, email, display_name, csrf_digest)) =
         find_session(database, tenant_id, &digest)
             .await
             .map_err(|()| AuthenticationFailure::Database)?
@@ -1216,6 +1295,7 @@ async fn authenticate_session(
         .try_into()
         .map_err(|_| AuthenticationFailure::Unauthorized)?;
     Ok(AuthenticatedSession {
+        session_id,
         principal: Principal {
             user_id,
             tenant_id,
@@ -1267,15 +1347,15 @@ async fn find_session(
     database: &PgPool,
     tenant_id: uuid::Uuid,
     digest: &[u8; 32],
-) -> Result<Option<(uuid::Uuid, String, String, String, Vec<u8>)>, ()> {
+) -> Result<Option<(uuid::Uuid, uuid::Uuid, String, String, String, Vec<u8>)>, ()> {
     let mut transaction = database.begin().await.map_err(|_| ())?;
     sqlx::query("SELECT set_config('meerkateer.tenant_id', $1, true)")
         .bind(tenant_id.to_string())
         .execute(&mut *transaction)
         .await
         .map_err(|_| ())?;
-    let session = sqlx::query_as::<_, (uuid::Uuid, String, String, String, Vec<u8>)>(
-        "SELECT sessions.user_id, memberships.role, users.email, users.display_name, \
+    let session = sqlx::query_as::<_, (uuid::Uuid, uuid::Uuid, String, String, String, Vec<u8>)>(
+        "SELECT sessions.id, sessions.user_id, memberships.role, users.email, users.display_name, \
            sessions.csrf_digest \
          FROM sessions \
          JOIN memberships ON memberships.tenant_id = sessions.tenant_id \
@@ -6836,6 +6916,7 @@ mod tests {
         let tenant_id = uuid::Uuid::new_v4();
         let issued = IssuedSession::issue(tenant_id);
         let authenticated = AuthenticatedSession {
+            session_id: issued.session_id,
             principal: Principal {
                 user_id: uuid::Uuid::new_v4(),
                 tenant_id,

@@ -91,7 +91,7 @@ and automatic remediation. Each would require a separate threat model and approv
 | `0.1.0` | Foundation preview | Executable multi-workspace core, durable ingest, SDKs, agent, Console, failure labs, and deployment packaging | Delivered | Implemented |
 | `0.2.0` | Community Alpha | One clean install reliably detects, explains, alerts, and recovers from a real fixture failure | Current developer preview | 3–5 weeks |
 | `0.3.0` | Monitoring Alpha | Production-shaped agent collectors, scheduled probes, and first supported game/SME adapters | Foundation in progress | 4–6 weeks |
-| `0.4.0` | Security Beta | Multi-user access, complete tenant matrix, distributed abuse controls, signed config, and security review | Planned | 3–5 weeks |
+| `0.4.0` | Security Beta | Multi-user access, complete tenant matrix, distributed abuse controls, signed config, and security review | Foundation in progress | 3–5 weeks |
 | `0.5.0` | Operations Beta | Tested restore/upgrade, retention, alert operations, observability, and fault tolerance | Planned | 4–6 weeks |
 | `0.6.0` | Public Preview | Installable, signed, documented release artifacts and an accessible first-user journey | Planned | 3–4 weeks |
 | `0.7.0` | Scale Beta | Published capacity, resource, compatibility, and sustained failure/recovery evidence | Planned | 3–4 weeks |
@@ -219,6 +219,14 @@ are published rather than inferred.
 ## 0.4 — Security Beta
 
 Goal: close the identity and tenant boundary before broader exposure.
+
+Current evidence: the disposable integration stack now creates two independent companies and
+tests tenant-scoped lists, direct and nested identifiers, mutations, and an agent credential from
+the other company. It then switches back and proves the protected data is unchanged. Current
+browser logout requires CSRF, revokes the durable session, expires both cookies, rejects replay of
+the old cookie, and records an audit event. This is useful foundation evidence, not completion of
+0.4: invitations/member administration, all-role coverage, replica-wide abuse controls, signed
+desired configuration, platform secret stores, and independent review remain open.
 
 Required work:
 
