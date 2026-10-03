@@ -97,6 +97,7 @@ pub fn configure_routes(config: &mut web::ServiceConfig) {
                 )
                 .route("/audit-events", web::get().to(list_audit_events))
                 .route("/admin/summary", web::get().to(admin_summary))
+                .service(member_routes())
                 .route("/ingest/heartbeat", web::post().to(ingest_heartbeat))
                 .route("/ingest/event", web::post().to(ingest_event))
                 .route("/ingest/deploy", web::post().to(ingest_deploy))
@@ -169,6 +170,13 @@ fn session_routes() -> actix_web::Scope {
         .route("/password-setup", web::post().to(password_setup))
         .route("", web::get().to(current_session))
         .route("", web::delete().to(logout))
+}
+
+fn member_routes() -> actix_web::Scope {
+    web::scope("/members")
+        .route("", web::get().to(list_members))
+        .route("/{user_id}/role", web::put().to(update_member_role))
+        .route("/{user_id}", web::delete().to(remove_member))
 }
 
 fn incident_routes() -> actix_web::Scope {
@@ -643,6 +651,25 @@ struct AdminSummaryResponse {
     worker_last_cycle_completed: i32,
     worker_last_cycle_retried: i32,
     worker_last_cycle_dead_lettered: i32,
+}
+
+#[derive(Debug, Serialize)]
+struct MemberResponse {
+    user_id: uuid::Uuid,
+    email: String,
+    display_name: String,
+    role: String,
+    created_at: chrono::DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+struct MemberListResponse {
+    items: Vec<MemberResponse>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateMemberRoleRequest {
+    role: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2730,6 +2757,172 @@ async fn cancel_maintenance_window(
     {
         return database_unavailable();
     }
+    if transaction.commit().await.is_err() {
+        return database_unavailable();
+    }
+    HttpResponse::NoContent().finish()
+}
+
+async fn list_members(request: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session
+        .principal
+        .authorize(session.principal.tenant_id, Action::MemberManage)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, session.principal.tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let rows = sqlx::query_as::<_, (uuid::Uuid, String, String, String, chrono::DateTime<Utc>)>(
+        "SELECT users.id, users.email, users.display_name, memberships.role, memberships.created_at \
+         FROM memberships JOIN users ON users.id = memberships.user_id \
+         WHERE memberships.tenant_id = $1 ORDER BY memberships.created_at, users.id",
+    )
+    .bind(session.principal.tenant_id)
+    .fetch_all(&mut *transaction)
+    .await;
+    let Ok(rows) = rows else {
+        return database_unavailable();
+    };
+    if transaction.commit().await.is_err() {
+        return database_unavailable();
+    }
+    HttpResponse::Ok().json(MemberListResponse {
+        items: rows
+            .into_iter()
+            .map(|row| MemberResponse {
+                user_id: row.0,
+                email: row.1,
+                display_name: row.2,
+                role: row.3,
+                created_at: row.4,
+            })
+            .collect(),
+    })
+}
+
+async fn update_member_role(
+    request: HttpRequest,
+    user_id: web::Path<uuid::Uuid>,
+    body: web::Json<UpdateMemberRoleRequest>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    mutate_member(&request, &state, user_id.into_inner(), Some(&body.role)).await
+}
+
+async fn remove_member(
+    request: HttpRequest,
+    user_id: web::Path<uuid::Uuid>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    mutate_member(&request, &state, user_id.into_inner(), None).await
+}
+
+async fn mutate_member(
+    request: &HttpRequest,
+    state: &AppState,
+    target_id: uuid::Uuid,
+    next_role: Option<&str>,
+) -> HttpResponse {
+    let session = match authenticate_session(request, state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session
+        .principal
+        .authorize(session.principal.tenant_id, Action::MemberManage)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    if !csrf_is_valid(request, &session) {
+        return HttpResponse::Forbidden().json(ErrorResponse {
+            code: "csrf_failed",
+        });
+    }
+    if target_id == session.principal.user_id {
+        return HttpResponse::Conflict().json(ErrorResponse {
+            code: "self_member_change",
+        });
+    }
+    if next_role.is_some_and(|role| !matches!(role, "admin" | "operator" | "viewer")) {
+        return HttpResponse::BadRequest().json(ErrorResponse {
+            code: "invalid_role",
+        });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, session.principal.tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let current = sqlx::query_scalar::<_, String>(
+        "SELECT role FROM memberships WHERE tenant_id = $1 AND user_id = $2 FOR UPDATE",
+    )
+    .bind(session.principal.tenant_id)
+    .bind(target_id)
+    .fetch_optional(&mut *transaction)
+    .await;
+    let current = match current {
+        Ok(Some(value)) => value,
+        Ok(None) => return HttpResponse::NotFound().json(ErrorResponse { code: "not_found" }),
+        Err(_) => return database_unavailable(),
+    };
+    if current == "owner" {
+        return HttpResponse::Conflict().json(ErrorResponse {
+            code: "owner_protected",
+        });
+    }
+    let action = if let Some(role) = next_role {
+        if sqlx::query("UPDATE memberships SET role = $3 WHERE tenant_id = $1 AND user_id = $2")
+            .bind(session.principal.tenant_id)
+            .bind(target_id)
+            .bind(role)
+            .execute(&mut *transaction)
+            .await
+            .is_err()
+        {
+            return database_unavailable();
+        }
+        "member.role_updated"
+    } else {
+        if sqlx::query("DELETE FROM memberships WHERE tenant_id = $1 AND user_id = $2")
+            .bind(session.principal.tenant_id)
+            .bind(target_id)
+            .execute(&mut *transaction)
+            .await
+            .is_err()
+        {
+            return database_unavailable();
+        }
+        "member.removed"
+    };
+    if sqlx::query("UPDATE sessions SET revoked_at = now() WHERE tenant_id = $1 AND user_id = $2 AND revoked_at IS NULL")
+        .bind(session.principal.tenant_id).bind(target_id).execute(&mut *transaction).await.is_err()
+    { return database_unavailable() }
+    if sqlx::query("INSERT INTO audit_events (tenant_id, actor_type, actor_id, action, target_type, target_id) VALUES ($1, 'user', $2, $3, 'user', $4)")
+        .bind(session.principal.tenant_id).bind(session.principal.user_id).bind(action).bind(target_id)
+        .execute(&mut *transaction).await.is_err() { return database_unavailable() }
     if transaction.commit().await.is_err() {
         return database_unavailable();
     }

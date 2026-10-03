@@ -345,6 +345,55 @@ def assert_role_boundaries() -> None:
         ),
         201,
     )
+    members = expect(call("GET", "/v1/members"), 200).body["items"]
+    by_email = {item["email"]: item for item in members}
+    assert "isolation-owner@example.com" not in by_email
+    expect(
+        call(
+            "DELETE",
+            f"/v1/members/{admin['user_id']}",
+            headers=browser_headers(),
+        ),
+        409,
+        "self_member_change",
+    )
+    expect(
+        call(
+            "PUT",
+            f"/v1/members/{by_email['e2e-owner@example.com']['user_id']}/role",
+            body={"role": "viewer"},
+            headers=browser_headers(),
+        ),
+        409,
+        "owner_protected",
+    )
+    expect(
+        call(
+            "PUT",
+            f"/v1/members/{viewer['user_id']}/role",
+            body={"role": "operator"},
+            headers=browser_headers(),
+        ),
+        204,
+    )
+    expect(
+        call(
+            "DELETE",
+            f"/v1/members/{operator['user_id']}",
+            headers=browser_headers(),
+        ),
+        204,
+    )
+    expect(
+        call(
+            "POST",
+            "/v1/session/password-login",
+            body={"email": "operator@example.com", "password": PASSWORD},
+        ),
+        401,
+        "invalid_credentials",
+    )
+    login("e2e-owner@example.com")
 
 
 def main() -> None:

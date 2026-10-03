@@ -348,6 +348,48 @@
         }
       }
     },
+    "/v1/members": {
+      "get": {
+        "operationId": "listMembers",
+        "security": [{ "sessionCookie": [] }],
+        "responses": {
+          "200": { "description": "Tenant members and least-privilege roles." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "Member-management permission is required." },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/members/{user_id}/role": {
+      "put": {
+        "operationId": "updateMemberRole",
+        "security": [{ "sessionCookie": [], "csrfHeader": [] }],
+        "parameters": [{ "name": "user_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["role"], "properties": { "role": { "type": "string", "enum": ["admin", "operator", "viewer"] } }, "additionalProperties": false } } } },
+        "responses": {
+          "204": { "description": "Role updated and existing member sessions revoked." },
+          "400": { "description": "The role is invalid." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "Permission or CSRF proof is insufficient." },
+          "404": { "description": "The member does not exist in this tenant." },
+          "409": { "description": "The current user or protected owner cannot be changed." }
+        }
+      }
+    },
+    "/v1/members/{user_id}": {
+      "delete": {
+        "operationId": "removeMember",
+        "security": [{ "sessionCookie": [], "csrfHeader": [] }],
+        "parameters": [{ "name": "user_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": {
+          "204": { "description": "Membership removed and existing sessions revoked." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "Permission or CSRF proof is insufficient." },
+          "404": { "description": "The member does not exist in this tenant." },
+          "409": { "description": "The current user or protected owner cannot be removed." }
+        }
+      }
+    },
     "/v1/ingest/heartbeat": {
       "post": {
         "operationId": "ingestHeartbeat",

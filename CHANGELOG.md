@@ -21,6 +21,9 @@ or a claim that the `v0.2.0` release gates have passed.
   the owner. Disposable PostgreSQL E2E sessions prove viewer read-only access, operator service
   writes without credential issuance, and admin workspace/administration access through the
   central deny-by-default role matrix.
+- Tenant-scoped member administration API for listing members, changing admin/operator/viewer
+  roles, and removing non-owner members. Mutations require CSRF, protect the acting user and owner,
+  revoke the target's active sessions immediately, and append an audit event.
 - Bounded OS-service monitoring for exact systemd `.service` units and Windows Service names.
   Queries run concurrently with a three-second ceiling, never invoke a shell, distinguish active,
   transitional, failed, missing, permission, manager, and timeout states, and expose the result in
