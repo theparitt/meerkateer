@@ -964,14 +964,15 @@ async fn password_login(
         }
         Err(()) => return database_unavailable(),
     };
-    let Ok(password_hash) = find_owner_password_hash(database, tenant_id, &body.email).await else {
+    let Ok(identity) = find_member_password_identity(database, tenant_id, &body.email).await else {
         return database_unavailable();
     };
     let Ok(permit) = Arc::clone(&state.credential_verifier).acquire_owned().await else {
         return database_unavailable();
     };
     let password = secrecy::SecretString::from(body.password.clone());
-    let known_owner = password_hash.is_some();
+    let password_hash = identity.as_ref().map(|item| item.4.clone());
+    let known_member = password_hash.is_some();
     let verified = tokio::task::spawn_blocking(move || {
         let _permit = permit;
         let hash = password_hash.unwrap_or_else(|| {
@@ -987,49 +988,51 @@ async fn password_login(
         verify_local_password(&password, &hash)
     })
     .await;
-    if !known_owner || !matches!(verified, Ok(Ok(()))) {
+    if !known_member || !matches!(verified, Ok(Ok(()))) {
         return HttpResponse::Unauthorized().json(ErrorResponse {
             code: "invalid_credentials",
         });
     }
     let session = IssuedSession::issue(tenant_id);
     let expires_at = Utc::now() + ChronoDuration::hours(12);
-    let identity = match insert_local_owner_session(
+    let Some((user_id, role, email, display_name, _)) = identity else {
+        return HttpResponse::Unauthorized().json(ErrorResponse {
+            code: "invalid_credentials",
+        });
+    };
+    if let Err(()) = insert_local_member_session(
         database,
         tenant_id,
         &session,
         expires_at,
+        user_id,
         "session.password_login",
     )
     .await
     {
-        Ok(Some(identity)) => identity,
-        Ok(None) => {
-            return HttpResponse::Conflict().json(ErrorResponse {
-                code: "owner_not_found",
-            });
-        }
-        Err(()) => return database_unavailable(),
-    };
+        return database_unavailable();
+    }
+    let identity = (user_id, role, email, display_name);
     authenticated_session_response(&state, &session, identity, expires_at)
 }
 
-async fn find_owner_password_hash(
+async fn find_member_password_identity(
     database: &PgPool,
     tenant_id: uuid::Uuid,
     email: &str,
-) -> Result<Option<String>, ()> {
+) -> Result<Option<(uuid::Uuid, String, String, String, String)>, ()> {
     let mut transaction = database.begin().await.map_err(|_| ())?;
     sqlx::query("SELECT set_config('meerkateer.tenant_id', $1, true)")
         .bind(tenant_id.to_string())
         .execute(&mut *transaction)
         .await
         .map_err(|_| ())?;
-    let result = sqlx::query_scalar::<_, Option<String>>(
-        "SELECT users.local_password_hash FROM users \
+    let result = sqlx::query_as::<_, (uuid::Uuid, String, String, String, String)>(
+        "SELECT users.id, memberships.role, users.email, users.display_name, \
+           users.local_password_hash FROM users \
          JOIN memberships ON memberships.user_id = users.id \
-         WHERE memberships.tenant_id = $1 AND memberships.role = 'owner' \
-           AND users.email = $2 AND users.disabled_at IS NULL \
+         WHERE memberships.tenant_id = $1 AND users.email = $2 \
+           AND users.disabled_at IS NULL AND users.local_password_hash IS NOT NULL \
          ORDER BY memberships.created_at, users.id LIMIT 1",
     )
     .bind(tenant_id)
@@ -1038,7 +1041,48 @@ async fn find_owner_password_hash(
     .await
     .map_err(|_| ())?;
     transaction.commit().await.map_err(|_| ())?;
-    Ok(result.flatten())
+    Ok(result)
+}
+
+async fn insert_local_member_session(
+    database: &PgPool,
+    tenant_id: uuid::Uuid,
+    session: &IssuedSession,
+    expires_at: chrono::DateTime<Utc>,
+    user_id: uuid::Uuid,
+    audit_action: &'static str,
+) -> Result<(), ()> {
+    let mut transaction = database.begin().await.map_err(|_| ())?;
+    set_tenant_context(&mut transaction, tenant_id)
+        .await
+        .map_err(|_| ())?;
+    sqlx::query(
+        "INSERT INTO sessions \
+         (id, tenant_id, user_id, token_digest, csrf_digest, expires_at) \
+         VALUES ($1, $2, $3, $4, $5, $6)",
+    )
+    .bind(session.session_id)
+    .bind(tenant_id)
+    .bind(user_id)
+    .bind(session.digest.as_slice())
+    .bind(session.csrf_digest.as_slice())
+    .bind(expires_at)
+    .execute(&mut *transaction)
+    .await
+    .map_err(|_| ())?;
+    sqlx::query(
+        "INSERT INTO audit_events \
+         (tenant_id, actor_type, actor_id, action, target_type, target_id) \
+         VALUES ($1, 'user', $2, $4, 'session', $3)",
+    )
+    .bind(tenant_id)
+    .bind(user_id)
+    .bind(session.session_id)
+    .bind(audit_action)
+    .execute(&mut *transaction)
+    .await
+    .map_err(|_| ())?;
+    transaction.commit().await.map_err(|_| ())
 }
 
 async fn password_setup(
@@ -1182,7 +1226,7 @@ async fn insert_local_owner_session(
     session: &IssuedSession,
     expires_at: chrono::DateTime<Utc>,
     audit_action: &'static str,
-) -> Result<Option<(uuid::Uuid, String, String)>, ()> {
+) -> Result<Option<(uuid::Uuid, String, String, String)>, ()> {
     let mut transaction = database.begin().await.map_err(|_| ())?;
     sqlx::query("SELECT set_config('meerkateer.tenant_id', $1, true)")
         .bind(tenant_id.to_string())
@@ -1231,13 +1275,14 @@ async fn insert_local_owner_session(
     .await
     .map_err(|_| ())?;
     transaction.commit().await.map_err(|_| ())?;
-    Ok(identity)
+    Ok(identity
+        .map(|(user_id, email, display_name)| (user_id, "owner".to_owned(), email, display_name)))
 }
 
 fn authenticated_session_response(
     state: &AppState,
     session: &IssuedSession,
-    identity: (uuid::Uuid, String, String),
+    identity: (uuid::Uuid, String, String, String),
     expires_at: chrono::DateTime<Utc>,
 ) -> HttpResponse {
     let max_age = (expires_at - Utc::now()).num_seconds().max(1);
@@ -1268,9 +1313,9 @@ fn authenticated_session_response(
         .json(SessionResponse {
             tenant_id: session.tenant_id,
             user_id: identity.0,
-            role: "owner".to_owned(),
-            email: identity.1,
-            display_name: identity.2,
+            role: identity.1,
+            email: identity.2,
+            display_name: identity.3,
         })
 }
 

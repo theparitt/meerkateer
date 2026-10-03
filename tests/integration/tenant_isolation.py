@@ -295,9 +295,62 @@ def assert_rival_unchanged(rival: dict[str, str]) -> None:
     assert incidents[0]["status"] == "open"
 
 
+def assert_role_boundaries() -> None:
+    viewer = login("viewer@example.com")
+    assert viewer["role"] == "viewer"
+    projects = expect(call("GET", "/v1/projects"), 200).body["items"]
+    primary_project = next(item for item in projects if item["slug"] == "arena-ops")
+    expect(
+        call(
+            "POST",
+            "/v1/projects",
+            body={"slug": "viewer-write", "display_name": "Viewer write"},
+            headers=browser_headers(),
+        ),
+        403,
+        "forbidden",
+    )
+    expect(call("GET", "/v1/admin/summary"), 403, "forbidden")
+
+    operator = login("operator@example.com")
+    assert operator["role"] == "operator"
+    service = expect(
+        call(
+            "POST",
+            f"/v1/projects/{primary_project['id']}/services",
+            body={"slug": "operator-service", "environment": "test"},
+            headers=browser_headers(),
+        ),
+        201,
+    ).body
+    expect(
+        call(
+            "POST",
+            f"/v1/services/{service['id']}/credentials",
+            headers=browser_headers(),
+        ),
+        403,
+        "forbidden",
+    )
+
+    admin = login("admin@example.com")
+    assert admin["role"] == "admin"
+    expect(call("GET", "/v1/admin/summary"), 200)
+    expect(
+        call(
+            "POST",
+            "/v1/projects",
+            body={"slug": "admin-workspace", "display_name": "Admin workspace"},
+            headers=browser_headers(),
+        ),
+        201,
+    )
+
+
 def main() -> None:
     rival = create_rival_objects()
     attack_from_primary(rival)
+    assert_role_boundaries()
     assert_rival_unchanged(rival)
     assert BASE_URL.startswith("http://127.0.0.1:")
     print("Two-company API isolation passed for list, direct-ID, nested-ID, and write routes.")

@@ -24,7 +24,7 @@ or a release artifact verified on a clean machine.
 | --- | --- | --- |
 | 0 — Contract and OSS foundation | Complete | 13 schemas, 30 fixtures, policy/license/secret checks, seven accepted ADRs, Apache-2.0 governance |
 | 1 — Executable skeleton | Complete | Generated OpenAPI types, PostgreSQL 18 migration, storage ports, non-root/read-only Compose, API/worker/agent/web skeletons and full-stack smoke evidence |
-| 2 — Tenant, identity, machine trust | In progress | Bootstrap/session/CSRF, audited Community owner re-login and server-side logout/revocation, inventory, service/agent credential lifecycle, immutable audit, forced RLS, separate runtime roles, bounded node-local auth/ingest limits, and a disposable two-company read/write/ID isolation matrix pass real PostgreSQL E2E; invitations/member administration, multi-user OIDC, gateway-wide limits, cloning quarantine, and signed desired config remain |
+| 2 — Tenant, identity, machine trust | In progress | Bootstrap/session/CSRF, audited role-aware Community login and server-side logout/revocation, viewer/operator/admin authorization boundaries, inventory, service/agent credential lifecycle, immutable audit, forced RLS, separate runtime roles, bounded node-local auth/ingest limits, and a disposable two-company read/write/ID isolation matrix pass real PostgreSQL E2E; invitations/member administration, multi-user OIDC, gateway-wide limits, cloning quarantine, and signed desired config remain |
 | 3 — Durable ingestion/status | In progress | Authenticated MKS/MKA paths durably commit idempotent facts plus outbox; lease-based worker retry/DLQ, gap/replay/privacy, and service status/staleness read model pass E2E. Timeline APIs, retention, partial acknowledgement, state-machine completion, and load evidence remain |
 | 4 — Production agent | In progress | One Rust CLI builds for Linux/Windows and provides enrollment, doctor, local JSON inspection, CPU/memory/fixed-filesystem/inode collection, bounded exact-name process and systemd/Windows Service checks, HTTPS policy, atomic owner-only state, an ordered 128-batch/four-MiB outage spool, automatic/manual credential rotation, and signal-config rollback. A tenant-scoped latest-batch API and responsive Machine detail UI expose completeness, staleness, inode pressure, stopped processes, and active/failed/transitional/unknown OS-service state without mixing old evidence. Preview installers run least-privilege background agents through hardened systemd and an ACL-restricted Windows startup task; signed packages/native secret stores, historical charts, alert-policy integration, container collectors, signed updates, and the real 30-minute soak remain |
 | 5 — Game/SME adapters/probes | Not started | Protocol labs and SSRF boundary still required |
@@ -44,6 +44,10 @@ or a release artifact verified on a clean machine.
   rejected, logout revokes the database record and old-cookie replay, both cookies expire, and the
   immutable audit stream contains `session.logout`. Owner password recovery revokes all older
   owner sessions and the suite proves a captured pre-recovery cookie cannot be replayed.
+  The same real-database exercise logs in viewer, operator, and admin members: viewer mutations and
+  Admin access are denied, operator service creation is allowed while credential issuance is
+  denied, and admin workspace plus Admin access succeeds. These accounts remain test fixtures;
+  product invitation and member-management APIs/UI are the next open gate.
 - Monitoring Alpha foundation: unit coverage proves a 60-batch default-interval outage fits the
   bounded spool, legacy one-batch configs migrate safely, ordered batches survive reload, and
   rollback preserves identity/credential/sequence. Real API E2E rotates the credential through

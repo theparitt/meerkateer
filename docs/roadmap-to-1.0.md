@@ -227,6 +227,9 @@ browser logout requires CSRF, revokes the durable session, expires both cookies,
 the old cookie, and records an audit event. This is useful foundation evidence, not completion of
 0.4: invitations/member administration, all-role coverage, replica-wide abuse controls, signed
 desired configuration, platform secret stores, and independent review remain open.
+Community login now authenticates active owner, admin, operator, and viewer memberships, and the
+integration matrix proves representative allow/deny boundaries for every role. Member creation is
+still test-seeded until the invitation lifecycle and Admin UI are delivered.
 
 Required work:
 

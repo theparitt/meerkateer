@@ -17,6 +17,10 @@ or a claim that the `v0.2.0` release gates have passed.
   an immutable `session.logout` audit event, and is available from the responsive Console header.
   Owner password setup/recovery also revokes every older owner session before issuing the fresh
   session, so a captured cookie cannot survive credential recovery.
+- Community password authentication now resolves any active tenant member instead of hard-coding
+  the owner. Disposable PostgreSQL E2E sessions prove viewer read-only access, operator service
+  writes without credential issuance, and admin workspace/administration access through the
+  central deny-by-default role matrix.
 - Bounded OS-service monitoring for exact systemd `.service` units and Windows Service names.
   Queries run concurrently with a three-second ceiling, never invoke a shell, distinguish active,
   transitional, failed, missing, permission, manager, and timeout states, and expose the result in
