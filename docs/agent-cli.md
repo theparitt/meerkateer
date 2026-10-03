@@ -34,7 +34,7 @@ The setup UI lets the operator enable or disable each bounded signal:
 
 - CPU utilization;
 - used and total memory;
-- aggregate used and total fixed-filesystem capacity; and
+- aggregate used and total fixed-filesystem capacity, including inode pressure on Linux; and
 - the running instance count for up to 16 explicitly named processes.
 
 An agent heartbeat is always sent so disconnects can be detected. The Controller does not collect
@@ -95,7 +95,7 @@ shortcut that opens the protected machine config with elevation. The portable Wi
 
 The dashboard provides:
 
-- a live local CPU, memory, aggregate disk, and exact-process snapshot refreshed every five seconds;
+- a live local CPU, memory, aggregate disk/inode, and exact-process snapshot refreshed every five seconds;
 - the enrolled API host, short machine/workspace identifiers, local sequence, last delivery
   success/error, retry state, and background-service registration state;
 - an explicit signal allowlist and exact process-name editor, saved atomically without exposing the
@@ -222,9 +222,21 @@ The default config is `%APPDATA%\Meerkateer\agent.json` on Windows and
 with global `--config PATH`, placed before the subcommand. Unix state is written atomically with
 owner-only permissions. Packaged configuration is stored under `%ProgramData%\Meerkateer` on
 Windows and `/var/lib/meerkateer-controller` on Ubuntu. Linux uses a hardened, unprivileged systemd
-unit; Windows uses an ACL-restricted startup task under `LOCAL SERVICE`. Package signing, native OS
-secret stores, signed updates, and offline spool beyond the current exact pending batch remain
-release work.
+unit; Windows uses an ACL-restricted startup task under `LOCAL SERVICE`. The Controller persists an
+ordered outage spool capped at 128 batches and four MiB, saves every acknowledgement atomically,
+and drains at most 16 batches per cycle so reconnect work stays bounded. Package signing, native OS
+secret stores, and signed updates remain release work.
+
+Rotate a machine credential immediately without re-enrolling or printing the new secret:
+
+```sh
+meerkateer-controller rotate-credential
+```
+
+Continuous operation also rotates automatically during the final seven days of the current
+credential. A failed early rotation leaves the still-valid credential in place and retries later.
+To undo the last saved signal-allowlist change without altering identity, sequence, credential, or
+queued telemetry, run `meerkateer-controller rollback-config`.
 
 The daemon writes non-secret delivery health to `agent.status.json` beside the protected config.
 This separate atomic file lets the TUI explain the last attempt, last success, and current bounded
@@ -255,8 +267,10 @@ design and its security gates are documented in [ADR-0008](adr/0008-bounded-remo
    verify an accepted sequence is printed.
 5. Stop the watched test process, run once again, and verify the stored `process.running` sample is
    zero. Restart it and verify the next fresh sample is non-zero.
-6. Stop the API during a send and restart it; the next run must retry the exact persisted batch
-   before advancing its sequence.
+6. Stop the API while continuous mode is collecting, then restart it; queued batches must drain in
+   order without exceeding the documented spool ceiling or advancing past an unacknowledged batch.
+7. Run `rotate-credential`, confirm the command output contains no secret, and verify the next send
+   succeeds while the previous credential is no longer accepted after its grace window.
 
 The Console Machine detail route reads only the latest durable batch and shows CPU, memory, disk,
 platform, snapshot freshness/completeness, and watched processes. A stopped process is called out by

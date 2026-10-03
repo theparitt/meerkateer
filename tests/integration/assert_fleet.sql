@@ -24,7 +24,7 @@ BEGIN
     END IF;
     IF (SELECT max(s.last_sequence) FROM agent_sequence_state s JOIN agents a
           ON a.tenant_id = s.tenant_id AND a.id = s.agent_id
-        WHERE a.display_name LIKE 'Fleet Sim %') <> 18 THEN
+        WHERE a.display_name LIKE 'Fleet Sim %') <> 24 THEN
         RAISE EXCEPTION 'simulated fleet durable sequence did not advance through retry';
     END IF;
     IF (SELECT count(*) FROM outbox o JOIN agents a

@@ -10,6 +10,12 @@ or a claim that the `v0.2.0` release gates have passed.
 
 ### Added
 
+- Monitoring Alpha resilience foundation: the Controller now keeps an ordered, disk-backed,
+  four-MiB/128-batch offline spool, migrates legacy one-batch state, drains accepted batches in
+  order after an outage, rotates expiring machine credentials automatically (or explicitly with
+  `rotate-credential`), and can atomically restore the previous signal allowlist with
+  `rollback-config`. Linux disk collection now includes bounded inode capacity, and Console
+  Machine detail visualizes inode pressure without inventing values on unsupported platforms.
 - Enforced automatic Controller startup after enrollment: Windows now verifies an enabled boot
   task, starts it immediately, and uses extended restart recovery; Linux verifies its systemd unit
   is enabled and active and uses `Restart=always`. CI locks both startup contracts, while the

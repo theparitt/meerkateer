@@ -691,6 +691,13 @@ struct AgentCapacityResponse {
 }
 
 #[derive(Debug, Serialize)]
+struct AgentCountCapacityResponse {
+    used: f64,
+    total: f64,
+    utilization_percent: f64,
+}
+
+#[derive(Debug, Serialize)]
 struct AgentProcessResponse {
     name: String,
     running: bool,
@@ -710,6 +717,7 @@ struct AgentTelemetrySnapshotResponse {
     cpu_usage_percent: Option<f64>,
     memory: Option<AgentCapacityResponse>,
     disk: Option<AgentCapacityResponse>,
+    inodes: Option<AgentCountCapacityResponse>,
     processes: Vec<AgentProcessResponse>,
     missing_metrics: Vec<&'static str>,
 }
@@ -4123,7 +4131,8 @@ async fn select_agent_telemetry(
                AND sequence BETWEEN $3 AND $4 AND record_type = 'sample' \
                AND name IN ('agent.heartbeat', 'host.cpu.utilization', \
                  'host.memory.used_bytes', 'host.memory.total_bytes', \
-                 'host.disk.used_bytes', 'host.disk.total_bytes', 'process.running') \
+                 'host.disk.used_bytes', 'host.disk.total_bytes', \
+                 'host.disk.inodes_used', 'host.disk.inodes_total', 'process.running') \
              ORDER BY sequence LIMIT 64",
         )
         .bind(tenant_id)
@@ -4195,6 +4204,10 @@ fn agent_telemetry_snapshot(
         values.get("host.disk.used_bytes").copied(),
         values.get("host.disk.total_bytes").copied(),
     );
+    let inodes = count_capacity_response(
+        values.get("host.disk.inodes_used").copied(),
+        values.get("host.disk.inodes_total").copied(),
+    );
     let mut missing_metrics = Vec::new();
     if observed_at.is_none() {
         missing_metrics.push("agent.heartbeat");
@@ -4227,6 +4240,7 @@ fn agent_telemetry_snapshot(
         cpu_usage_percent,
         memory,
         disk,
+        inodes,
         processes: processes
             .into_iter()
             .map(|(name, instances)| AgentProcessResponse {
@@ -4267,6 +4281,25 @@ fn capacity_response(
         used_bytes,
         total_bytes,
         utilization_percent: (used_bytes / total_bytes) * 100.0,
+    })
+}
+
+fn count_capacity_response(
+    used: Option<f64>,
+    total: Option<f64>,
+) -> Option<AgentCountCapacityResponse> {
+    const MAX_EXACT_COUNT: f64 = 9_007_199_254_740_992.0;
+    let used =
+        used.filter(|value| (0.0..=MAX_EXACT_COUNT).contains(value) && value.fract() == 0.0)?;
+    let total =
+        total.filter(|value| (0.0..=MAX_EXACT_COUNT).contains(value) && value.fract() == 0.0)?;
+    if total <= 0.0 || used > total {
+        return None;
+    }
+    Some(AgentCountCapacityResponse {
+        used,
+        total,
+        utilization_percent: (used / total) * 100.0,
     })
 }
 
@@ -6804,6 +6837,18 @@ mod tests {
                 serde_json::json!({}),
             ),
             (
+                "host.disk.inodes_used".to_owned(),
+                25.0,
+                now,
+                serde_json::json!({}),
+            ),
+            (
+                "host.disk.inodes_total".to_owned(),
+                100.0,
+                now,
+                serde_json::json!({}),
+            ),
+            (
                 "process.running".to_owned(),
                 0.0,
                 now,
@@ -6828,6 +6873,10 @@ mod tests {
         assert_eq!(
             result.disk.map(|value| value.utilization_percent),
             Some(75.0)
+        );
+        assert_eq!(
+            result.inodes.map(|value| value.utilization_percent),
+            Some(25.0)
         );
         assert_eq!(result.processes.len(), 1);
         assert!(!result.processes[0].running);

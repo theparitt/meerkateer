@@ -2883,6 +2883,11 @@ function MachineTelemetry({ telemetry }: { telemetry: AgentTelemetrySnapshotResp
           value={formatCapacity(telemetry.disk)}
           percent={telemetry.disk?.utilization_percent ?? null}
         />
+        <MachineMetric
+          label="Inodes"
+          value={formatInodes(telemetry.inodes)}
+          percent={telemetry.inodes?.utilization_percent ?? null}
+        />
       </div>
 
       <div className="machine-evidence-meta">
@@ -2965,6 +2970,11 @@ function formatCapacity(
 ): string {
   if (!value) return "Not reported";
   return `${formatBytes(value.used_bytes)} / ${formatBytes(value.total_bytes)}`;
+}
+
+function formatInodes(value: AgentTelemetrySnapshotResponse["inodes"]): string {
+  if (!value) return "Not available";
+  return `${Math.round(value.used).toLocaleString()} / ${Math.round(value.total).toLocaleString()}`;
 }
 
 function formatBytes(value: number): string {

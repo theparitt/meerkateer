@@ -26,7 +26,7 @@ or a release artifact verified on a clean machine.
 | 1 — Executable skeleton | Complete | Generated OpenAPI types, PostgreSQL 18 migration, storage ports, non-root/read-only Compose, API/worker/agent/web skeletons and full-stack smoke evidence |
 | 2 — Tenant, identity, machine trust | In progress | Bootstrap/session/CSRF, audited Community owner re-login, inventory, service/agent credential lifecycle, immutable audit, forced RLS, separate runtime roles, and bounded node-local auth/ingest limits pass real PostgreSQL E2E; multi-user OIDC, gateway-wide limits, cloning quarantine, and signed desired config remain |
 | 3 — Durable ingestion/status | In progress | Authenticated MKS/MKA paths durably commit idempotent facts plus outbox; lease-based worker retry/DLQ, gap/replay/privacy, and service status/staleness read model pass E2E. Timeline APIs, retention, partial acknowledgement, state-machine completion, and load evidence remain |
-| 4 — Production agent | In progress | One Rust CLI builds for Linux/Windows and provides enrollment, doctor, local JSON inspection, CPU/memory/fixed-filesystem collection, bounded exact-name process counts, HTTPS policy, atomic Unix-owner-only state, and exact durable batch retry. A tenant-scoped latest-batch API and responsive Machine detail UI expose completeness, staleness and stopped processes without mixing old evidence. Preview installers now run least-privilege background agents through hardened systemd and an ACL-restricted Windows startup task; signed packages/native secret stores, historical charts, alert-policy integration, network/service collectors, signed updates, rotation automation, and soak remain |
+| 4 — Production agent | In progress | One Rust CLI builds for Linux/Windows and provides enrollment, doctor, local JSON inspection, CPU/memory/fixed-filesystem/inode collection, bounded exact-name process counts, HTTPS policy, atomic owner-only state, an ordered 128-batch/four-MiB outage spool, automatic/manual credential rotation, and signal-config rollback. A tenant-scoped latest-batch API and responsive Machine detail UI expose completeness, staleness, inode pressure, and stopped processes without mixing old evidence. Preview installers run least-privilege background agents through hardened systemd and an ACL-restricted Windows startup task; signed packages/native secret stores, historical charts, alert-policy integration, network/service/container collectors, signed updates, and the real 30-minute soak remain |
 | 5 — Game/SME adapters/probes | Not started | Protocol labs and SSRF boundary still required |
 | 6 — Usable web product | In progress | Cute responsive Console shell deep-links Overview, Machines, Services, Incidents, Alerts, Maintenance, Admin, and Connect; keeps workspace context visible; guides the first real signal; preserves tenant-safe detail URLs; enforces role-aware controls; manages credentials/enrollment; and renders durable incidents with acknowledgement/self-assignment/notes/activity, alert outcomes/policy, maintenance windows, worker progress, tenant counts, and audit activity. Pagination, incident-detail URLs, company switching, advanced routing, accessibility review, and visual regression remain |
 | 7 — Stripe Sandbox SaaS | Not started | Cloud mode fails closed; no billing calls or entitlements exist yet |
@@ -36,6 +36,14 @@ or a release artifact verified on a clean machine.
 
 ## Latest local evidence
 
+- Monitoring Alpha foundation: unit coverage proves a 60-batch default-interval outage fits the
+  bounded spool, legacy one-batch configs migrate safely, ordered batches survive reload, and
+  rollback preserves identity/credential/sequence. Real API E2E rotates the credential through
+  the CLI without rendering its secret, accepts the replacement, revokes all credentials on
+  machine removal, and exposes Linux inode capacity in the latest-batch read model. Full Docker
+  integration, the ten-agent stale/recovery fleet, worker retry/DLQ, and the failure lab pass with
+  the expanded telemetry. A timed 30-minute disconnect and platform resource benchmark are still
+  required before `0.3.0` can close.
 - The authenticated Console now separates daily operational jobs into real deep links with desktop
   and mobile navigation. Its first-signal guide derives company/workspace/connection/fresh-signal
   progress from API data, exposes a simple Machine or Application fork, preserves one-time token
@@ -105,9 +113,9 @@ or a release artifact verified on a clean machine.
   It does not calculate uptime from missing or sparse data.
 
 - Repository policy, MKS/MKA contracts, OpenAPI and secret-shape scan pass.
-- Rust workspace: format, compile, 51 unit tests, and Clippy with warnings
+- Rust workspace: format, compile, 73 unit tests, and Clippy with warnings
   denied pass.
-- Web: Biome check, 49 Vitest tests, TypeScript build and Vite production build pass.
+- Web: 50 Vitest tests, TypeScript build and Vite production build pass.
 - Python SDK: three unit tests plus real API E2E for authenticated event delivery pass.
 - Rust SDK: three unit tests plus real API E2E for typed, authenticated event delivery pass.
 - Node.js SDK: retry/idempotency and destination policy tests pass locally; CI is configured.

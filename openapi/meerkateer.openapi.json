@@ -1685,6 +1685,16 @@
           "utilization_percent": { "type": "number", "minimum": 0, "maximum": 100 }
         }
       },
+      "AgentCountCapacityResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["used", "total", "utilization_percent"],
+        "properties": {
+          "used": { "type": "number", "minimum": 0, "maximum": 9007199254740992 },
+          "total": { "type": "number", "exclusiveMinimum": 0, "maximum": 9007199254740992 },
+          "utilization_percent": { "type": "number", "minimum": 0, "maximum": 100 }
+        }
+      },
       "AgentProcessResponse": {
         "type": "object",
         "additionalProperties": false,
@@ -1700,7 +1710,7 @@
         "additionalProperties": false,
         "required": [
           "agent_id", "connection_state", "collection_state", "observed_at", "received_at",
-          "snapshot_stale", "platform", "architecture", "cpu_usage_percent", "memory", "disk",
+          "snapshot_stale", "platform", "architecture", "cpu_usage_percent", "memory", "disk", "inodes",
           "processes", "missing_metrics"
         ],
         "properties": {
@@ -1722,6 +1732,12 @@
           "disk": {
             "oneOf": [
               { "$ref": "#/components/schemas/AgentCapacityResponse" },
+              { "type": "null" }
+            ]
+          },
+          "inodes": {
+            "oneOf": [
+              { "$ref": "#/components/schemas/AgentCountCapacityResponse" },
               { "type": "null" }
             ]
           },

@@ -121,9 +121,11 @@ def retry_after_network_failure(config_path: pathlib.Path) -> None:
     assert failed.returncode != 0, failed.stdout
     assert "mka_agent_" not in failed.stdout + failed.stderr
     pending = json.loads(config_path.read_text(encoding="utf-8"))
-    assert pending["pending_batch"]["first_sequence"] == next_sequence, pending
-    pending_last_sequence = pending["pending_batch"]["last_sequence"]
-    pending_batch_id = pending["pending_batch"]["batch_id"]
+    assert len(pending["pending_batches"]) == 1, pending
+    pending_batch = pending["pending_batches"][0]
+    assert pending_batch["first_sequence"] == next_sequence, pending
+    pending_last_sequence = pending_batch["last_sequence"]
+    pending_batch_id = pending_batch["batch_id"]
 
     pending["server_url"] = server_url
     config_path.write_text(json.dumps(pending), encoding="utf-8")
@@ -131,6 +133,7 @@ def retry_after_network_failure(config_path: pathlib.Path) -> None:
     assert accepted["batch_id"] == pending_batch_id, accepted
     persisted = json.loads(config_path.read_text(encoding="utf-8"))
     assert "pending_batch" not in persisted, persisted
+    assert "pending_batches" not in persisted, persisted
     assert persisted["next_sequence"] == pending_last_sequence + 1, persisted
 
 

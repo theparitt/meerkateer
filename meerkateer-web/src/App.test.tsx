@@ -485,6 +485,11 @@ describe("App", () => {
                 total_bytes: 107374182400,
                 utilization_percent: 75,
               },
+              inodes: {
+                used: 250000,
+                total: 1000000,
+                utilization_percent: 25,
+              },
               processes: [
                 { name: "java", running: false, instances: 0 },
                 { name: "postgres", running: true, instances: 1 },
@@ -593,6 +598,7 @@ describe("App", () => {
     expect(await screen.findByText("What the agent can see")).toBeTruthy();
     expect(screen.getByText("1 watched process is not running.")).toBeTruthy();
     expect(screen.getByText("8.0 GiB / 16 GiB")).toBeTruthy();
+    expect(screen.getByText("250,000 / 1,000,000")).toBeTruthy();
     expect(screen.getAllByText("java")).toHaveLength(2);
     expect(screen.getByText("Not running")).toBeTruthy();
     expect(screen.getByText("postgres")).toBeTruthy();

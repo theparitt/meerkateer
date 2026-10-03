@@ -53,8 +53,8 @@ The rolling developer preview provides ready-to-install packages built from this
 | Ubuntu 22.04+ amd64 | [DEB package](https://github.com/theparitt/meerkateer/releases/download/controller-preview/meerkateer-controller_0.2.0_amd64.deb) | `sudo meerkateer-controller setup` opens the Rust terminal UI |
 | Windows x64 automation | [Portable CLI ZIP](https://github.com/theparitt/meerkateer/releases/download/controller-preview/meerkateer-controller-windows-x86_64.zip) | CLI automation plus `meerkateer-controller.exe tui` |
 
-You choose whether the Controller sends CPU, memory, aggregate disk, or selected process-running
-signals. A small heartbeat is always included. It never accepts inbound commands or collects files,
+You choose whether the Controller sends CPU, memory, aggregate disk/inode capacity, or selected
+process-running signals. A small heartbeat is always included. It never accepts inbound commands or collects files,
 command arguments, environment values, or player/chat content. Preview packages are currently
 unsigned; verify their adjacent `.sha256` file. Installers show the
 [Developer Preview notice](packaging/CONTROLLER-DISCLAIMER.md), and first enrollment requires
@@ -71,8 +71,9 @@ meerkateer-controller test-connection --server https://meerkateer-api.example.co
 
 Runtime errors are recorded locally as a redacted code, summary, and next action—for example
 `storage_full`, `dns_failed`, `network_timeout`, `proxy_failed`, `tls_failed`,
-`authentication_rejected`, or `api_unavailable`. A failed telemetry batch remains durable and is
-retried without skipping its sequence.
+`authentication_rejected`, or `api_unavailable`. During an outage, telemetry continues into an
+ordered disk-backed spool capped at 128 batches and four MiB; reconnection drains acknowledged
+batches in sequence without silently skipping them.
 
 The background Controller stays headless and reliable. Open the optional cross-platform Rust TUI
 only when you want a live local snapshot, diagnostics, or signal settings; use the Web Console to

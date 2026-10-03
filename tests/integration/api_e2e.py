@@ -1000,27 +1000,34 @@ def enroll_agent(project_id: str) -> tuple[str, str]:
         assert "firewall" in failed_status["last_error_hint"].lower()
         assert "mka_agent_" not in status_path.read_text(encoding="utf-8")
         pending = json.loads(config_path.read_text(encoding="utf-8"))
-        assert pending["pending_batch"]["first_sequence"] == 1
-        assert pending["pending_batch"]["last_sequence"] == 7
-        assert len(pending["pending_batch"]["records"]) == 7
+        assert len(pending["pending_batches"]) == 1
+        pending_batch = pending["pending_batches"][0]
+        assert pending_batch["first_sequence"] == 1
+        pending_last_sequence = pending_batch["last_sequence"]
+        assert pending_last_sequence >= 7
+        assert len(pending_batch["records"]) == pending_last_sequence
         process_records = [
             record
-            for record in pending["pending_batch"]["records"]
+            for record in pending_batch["records"]
             if record["metric"] == "process.running"
         ]
         assert len(process_records) == 1
         assert process_records[0]["attributes"] == {"process": "python3"}
         assert process_records[0]["value"] >= 1
-        pending_batch_id = pending["pending_batch"]["batch_id"]
+        pending_batch_id = pending_batch["batch_id"]
         pending["server_url"] = f"{BASE_URL}/"
         config_path.write_text(json.dumps(pending), encoding="utf-8")
 
         sent = run_agent(["--config", str(config_path), "run", "--once"])
-        assert sent["status"] == "accepted" and sent["accepted_through_sequence"] == 7
+        assert (
+            sent["status"] == "accepted"
+            and sent["accepted_through_sequence"] == pending_last_sequence
+        )
         assert sent["batch_id"] == pending_batch_id
         persisted = json.loads(config_path.read_text(encoding="utf-8"))
-        assert persisted["next_sequence"] == 8
+        assert persisted["next_sequence"] == pending_last_sequence + 1
         assert "pending_batch" not in persisted
+        assert "pending_batches" not in persisted
         recovered_status = json.loads(status_path.read_text(encoding="utf-8"))
         assert recovered_status["last_success_at"]
         assert recovered_status["last_error_at"] is None
@@ -1037,19 +1044,30 @@ def enroll_agent(project_id: str) -> tuple[str, str]:
         assert 0 <= snapshot["cpu_usage_percent"] <= 100
         assert snapshot["memory"]["used_bytes"] <= snapshot["memory"]["total_bytes"]
         assert snapshot["disk"]["used_bytes"] <= snapshot["disk"]["total_bytes"]
+        if snapshot["platform"] == "linux":
+            assert snapshot["inodes"]["used"] <= snapshot["inodes"]["total"]
         assert snapshot["missing_metrics"] == []
         assert len(snapshot["processes"]) == 1
         assert snapshot["processes"][0]["name"] == "python3"
         assert snapshot["processes"][0]["running"] is True
         assert snapshot["processes"][0]["instances"] >= 1
         expect(call("GET", f"/v1/agents/{uuid.uuid4()}/telemetry"), 404, "not_found")
+        old_agent_secret = persisted["credential"]
+        local_rotation = run_agent(
+            ["--config", str(config_path), "rotate-credential"]
+        )
+        assert local_rotation["status"] == "rotated"
+        assert "secret" not in local_rotation
+        rotated_config = json.loads(config_path.read_text(encoding="utf-8"))
+        assert rotated_config["credential"] != old_agent_secret
+        assert rotated_config["credential_id"] == local_rotation["credential_id"]
         installation_id = config["installation_id"]
         enrollment_body = {
             "installation_id": installation_id,
             "display_name": "E2E Game Host",
         }
         agent_id = config["agent_id"]
-        agent_secret = config["credential"]
+        agent_secret = rotated_config["credential"]
 
     expect(
         call(

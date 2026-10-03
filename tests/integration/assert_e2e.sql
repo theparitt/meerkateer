@@ -17,13 +17,16 @@ BEGIN
        OR (SELECT count(*) FROM agent_batches WHERE gap_detected) <> 1 THEN
         RAISE EXCEPTION 'agent batch or gap evidence is incorrect';
     END IF;
-    IF (SELECT count(*) FROM agent_telemetry_records) <> 11
+    IF (SELECT count(*) FROM agent_telemetry_records) <> 13
+       OR (SELECT count(*) FROM agent_telemetry_records
+             WHERE name IN ('host.disk.inodes_used', 'host.disk.inodes_total')) <> 2
        OR (SELECT max(last_sequence) FROM agent_sequence_state) <> 44 THEN
         RAISE EXCEPTION 'agent record or sequence projection is incorrect';
     END IF;
-    IF (SELECT count(*) FROM agent_credentials) <> 2
-       OR (SELECT count(*) FROM agent_credentials WHERE password_hash LIKE '$argon2id$%') <> 2
-       OR (SELECT count(*) FROM agent_credentials WHERE revoked_at IS NOT NULL) <> 2 THEN
+    IF (SELECT count(*) FROM agent_credentials) <> 3
+       OR (SELECT count(*) FROM agent_credentials WHERE password_hash LIKE '$argon2id$%') <> 3
+       OR (SELECT count(*) FROM agent_credentials WHERE revoked_at IS NOT NULL) <> 3
+       OR (SELECT count(DISTINCT id) FROM agent_credentials) <> 3 THEN
         RAISE EXCEPTION 'agent credential hash/revocation evidence is incomplete';
     END IF;
     IF (SELECT count(*) FROM agents WHERE status = 'revoked') <> 1 THEN
@@ -109,7 +112,7 @@ BEGIN
        OR (SELECT count(*) FROM audit_events WHERE action = 'agent.enroll') <> 1
        OR (SELECT count(*) FROM audit_events WHERE action = 'workspace.agent.assign') <> 1
        OR (SELECT count(*) FROM audit_events WHERE action = 'workspace.agent.unassign') <> 1
-       OR (SELECT count(*) FROM audit_events WHERE action = 'agent_credential.rotate') <> 1
+       OR (SELECT count(*) FROM audit_events WHERE action = 'agent_credential.rotate') <> 2
        OR (SELECT count(*) FROM audit_events WHERE action = 'agent.revoke') <> 1 THEN
         RAISE EXCEPTION 'credential lifecycle audit evidence is incomplete';
     END IF;

@@ -1776,6 +1776,7 @@ dependencies = [
  "meerkateer-protocol",
  "ratatui",
  "reqwest",
+ "rustix",
  "serde",
  "serde_json",
  "sysinfo",

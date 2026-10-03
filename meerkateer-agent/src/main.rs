@@ -13,7 +13,7 @@ use std::{
 
 use anyhow::{Context, bail, ensure};
 use atomic_write_file::OpenOptions;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use clap::{Parser, Subcommand, ValueEnum};
 use meerkateer_protocol::mka1::{PROTOCOL_VERSION, TelemetryBatch, TelemetryRecord};
 use reqwest::{Client, StatusCode, Url};
@@ -27,10 +27,15 @@ use zeroize::Zeroizing;
 use crate::collector::HostSnapshot;
 
 const CONFIG_VERSION: u8 = 1;
+const SIGNAL_BACKUP_VERSION: u8 = 1;
 const RUNTIME_STATUS_VERSION: u8 = 1;
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
 const MAX_RUNTIME_ERROR_CHARS: usize = 240;
 const DEFAULT_INTERVAL_SECONDS: u64 = 30;
+const MAX_SPOOL_BATCHES: usize = 128;
+const MAX_SPOOL_BYTES: usize = 4 * 1024 * 1024;
+const MAX_DRAIN_BATCHES_PER_CYCLE: usize = 16;
+const CREDENTIAL_ROTATION_LEAD_DAYS: i64 = 7;
 
 #[derive(Debug, Parser)]
 #[command(version, about = "Outbound-only Meerkateer host Controller")]
@@ -58,6 +63,8 @@ enum Command {
     },
     /// Verify the local configuration without displaying credentials.
     Doctor,
+    /// Replace the machine credential atomically without re-enrollment.
+    RotateCredential,
     /// Test local storage, URL, DNS, proxy/VPN-sensitive routing, TLS, and API readiness.
     TestConnection {
         /// Meerkateer API base URL. HTTPS is required except on loopback.
@@ -76,6 +83,8 @@ enum Command {
         #[arg(long = "watch-process")]
         watch_processes: Vec<String>,
     },
+    /// Restore the previous bounded signal selection without changing machine identity.
+    RollbackConfig,
     /// Open the local interactive dashboard and setup terminal UI.
     Tui,
     /// Inspect this host locally without requiring enrollment or sending data.
@@ -117,11 +126,17 @@ enum ControlPlane {
     Cloud,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct SignalSelection {
     enabled: BTreeSet<SignalKind>,
     #[serde(default)]
     watched_processes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SignalBackup {
+    version: u8,
+    signals: SignalSelection,
 }
 
 impl Default for SignalSelection {
@@ -190,7 +205,11 @@ struct AgentConfig {
     #[serde(default)]
     signals: SignalSelection,
     next_sequence: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pending_batches: Vec<TelemetryBatch>,
+    // Read one-batch 0.1/0.2 configs and migrate them into pending_batches.
+    // New writes omit this compatibility field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pending_batch: Option<TelemetryBatch>,
 }
 
@@ -209,6 +228,10 @@ struct DoctorResult<'a> {
     signals: Vec<&'static str>,
     watched_processes: &'a [String],
     pending_batch: bool,
+    spool_batches: usize,
+    spool_bytes: usize,
+    spool_capacity_batches: usize,
+    spool_capacity_bytes: usize,
     next_sequence: u64,
     last_error_code: Option<&'a str>,
     last_error: Option<&'a str>,
@@ -225,11 +248,21 @@ struct EnrollmentResult<'a> {
 }
 
 #[derive(Debug, Serialize)]
+struct RotationResult<'a> {
+    status: &'static str,
+    credential_id: Uuid,
+    expires_at: &'a str,
+    previous_valid_until: &'a str,
+}
+
+#[derive(Debug, Serialize)]
 struct SendResult {
     status: &'static str,
     agent_id: Uuid,
     batch_id: Uuid,
     accepted_through_sequence: u64,
+    delivered_batches: usize,
+    spool_batches_remaining: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -282,6 +315,14 @@ struct EnrollResponse {
 }
 
 #[derive(Debug, Deserialize)]
+struct RotateCredentialResponse {
+    credential_id: Uuid,
+    secret: String,
+    expires_at: String,
+    previous_valid_until: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct TelemetryAck {
     protocol_version: String,
     agent_id: Uuid,
@@ -313,6 +354,7 @@ async fn main() -> anyhow::Result<()> {
             name,
         } => enroll(&config_path, destination, &server, &name).await,
         Command::Doctor => doctor(&config_path),
+        Command::RotateCredential => rotate_credential(&config_path).await,
         Command::TestConnection { server, strict } => {
             let report = diagnostics::test_self_hosted_connection(&server, &config_path).await;
             println!("{}", serde_json::to_string_pretty(&report)?);
@@ -326,6 +368,7 @@ async fn main() -> anyhow::Result<()> {
             signals,
             watch_processes,
         } => configure(&config_path, &signals, watch_processes),
+        Command::RollbackConfig => rollback_signal_selection(&config_path),
         Command::Tui => tui::run(&config_path).await,
         Command::Inspect { watch_processes } => inspect(&watch_processes).await,
         Command::Run {
@@ -369,9 +412,87 @@ fn save_signal_selection(
         "select at least one signal; the heartbeat is always sent"
     );
     let mut config = load_config(config_path)?;
+    if config.signals != selection {
+        save_signal_backup(
+            &signal_backup_path(config_path),
+            &SignalBackup {
+                version: SIGNAL_BACKUP_VERSION,
+                signals: config.signals.clone(),
+            },
+        )?;
+    }
     config.signals = selection.clone();
     save_config(config_path, &config)?;
     Ok(selection)
+}
+
+fn rollback_signal_selection(config_path: &Path) -> anyhow::Result<()> {
+    let backup = load_signal_backup(&signal_backup_path(config_path))?;
+    let selection = save_signal_selection(config_path, backup.signals)?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&ConfigureResult {
+            status: "rolled_back",
+            config_path: config_path.display().to_string(),
+            signals: selection.names(),
+            watched_processes: &selection.watched_processes,
+        })?
+    );
+    Ok(())
+}
+
+fn signal_backup_path(config_path: &Path) -> PathBuf {
+    let stem = config_path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("agent");
+    config_path.with_file_name(format!("{stem}.signals.previous.json"))
+}
+
+fn load_signal_backup(path: &Path) -> anyhow::Result<SignalBackup> {
+    let bytes = fs::read(path).with_context(|| {
+        format!(
+            "no previous signal configuration is available at {}",
+            path.display()
+        )
+    })?;
+    let backup: SignalBackup = serde_json::from_slice(&bytes)
+        .with_context(|| format!("{} is not a valid signal backup", path.display()))?;
+    ensure!(
+        backup.version == SIGNAL_BACKUP_VERSION,
+        "unsupported signal backup version"
+    );
+    collector::validate_watched_processes(&backup.signals.watched_processes)?;
+    Ok(backup)
+}
+
+fn save_signal_backup(path: &Path, backup: &SignalBackup) -> anyhow::Result<()> {
+    let parent = path
+        .parent()
+        .filter(|value| !value.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent).with_context(|| format!("failed to create {}", parent.display()))?;
+    secure_directory(parent)?;
+    let bytes = serde_json::to_vec_pretty(backup)?;
+    #[cfg(unix)]
+    let options = {
+        use atomic_write_file::unix::OpenOptionsExt as _;
+        use std::os::unix::fs::OpenOptionsExt as _;
+        let mut options = OpenOptions::new();
+        options.preserve_mode(false).mode(0o600);
+        options
+    };
+    #[cfg(not(unix))]
+    let options = OpenOptions::new();
+    let mut file = options
+        .open(path)
+        .with_context(|| format!("failed to securely open {}", path.display()))?;
+    file.write_all(&bytes)
+        .with_context(|| format!("failed to write {}", path.display()))?;
+    file.write_all(b"\n")?;
+    file.commit()
+        .with_context(|| format!("failed to atomically save {}", path.display()))
 }
 
 async fn inspect(watched_processes: &[String]) -> anyhow::Result<()> {
@@ -462,6 +583,7 @@ async fn enroll_with_token(
                 credential_expires_at: None,
                 signals: SignalSelection::default(),
                 next_sequence: 1,
+                pending_batches: Vec::new(),
                 pending_batch: None,
             };
             save_config(config_path, &pending)?;
@@ -513,6 +635,81 @@ async fn enroll_with_token(
     })
 }
 
+async fn rotate_credential(config_path: &Path) -> anyhow::Result<()> {
+    let client = http_client()?;
+    let mut config = load_config(config_path)?;
+    validate_complete_config(&config)?;
+    ensure_credential_valid(&config)?;
+    let rotated = rotate_local_credential(&client, config_path, &mut config).await?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&RotationResult {
+            status: "rotated",
+            credential_id: rotated.credential_id,
+            expires_at: &rotated.expires_at,
+            previous_valid_until: &rotated.previous_valid_until,
+        })?
+    );
+    Ok(())
+}
+
+async fn rotate_local_credential(
+    client: &Client,
+    config_path: &Path,
+    config: &mut AgentConfig,
+) -> anyhow::Result<RotateCredentialResponse> {
+    let server_url = validate_server_url(&config.server_url)?;
+    let agent_id = config
+        .agent_id
+        .context("agent configuration is not enrolled")?;
+    let credential = Zeroizing::new(
+        config
+            .credential
+            .as_deref()
+            .context("agent configuration is missing its credential")?
+            .to_owned(),
+    );
+    let endpoint = server_url.join(&format!("v1/agents/{agent_id}/credentials/rotate"))?;
+    let response = client
+        .post(endpoint)
+        .bearer_auth(credential.as_str())
+        .send()
+        .await
+        .context("credential rotation request failed")?;
+    let status = response.status();
+    let body = read_bounded_body(response).await?;
+    if status != StatusCode::CREATED {
+        return Err(http_error("credential rotation", status, &body));
+    }
+    let rotated: RotateCredentialResponse = serde_json::from_slice(&body)
+        .context("Meerkateer returned an invalid credential rotation response")?;
+    ensure!(
+        rotated.secret.starts_with("mka_agent_"),
+        "Meerkateer returned an invalid replacement credential"
+    );
+    let expiry = DateTime::parse_from_rfc3339(&rotated.expires_at)
+        .context("replacement credential expiry is invalid")?
+        .with_timezone(&Utc);
+    let overlap = DateTime::parse_from_rfc3339(&rotated.previous_valid_until)
+        .context("previous credential overlap is invalid")?
+        .with_timezone(&Utc);
+    ensure!(
+        expiry > Utc::now(),
+        "replacement credential is already expired"
+    );
+    ensure!(
+        overlap > Utc::now() && overlap < expiry,
+        "credential overlap window is invalid"
+    );
+    config.credential_id = Some(rotated.credential_id);
+    config.credential = Some(rotated.secret.clone());
+    config.credential_expires_at = Some(rotated.expires_at.clone());
+    save_config(config_path, config).context(
+        "credential rotated remotely but could not be saved; retry within the overlap window",
+    )?;
+    Ok(rotated)
+}
+
 fn doctor(config_path: &Path) -> anyhow::Result<()> {
     let config = load_config(config_path)?;
     validate_complete_config(&config)?;
@@ -526,7 +723,7 @@ fn doctor(config_path: &Path) -> anyhow::Result<()> {
         .with_timezone(&Utc);
     let status = if expiry <= Utc::now() {
         "credential_expired"
-    } else if config.pending_batch.is_some() {
+    } else if !config.pending_batches.is_empty() {
         "pending_retry"
     } else {
         "ok"
@@ -544,7 +741,11 @@ fn doctor(config_path: &Path) -> anyhow::Result<()> {
         credential_expires_at: Some(expires_at),
         signals: config.signals.names(),
         watched_processes: &config.signals.watched_processes,
-        pending_batch: config.pending_batch.is_some(),
+        pending_batch: !config.pending_batches.is_empty(),
+        spool_batches: config.pending_batches.len(),
+        spool_bytes: spool_size_bytes(&config)?,
+        spool_capacity_batches: MAX_SPOOL_BATCHES,
+        spool_capacity_bytes: MAX_SPOOL_BYTES,
         next_sequence: config.next_sequence,
         last_error_code: runtime.last_error_code.as_deref(),
         last_error: runtime.last_error.as_deref(),
@@ -573,7 +774,7 @@ async fn run(
     );
 
     loop {
-        let result = send_once(&client, config_path, watched_processes).await;
+        let result = send_cycle(&client, config_path, watched_processes, !once).await;
         if let Err(error) = record_runtime_status(config_path, result.as_ref().err()) {
             warn!(error = %error, "could not persist local Controller runtime status");
         }
@@ -695,98 +896,156 @@ fn sanitize_runtime_message(error: &anyhow::Error, classified_message: &str) -> 
         .collect()
 }
 
-async fn send_once(
+async fn send_cycle(
     client: &Client,
     config_path: &Path,
     watched_process_overrides: &[String],
+    collect_while_backlogged: bool,
 ) -> anyhow::Result<SendResult> {
     let mut config = load_config(config_path)?;
     validate_complete_config(&config)?;
     ensure_credential_valid(&config)?;
+    if credential_rotation_due(&config)?
+        && let Err(error) = rotate_local_credential(client, config_path, &mut config).await
+    {
+        warn!(
+            error = %error,
+            "automatic credential rotation failed; continuing inside the valid credential window"
+        );
+    }
     let server_url = validate_server_url(&config.server_url)?;
     let agent_id = config
         .agent_id
         .context("agent configuration is not enrolled")?;
-    let credential = config
-        .credential
-        .as_deref()
-        .context("agent configuration is missing its credential")?;
+    let credential = Zeroizing::new(
+        config
+            .credential
+            .as_deref()
+            .context("agent configuration is missing its credential")?
+            .to_owned(),
+    );
 
-    if config.pending_batch.is_none() {
+    if config.pending_batches.is_empty() || collect_while_backlogged {
         let mut signals = config.signals.clone();
         if !watched_process_overrides.is_empty() {
             collector::validate_watched_processes(watched_process_overrides)?;
             signals.enabled.insert(SignalKind::Process);
             signals.watched_processes = watched_process_overrides.to_vec();
         }
-        let snapshot = collector::collect(&signals.watched_processes).await?;
-        config.pending_batch = Some(build_host_batch(
-            agent_id,
-            config.next_sequence,
-            &snapshot,
-            &signals,
-        )?);
-        save_config(config_path, &config)?;
+        if config.pending_batches.len() < MAX_SPOOL_BATCHES {
+            let snapshot = collector::collect(&signals.watched_processes).await?;
+            let sequence = next_collection_sequence(&config)?;
+            let batch = build_host_batch(agent_id, sequence, &snapshot, &signals)?;
+            config.pending_batches.push(batch);
+            if spool_size_bytes(&config)? > MAX_SPOOL_BYTES {
+                config.pending_batches.pop();
+            }
+            save_config(config_path, &config)?;
+        }
     }
-    let batch = config
-        .pending_batch
-        .as_ref()
-        .context("pending telemetry batch disappeared")?;
     ensure!(
-        batch.agent_id == agent_id,
-        "pending batch belongs to a different agent"
-    );
-    ensure!(
-        batch.first_sequence == config.next_sequence,
-        "pending batch sequence does not match local sequence state"
+        !config.pending_batches.is_empty(),
+        "offline spool is full and contains no deliverable batch"
     );
 
-    let endpoint = server_url.join("v1/agent/telemetry")?;
-    let response = client
-        .post(endpoint)
-        .bearer_auth(credential)
-        .header("Idempotency-Key", batch.batch_id.to_string())
-        .json(batch)
-        .send()
-        .await
-        .context("telemetry request failed")?;
-    let status = response.status();
-    let body = read_bounded_body(response).await?;
-    if !matches!(status, StatusCode::OK | StatusCode::ACCEPTED) {
-        return Err(http_error("telemetry delivery", status, &body));
-    }
-    let ack: TelemetryAck = serde_json::from_slice(&body)
-        .context("Meerkateer returned an invalid telemetry acknowledgement")?;
-    ensure!(
-        ack.protocol_version == PROTOCOL_VERSION,
-        "telemetry acknowledgement protocol mismatch"
-    );
-    ensure!(
-        ack.agent_id == agent_id,
-        "telemetry acknowledgement agent mismatch"
-    );
-    ensure!(
-        ack.batch_id == batch.batch_id,
-        "telemetry acknowledgement batch mismatch"
-    );
-    ensure!(ack.status == "accepted", "telemetry batch was not accepted");
-    ensure!(
-        ack.accepted_through_sequence == batch.last_sequence,
-        "telemetry acknowledgement sequence mismatch"
-    );
-    let result = SendResult {
-        status: "accepted",
+    drain_spool(
+        client,
+        config_path,
+        &mut config,
+        &server_url,
         agent_id,
-        batch_id: batch.batch_id,
-        accepted_through_sequence: ack.accepted_through_sequence,
-    };
-    config.next_sequence = batch
-        .last_sequence
-        .checked_add(1)
-        .context("agent sequence exhausted")?;
-    config.pending_batch = None;
-    save_config(config_path, &config)?;
-    Ok(result)
+        credential.as_str(),
+    )
+    .await
+}
+
+async fn drain_spool(
+    client: &Client,
+    config_path: &Path,
+    config: &mut AgentConfig,
+    server_url: &Url,
+    agent_id: Uuid,
+    credential: &str,
+) -> anyhow::Result<SendResult> {
+    let endpoint = server_url.join("v1/agent/telemetry")?;
+    let mut last_result = None;
+    for delivered in 0..MAX_DRAIN_BATCHES_PER_CYCLE {
+        let Some(batch) = config.pending_batches.first().cloned() else {
+            break;
+        };
+        ensure!(
+            batch.agent_id == agent_id,
+            "pending batch belongs to a different agent"
+        );
+        ensure!(
+            batch.first_sequence == config.next_sequence,
+            "pending batch sequence does not match local sequence state"
+        );
+
+        let response = client
+            .post(endpoint.clone())
+            .bearer_auth(credential)
+            .header("Idempotency-Key", batch.batch_id.to_string())
+            .json(&batch)
+            .send()
+            .await
+            .context("telemetry request failed")?;
+        let status = response.status();
+        let body = read_bounded_body(response).await?;
+        if !matches!(status, StatusCode::OK | StatusCode::ACCEPTED) {
+            return Err(http_error("telemetry delivery", status, &body));
+        }
+        let ack: TelemetryAck = serde_json::from_slice(&body)
+            .context("Meerkateer returned an invalid telemetry acknowledgement")?;
+        ensure!(
+            ack.protocol_version == PROTOCOL_VERSION,
+            "telemetry acknowledgement protocol mismatch"
+        );
+        ensure!(
+            ack.agent_id == agent_id,
+            "telemetry acknowledgement agent mismatch"
+        );
+        ensure!(
+            ack.batch_id == batch.batch_id,
+            "telemetry acknowledgement batch mismatch"
+        );
+        ensure!(ack.status == "accepted", "telemetry batch was not accepted");
+        ensure!(
+            ack.accepted_through_sequence == batch.last_sequence,
+            "telemetry acknowledgement sequence mismatch"
+        );
+        config.next_sequence = batch
+            .last_sequence
+            .checked_add(1)
+            .context("agent sequence exhausted")?;
+        config.pending_batches.remove(0);
+        save_config(config_path, config)?;
+        last_result = Some(SendResult {
+            status: "accepted",
+            agent_id,
+            batch_id: batch.batch_id,
+            accepted_through_sequence: ack.accepted_through_sequence,
+            delivered_batches: delivered + 1,
+            spool_batches_remaining: config.pending_batches.len(),
+        });
+    }
+    last_result.context("offline spool contained no deliverable batch")
+}
+
+fn next_collection_sequence(config: &AgentConfig) -> anyhow::Result<u64> {
+    config
+        .pending_batches
+        .last()
+        .map_or(Ok(config.next_sequence), |batch| {
+            batch
+                .last_sequence
+                .checked_add(1)
+                .context("agent sequence exhausted")
+        })
+}
+
+fn spool_size_bytes(config: &AgentConfig) -> anyhow::Result<usize> {
+    Ok(serde_json::to_vec(&config.pending_batches)?.len())
 }
 
 fn build_host_batch(
@@ -827,6 +1086,12 @@ fn build_host_batch(
                 bytes_as_metric(snapshot.disk_total_bytes),
             ),
         ]);
+        if let (Some(used), Some(total)) = (snapshot.inode_used, snapshot.inode_total) {
+            metrics.extend([
+                ("host.disk.inodes_used", bytes_as_metric(used)),
+                ("host.disk.inodes_total", bytes_as_metric(total)),
+            ]);
+        }
     }
     let process_capacity = if signals.enabled.contains(&SignalKind::Process) {
         snapshot.watched_processes.len()
@@ -901,6 +1166,18 @@ fn validate_complete_config(config: &AgentConfig) -> anyhow::Result<()> {
         "Meerkateer Cloud is not open yet; this Controller must use self-hosted Community"
     );
     ensure!(config.next_sequence > 0, "agent sequence state is invalid");
+    ensure!(
+        config.pending_batch.is_none(),
+        "legacy pending batch was not migrated into the offline spool"
+    );
+    ensure!(
+        config.pending_batches.len() <= MAX_SPOOL_BATCHES,
+        "offline spool exceeds its batch ceiling"
+    );
+    ensure!(
+        spool_size_bytes(config)? <= MAX_SPOOL_BYTES,
+        "offline spool exceeds its disk ceiling"
+    );
     collector::validate_watched_processes(&config.signals.watched_processes)?;
     ensure!(
         config.signals.enabled.contains(&SignalKind::Process)
@@ -922,6 +1199,26 @@ fn validate_complete_config(config: &AgentConfig) -> anyhow::Result<()> {
         config.credential_expires_at.is_some(),
         "agent credential expiry is missing"
     );
+    let agent_id = config.agent_id.context("agent enrollment is incomplete")?;
+    let mut expected_sequence = config.next_sequence;
+    for batch in &config.pending_batches {
+        ensure!(
+            batch.agent_id == agent_id,
+            "offline spool contains another agent's batch"
+        );
+        ensure!(
+            batch.has_valid_shape(),
+            "offline spool contains an invalid batch"
+        );
+        ensure!(
+            batch.first_sequence == expected_sequence,
+            "offline spool sequence is not contiguous"
+        );
+        expected_sequence = batch
+            .last_sequence
+            .checked_add(1)
+            .context("agent sequence exhausted")?;
+    }
     Ok(())
 }
 
@@ -938,6 +1235,17 @@ fn ensure_credential_valid(config: &AgentConfig) -> anyhow::Result<()> {
         "agent credential has expired; re-enroll this machine"
     );
     Ok(())
+}
+
+fn credential_rotation_due(config: &AgentConfig) -> anyhow::Result<bool> {
+    let expires_at = config
+        .credential_expires_at
+        .as_deref()
+        .context("agent credential expiry is missing")?;
+    let expiry = DateTime::parse_from_rfc3339(expires_at)
+        .context("agent credential expiry is invalid")?
+        .with_timezone(&Utc);
+    Ok(expiry <= Utc::now() + ChronoDuration::days(CREDENTIAL_ROTATION_LEAD_DAYS))
 }
 
 fn validate_server_url(value: &str) -> anyhow::Result<Url> {
@@ -1064,12 +1372,20 @@ fn validate_config_path(path: PathBuf) -> anyhow::Result<PathBuf> {
 
 fn load_config(path: &Path) -> anyhow::Result<AgentConfig> {
     let bytes = fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
-    let config: AgentConfig = serde_json::from_slice(&bytes)
+    let mut config: AgentConfig = serde_json::from_slice(&bytes)
         .with_context(|| format!("{} is not valid agent configuration", path.display()))?;
     ensure!(
         config.version == CONFIG_VERSION,
         "unsupported agent config version"
     );
+    if let Some(legacy) = config.pending_batch.take()
+        && config
+            .pending_batches
+            .first()
+            .is_none_or(|current| current.batch_id != legacy.batch_id)
+    {
+        config.pending_batches.insert(0, legacy);
+    }
     Ok(config)
 }
 
@@ -1132,6 +1448,8 @@ mod tests {
             disk_total_bytes: 100_000,
             disk_used_bytes: 40_000,
             disk_count: 1,
+            inode_total: Some(10_000),
+            inode_used: Some(4_000),
             watched_processes,
         }
     }
@@ -1150,6 +1468,7 @@ mod tests {
             credential_expires_at: Some("2099-01-01T00:00:00Z".to_owned()),
             signals: SignalSelection::default(),
             next_sequence: 7,
+            pending_batches: Vec::new(),
             pending_batch: None,
         }
     }
@@ -1191,8 +1510,8 @@ mod tests {
         let batch = build_host_batch(agent_id, 42, &snapshot, &signals)?;
         assert_eq!(batch.agent_id, agent_id);
         assert_eq!(batch.first_sequence, 42);
-        assert_eq!(batch.last_sequence, 48);
-        assert_eq!(batch.records.len(), 7);
+        assert_eq!(batch.last_sequence, 50);
+        assert_eq!(batch.records.len(), 9);
         assert!(batch.has_valid_shape());
         assert!(batch.records.iter().any(|record| matches!(
             record,
@@ -1256,6 +1575,17 @@ mod tests {
     }
 
     #[test]
+    fn credential_rotation_starts_before_expiry_without_waiting_until_failure() -> anyhow::Result<()>
+    {
+        let mut config = test_config();
+        config.credential_expires_at = Some((Utc::now() + ChronoDuration::days(6)).to_rfc3339());
+        assert!(credential_rotation_due(&config)?);
+        config.credential_expires_at = Some((Utc::now() + ChronoDuration::days(8)).to_rfc3339());
+        assert!(!credential_rotation_due(&config)?);
+        Ok(())
+    }
+
+    #[test]
     #[cfg(unix)]
     fn config_is_atomic_and_owner_only() -> anyhow::Result<()> {
         let directory = env::temp_dir().join(format!("meerkateer-agent-test-{}", Uuid::new_v4()));
@@ -1274,7 +1604,7 @@ mod tests {
     }
 
     #[test]
-    fn persisted_pending_batch_survives_reload() -> anyhow::Result<()> {
+    fn legacy_pending_batch_migrates_into_bounded_spool() -> anyhow::Result<()> {
         let directory = env::temp_dir().join(format!("meerkateer-agent-test-{}", Uuid::new_v4()));
         let path = directory.join("agent.json");
         let mut config = test_config();
@@ -1291,12 +1621,104 @@ mod tests {
             .batch_id;
         save_config(&path, &config)?;
         let loaded = load_config(&path)?;
+        assert!(loaded.pending_batch.is_none());
+        assert_eq!(loaded.pending_batches.len(), 1);
+        assert_eq!(loaded.pending_batches[0].batch_id, batch_id);
+        validate_complete_config(&loaded)?;
+        fs::remove_dir_all(directory)?;
+        Ok(())
+    }
+
+    #[test]
+    fn offline_spool_preserves_order_and_survives_reload() -> anyhow::Result<()> {
+        let directory = env::temp_dir().join(format!("meerkateer-spool-test-{}", Uuid::new_v4()));
+        let path = directory.join("agent.json");
+        let mut config = test_config();
+        for _ in 0..3 {
+            let sequence = next_collection_sequence(&config)?;
+            config.pending_batches.push(build_host_batch(
+                config.agent_id.context("test agent missing")?,
+                sequence,
+                &test_snapshot(Vec::new()),
+                &config.signals,
+            )?);
+        }
+        save_config(&path, &config)?;
+        let loaded = load_config(&path)?;
+        validate_complete_config(&loaded)?;
+        assert_eq!(loaded.pending_batches.len(), 3);
+        assert_eq!(loaded.pending_batches[0].first_sequence, 7);
         assert_eq!(
-            loaded
-                .pending_batch
-                .context("pending batch missing")?
-                .batch_id,
-            batch_id
+            loaded.pending_batches[1].first_sequence,
+            loaded.pending_batches[0].last_sequence + 1
+        );
+        assert_eq!(
+            loaded.pending_batches[2].first_sequence,
+            loaded.pending_batches[1].last_sequence + 1
+        );
+        assert!(spool_size_bytes(&loaded)? <= MAX_SPOOL_BYTES);
+        fs::remove_dir_all(directory)?;
+        Ok(())
+    }
+
+    #[test]
+    fn offline_spool_holds_thirty_minutes_at_default_interval() -> anyhow::Result<()> {
+        let mut config = test_config();
+        let expected_batches = usize::try_from(30 * 60 / DEFAULT_INTERVAL_SECONDS)?;
+        assert!(expected_batches < MAX_SPOOL_BATCHES);
+        for _ in 0..expected_batches {
+            let sequence = next_collection_sequence(&config)?;
+            config.pending_batches.push(build_host_batch(
+                config.agent_id.context("test agent missing")?,
+                sequence,
+                &test_snapshot(Vec::new()),
+                &config.signals,
+            )?);
+        }
+        validate_complete_config(&config)?;
+        assert_eq!(config.pending_batches.len(), expected_batches);
+        assert!(spool_size_bytes(&config)? < MAX_SPOOL_BYTES);
+        assert_eq!(
+            config
+                .pending_batches
+                .last()
+                .context("spool missing")?
+                .last_sequence
+                + 1,
+            next_collection_sequence(&config)?
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn signal_configuration_rolls_back_without_changing_identity_or_spool() -> anyhow::Result<()> {
+        let directory =
+            env::temp_dir().join(format!("meerkateer-rollback-test-{}", Uuid::new_v4()));
+        let path = directory.join("agent.json");
+        let config = test_config();
+        let agent_id = config.agent_id;
+        let credential_id = config.credential_id;
+        save_config(&path, &config)?;
+        save_signal_selection(
+            &path,
+            SignalSelection {
+                enabled: BTreeSet::from([SignalKind::Cpu, SignalKind::Process]),
+                watched_processes: vec!["java".to_owned()],
+            },
+        )?;
+        rollback_signal_selection(&path)?;
+        let restored = load_config(&path)?;
+        assert_eq!(restored.signals, SignalSelection::default());
+        assert_eq!(restored.agent_id, agent_id);
+        assert_eq!(restored.credential_id, credential_id);
+        assert_eq!(restored.next_sequence, 7);
+        #[cfg(unix)]
+        assert_eq!(
+            fs::metadata(signal_backup_path(&path))?
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
         );
         fs::remove_dir_all(directory)?;
         Ok(())

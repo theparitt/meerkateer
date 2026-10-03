@@ -88,7 +88,8 @@ struct ConfigView {
     agent_id: Option<Uuid>,
     project_id: Option<Uuid>,
     credential_expires_at: Option<String>,
-    pending_batch: bool,
+    spool_batches: usize,
+    spool_bytes: usize,
     next_sequence: u64,
 }
 
@@ -101,7 +102,8 @@ impl From<&AgentConfig> for ConfigView {
             agent_id: config.agent_id,
             project_id: config.project_id,
             credential_expires_at: config.credential_expires_at.clone(),
-            pending_batch: config.pending_batch.is_some(),
+            spool_batches: config.pending_batches.len(),
+            spool_bytes: serde_json::to_vec(&config.pending_batches).map_or(0, |value| value.len()),
             next_sequence: config.next_sequence,
         }
     }
@@ -706,10 +708,14 @@ fn render_overview(frame: &mut Frame<'_>, area: Rect, app: &App) {
                 field_line("Next sequence", &config.next_sequence.to_string()),
                 field_line(
                     "Retry queue",
-                    if config.pending_batch {
-                        "1 durable batch"
+                    &if config.spool_batches > 0 {
+                        format!(
+                            "{} durable batch(es) · {}",
+                            config.spool_batches,
+                            format_bytes(config.spool_bytes as u64)
+                        )
                     } else {
-                        "empty"
+                        "empty".to_owned()
                     },
                 ),
                 field_line(
@@ -916,11 +922,15 @@ fn render_diagnostics(frame: &mut Frame<'_>, area: Rect, app: &App) {
             "Machine credential has not expired",
         ));
         lines.push(diagnostic_line(
-            !config.pending_batch,
-            if config.pending_batch {
-                "One durable telemetry batch is waiting to retry"
+            config.spool_batches < super::MAX_SPOOL_BATCHES,
+            &if config.spool_batches > 0 {
+                format!(
+                    "Offline spool has {} / {} batches waiting safely",
+                    config.spool_batches,
+                    super::MAX_SPOOL_BATCHES
+                )
             } else {
-                "No telemetry batch is waiting to retry"
+                "Offline spool is empty".to_owned()
             },
         ));
         lines.push(diagnostic_line(

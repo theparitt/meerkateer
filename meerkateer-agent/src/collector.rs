@@ -26,6 +26,10 @@ pub struct HostSnapshot {
     pub disk_total_bytes: u64,
     pub disk_used_bytes: u64,
     pub disk_count: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inode_total: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inode_used: Option<u64>,
     pub watched_processes: Vec<ProcessObservation>,
 }
 
@@ -47,6 +51,9 @@ pub async fn collect(watched_processes: &[String]) -> anyhow::Result<HostSnapsho
     let mut disk_total_bytes = 0_u64;
     let mut disk_available_bytes = 0_u64;
     let mut disk_count = 0_u32;
+    let mut inode_total = 0_u64;
+    let mut inode_free = 0_u64;
+    let mut inode_filesystems = 0_u32;
     let mut seen_disks = HashSet::new();
     for disk in disks
         .list()
@@ -61,6 +68,11 @@ pub async fn collect(watched_processes: &[String]) -> anyhow::Result<HostSnapsho
         disk_total_bytes = disk_total_bytes.saturating_add(disk.total_space());
         disk_available_bytes = disk_available_bytes.saturating_add(disk.available_space());
         disk_count = disk_count.saturating_add(1);
+        if let Some((filesystem_inodes, filesystem_free)) = inode_capacity(disk.mount_point()) {
+            inode_total = inode_total.saturating_add(filesystem_inodes);
+            inode_free = inode_free.saturating_add(filesystem_free.min(filesystem_inodes));
+            inode_filesystems = inode_filesystems.saturating_add(1);
+        }
     }
 
     let watched_processes = watched_processes
@@ -98,8 +110,21 @@ pub async fn collect(watched_processes: &[String]) -> anyhow::Result<HostSnapsho
         disk_total_bytes,
         disk_used_bytes: disk_total_bytes.saturating_sub(disk_available_bytes),
         disk_count,
+        inode_total: (inode_filesystems > 0).then_some(inode_total),
+        inode_used: (inode_filesystems > 0).then_some(inode_total.saturating_sub(inode_free)),
         watched_processes,
     })
+}
+
+#[cfg(unix)]
+fn inode_capacity(path: &std::path::Path) -> Option<(u64, u64)> {
+    let stats = rustix::fs::statvfs(path).ok()?;
+    (stats.f_files > 0).then_some((stats.f_files, stats.f_ffree))
+}
+
+#[cfg(not(unix))]
+const fn inode_capacity(_path: &std::path::Path) -> Option<(u64, u64)> {
+    None
 }
 
 pub fn validate_watched_processes(values: &[String]) -> anyhow::Result<()> {
@@ -166,6 +191,9 @@ mod tests {
         assert!((0.0..=100.0).contains(&snapshot.cpu_usage_percent));
         assert!(snapshot.memory_used_bytes <= snapshot.memory_total_bytes);
         assert!(snapshot.disk_used_bytes <= snapshot.disk_total_bytes);
+        if let (Some(used), Some(total)) = (snapshot.inode_used, snapshot.inode_total) {
+            assert!(used <= total);
+        }
         assert!(snapshot.watched_processes.is_empty());
         Ok(())
     }

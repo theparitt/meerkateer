@@ -1219,6 +1219,11 @@ export interface components {
       total_bytes: number;
       utilization_percent: number;
     };
+    AgentCountCapacityResponse: {
+      used: number;
+      total: number;
+      utilization_percent: number;
+    };
     AgentProcessResponse: {
       name: string;
       running: boolean;
@@ -1241,6 +1246,7 @@ export interface components {
       cpu_usage_percent: number | null;
       memory: components["schemas"]["AgentCapacityResponse"] | null;
       disk: components["schemas"]["AgentCapacityResponse"] | null;
+      inodes: components["schemas"]["AgentCountCapacityResponse"] | null;
       processes: components["schemas"]["AgentProcessResponse"][];
       missing_metrics: (
         | "agent.heartbeat"
