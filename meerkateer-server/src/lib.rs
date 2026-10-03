@@ -164,11 +164,11 @@ pub fn configure_routes(config: &mut web::ServiceConfig) {
 }
 
 fn session_routes() -> actix_web::Scope {
-    web::scope("")
-        .route("/session/password-login", web::post().to(password_login))
-        .route("/session/password-setup", web::post().to(password_setup))
-        .route("/session", web::get().to(current_session))
-        .route("/session", web::delete().to(logout))
+    web::scope("/session")
+        .route("/password-login", web::post().to(password_login))
+        .route("/password-setup", web::post().to(password_setup))
+        .route("", web::get().to(current_session))
+        .route("", web::delete().to(logout))
 }
 
 fn incident_routes() -> actix_web::Scope {
@@ -1149,6 +1149,15 @@ async fn set_owner_password_hash(
         .execute(&mut *transaction)
         .await
         .map_err(|_| ())?;
+    sqlx::query(
+        "UPDATE sessions SET revoked_at = now() \
+         WHERE tenant_id = $1 AND user_id = $2 AND revoked_at IS NULL",
+    )
+    .bind(tenant_id)
+    .bind(user_id)
+    .execute(&mut *transaction)
+    .await
+    .map_err(|_| ())?;
     sqlx::query(
         "INSERT INTO audit_events (tenant_id, actor_type, actor_id, action, target_type, target_id) \
          VALUES ($1, 'user', $2, 'user.local_password_set', 'user', $2)",

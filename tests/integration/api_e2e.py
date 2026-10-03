@@ -176,6 +176,7 @@ def bootstrap_and_inventory() -> tuple[str, str, str, str]:
     expect(call("GET", "/v1/session"), 200)
     expect(call("POST", "/v1/alerts/test"), 403, "csrf_failed")
     expect(call("POST", "/v1/alerts/test", headers=browser_headers()), 409, "alert_webhook_not_configured")
+    previous_session = {cookie.name: cookie.value for cookie in cookies}
     cookies.clear()
     expect(
         call("POST", "/v1/session/password-setup", body={"password": "new-test-only-password-456"}, headers={"Authorization": "Bearer incorrect-admin-token"}),
@@ -186,6 +187,18 @@ def bootstrap_and_inventory() -> tuple[str, str, str, str]:
         call("POST", "/v1/session/password-setup", body={"password": "new-test-only-password-456"}, headers={"Authorization": f"Bearer {BOOTSTRAP_TOKEN}"}),
         200,
     )
+    expect(
+        call(
+            "GET",
+            "/v1/session",
+            headers={
+                "Cookie": f"meerkateer_session={previous_session['meerkateer_session']}"
+            },
+        ),
+        401,
+        "authentication_required",
+    )
+    expect(call("GET", "/v1/session"), 200)
     cookies.clear()
     expect(
         call("POST", "/v1/session/password-login", body={"email": bootstrap["owner_email"], "password": bootstrap["owner_password"]}),

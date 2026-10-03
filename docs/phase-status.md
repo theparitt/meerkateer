@@ -42,7 +42,8 @@ or a release artifact verified on a clean machine.
   credential routes. Every cross-company observation/mutation is denied and a final invariant
   check proves the rival records are unchanged. Session E2E additionally proves missing CSRF is
   rejected, logout revokes the database record and old-cookie replay, both cookies expire, and the
-  immutable audit stream contains `session.logout`.
+  immutable audit stream contains `session.logout`. Owner password recovery revokes all older
+  owner sessions and the suite proves a captured pre-recovery cookie cannot be replayed.
 - Monitoring Alpha foundation: unit coverage proves a 60-batch default-interval outage fits the
   bounded spool, legacy one-batch configs migrate safely, ordered batches survive reload, and
   rollback preserves identity/credential/sequence. Real API E2E rotates the credential through

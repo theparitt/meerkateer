@@ -15,6 +15,8 @@ or a claim that the `v0.2.0` release gates have passed.
   machine-credential paths before rechecking the untouched rival data. Browser sign-out now
   revokes the server-side PostgreSQL session, requires CSRF proof, expires both cookies, records
   an immutable `session.logout` audit event, and is available from the responsive Console header.
+  Owner password setup/recovery also revokes every older owner session before issuing the fresh
+  session, so a captured cookie cannot survive credential recovery.
 - Bounded OS-service monitoring for exact systemd `.service` units and Windows Service names.
   Queries run concurrently with a three-second ceiling, never invoke a shell, distinguish active,
   transitional, failed, missing, permission, manager, and timeout states, and expose the result in
