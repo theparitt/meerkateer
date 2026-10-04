@@ -261,6 +261,19 @@ jobs:
           reset="$(PGPASSWORD="$MEERKATEER_APP_PASSWORD" psql -h 127.0.0.1 -U meerkateer_app -d meerkateer -Atc "BEGIN; SELECT set_config('meerkateer.tenant_id', '00000000-0000-4000-8000-000000000001', true); SELECT count(*) FROM services; COMMIT; SELECT count(*) FROM services" | tail -1)"
           test "$reset" = "0"
 
+      - name: Verify replica-wide limiter privileges and shared budget
+        run: |
+          rate_limit_sql="SELECT meerkateer_consume_rate_limit('authentication', decode(repeat('ab', 32), 'hex'), 1)"
+          first="$(PGPASSWORD="$MEERKATEER_APP_PASSWORD" psql -h 127.0.0.1 -U meerkateer_app -d meerkateer -Atc "$rate_limit_sql")"
+          second="$(PGPASSWORD="$MEERKATEER_APP_PASSWORD" psql -h 127.0.0.1 -U meerkateer_app -d meerkateer -Atc "$rate_limit_sql")"
+          test "$first" = "t"
+          test "$second" = "f"
+          if PGPASSWORD="$MEERKATEER_APP_PASSWORD" psql -h 127.0.0.1 -U meerkateer_app -d meerkateer -v ON_ERROR_STOP=1 -c "SELECT peer_digest FROM distributed_rate_limits"; then
+            echo "application login unexpectedly has direct limiter table access" >&2
+            exit 1
+          fi
+          psql -h 127.0.0.1 -U meerkateer -d meerkateer -c "TRUNCATE distributed_rate_limits"
+
       - name: Prove writes cannot cross tenant boundary
         run: |
           if PGPASSWORD="$MEERKATEER_APP_PASSWORD" psql -h 127.0.0.1 -U meerkateer_app -d meerkateer -v ON_ERROR_STOP=1 -c "SET meerkateer.tenant_id = '00000000-0000-4000-8000-000000000099'; INSERT INTO services (tenant_id, project_id, slug, environment) VALUES ('00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002', 'cross-tenant', 'test')"; then

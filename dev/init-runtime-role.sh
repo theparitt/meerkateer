@@ -31,6 +31,20 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
     GRANT USAGE, SELECT ON SEQUENCES TO meerkateer_app;
 
+-- Fresh CI applies every migration before creating runtime roles, while the PostgreSQL container
+-- creates this role between migrations 0015 and 0016. Preserve the same least-privilege outcome in
+-- both orders when the replica-wide limiter already exists.
+DO $$
+BEGIN
+    IF to_regclass('public.distributed_rate_limits') IS NOT NULL THEN
+        EXECUTE 'REVOKE ALL ON TABLE distributed_rate_limits FROM meerkateer_app';
+    END IF;
+    IF to_regprocedure('public.meerkateer_consume_rate_limit(text,bytea,integer)') IS NOT NULL THEN
+        EXECUTE 'GRANT EXECUTE ON FUNCTION meerkateer_consume_rate_limit(text,bytea,integer) TO meerkateer_app';
+    END IF;
+END;
+$$;
+
 GRANT CONNECT ON DATABASE :"database_name" TO meerkateer_worker;
 GRANT USAGE ON SCHEMA public TO meerkateer_worker, meerkateer_outbox_executor;
 GRANT SELECT, UPDATE ON outbox TO meerkateer_outbox_executor;
