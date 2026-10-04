@@ -1,9 +1,10 @@
 # Delivery status
 
-Last verified: 2026-10-03
+Last verified: 2026-10-04
 
-Current code version: `0.2.0` Developer Preview. Current delivery phase:
-`0.2 Community Alpha`. Version scope and exit gates are defined in the
+Current code version: `0.3.0-alpha.1` Monitoring Alpha prerelease. Current delivery phase:
+`0.3 Monitoring Alpha` (in progress). This prerelease does not close the `0.3.0` exit gate;
+remaining Community Alpha gaps are carried forward. Version scope and exit gates are defined in the
 [roadmap to 1.0](roadmap-to-1.0.md).
 Repository ownership and the one-company Community versus multi-tenant Cloud architecture are
 defined in the [Community and Cloud boundary](repository-and-cloud-boundary.md).
@@ -59,6 +60,14 @@ or a release artifact verified on a clean machine.
   integration, the ten-agent stale/recovery fleet, worker retry/DLQ, and the failure lab pass with
   the expanded telemetry. A timed 30-minute disconnect and platform resource benchmark are still
   required before `0.3.0` can close.
+- Monitoring Alpha network diagnostics: every Service detail now offers bounded manual HTTP,
+  HTTPS, TCP, DNS, and TLS-certificate checks. The server rejects private, loopback, link-local,
+  reserved, oversized, and mixed-trust DNS answer sets, pins the validated numeric answers,
+  disables redirects, enforces a 250–10,000 ms timeout, and returns bounded status/certificate
+  evidence. Rust hostile-input tests, browser contract tests, CSRF checks, missing-service checks,
+  and cross-company denial cover the slice. Results remain explicitly manual and unretained;
+  scheduling, failure consensus, timeline/incident projection, and probe-isolated Cloud egress are
+  still required before `0.3.0` can close.
 - The authenticated Console now separates daily operational jobs into real deep links with desktop
   and mobile navigation. Its first-signal guide derives company/workspace/connection/fresh-signal
   progress from API data, exposes a simple Machine or Application fork, preserves one-time token

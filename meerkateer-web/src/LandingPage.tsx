@@ -11,9 +11,10 @@ const PRODUCT_VERSION = `v${packageMetadata.version}`;
 const COMMUNITY_SOURCE_DOWNLOAD_URL =
   "https://github.com/theparitt/meerkateer/archive/refs/heads/main.zip";
 const CONTROLLER_PREVIEW_URL = `${GITHUB_REPO_URL}/releases/download/controller-preview`;
+const CONTROLLER_PREVIEW_VERSION = "0.2.0";
 const WINDOWS_MSI_URL = `${CONTROLLER_PREVIEW_URL}/meerkateer-controller-windows-x86_64.msi`;
 const WINDOWS_CLI_URL = `${CONTROLLER_PREVIEW_URL}/meerkateer-controller-windows-x86_64.zip`;
-const UBUNTU_DEB_FILENAME = `meerkateer-controller_${packageMetadata.version}_amd64.deb`;
+const UBUNTU_DEB_FILENAME = `meerkateer-controller_${CONTROLLER_PREVIEW_VERSION}_amd64.deb`;
 const UBUNTU_DEB_URL = `${CONTROLLER_PREVIEW_URL}/${UBUNTU_DEB_FILENAME}`;
 const UBUNTU_DEB_SHA256_URL = `${UBUNTU_DEB_URL}.sha256`;
 const UBUNTU_INSTALL_COMMAND = [
@@ -777,8 +778,8 @@ export function LandingPage() {
           <div className="landing-hero-copy">
             <aside className="version-strip" aria-label="Current Meerkateer version and phase">
               <strong>{PRODUCT_VERSION}</strong>
-              <span>Developer Preview</span>
-              <span>Current phase: Community Alpha</span>
+              <span>Monitoring Alpha prerelease</span>
+              <span>Current phase: 0.3 in progress</span>
               <a href="/roadmap">Road to 1.0 →</a>
             </aside>
             <p className="eyebrow">Free, self-hosted Community preview</p>
@@ -806,7 +807,8 @@ export function LandingPage() {
               <li>Managed Cloud planned</li>
             </ul>
             <small className="preview-note">
-              Current code version {PRODUCT_VERSION}. No stable GitHub release has been tagged yet.
+              Current code version {PRODUCT_VERSION}. This prerelease does not claim that the 0.3
+              exit gates have passed.
             </small>
           </div>
           <ProductPreview />

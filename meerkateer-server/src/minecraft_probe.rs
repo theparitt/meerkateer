@@ -102,7 +102,7 @@ pub(crate) fn valid_host(host: &str) -> bool {
     })
 }
 
-fn public_address(ip: IpAddr) -> bool {
+pub(crate) fn public_address(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => public_v4(v4),
         IpAddr::V6(v6) => public_v6(v6),

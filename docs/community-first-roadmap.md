@@ -1,8 +1,10 @@
 # Meerkateer Community-first delivery plan
 
-This document expands the active `0.2 Community Alpha` slice in the canonical
-[roadmap to 1.0](roadmap-to-1.0.md). Its CE phase identifiers remain acceptance-test groupings,
-not separate product version numbers.
+This document expands the `0.2 Community Alpha` acceptance slice in the canonical
+[roadmap to 1.0](roadmap-to-1.0.md). The current code line is `0.3.0-alpha.1`; any unmet
+Community Alpha evidence below remains a required gate instead of being hidden by the prerelease
+version change. Its CE phase identifiers remain acceptance-test groupings, not separate product
+version numbers.
 
 Status: CE-0 complete for the isolated Compose pilot, 2026-09-28. CE-1 is in progress.
 This plan supersedes the choice of a

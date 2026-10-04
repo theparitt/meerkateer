@@ -1,6 +1,7 @@
 //! HTTP surface for the Meerkateer control plane.
 
 mod minecraft_probe;
+mod network_probe;
 mod rate_limit;
 
 use std::{
@@ -153,6 +154,10 @@ pub fn configure_routes(config: &mut web::ServiceConfig) {
                 .route(
                     "/services/{service_id}/game-probe",
                     web::post().to(test_game_probe),
+                )
+                .route(
+                    "/services/{service_id}/network-probe",
+                    web::post().to(test_network_probe),
                 )
                 .route(
                     "/services/{service_id}/credentials/{credential_id}/rotate",
@@ -1660,7 +1665,9 @@ async fn require_rate_limit(
     let limit = match scope {
         RateLimitScope::Authentication => state.config.authentication_rate_limit_per_minute,
         RateLimitScope::InvitationAcceptance | RateLimitScope::PasswordResetAcceptance => 20,
-        RateLimitScope::PasswordLogin | RateLimitScope::GameProbe => 10,
+        RateLimitScope::PasswordLogin
+        | RateLimitScope::GameProbe
+        | RateLimitScope::NetworkProbe => 10,
         RateLimitScope::Ingestion => state.config.ingestion_rate_limit_per_minute,
     };
     if state.rate_limiter.allow(scope, address, limit).await {
@@ -4616,6 +4623,84 @@ async fn test_game_probe(
         Err(failure) => HttpResponse::Ok()
             .insert_header((header::CACHE_CONTROL, "no-store"))
             .json(minecraft_probe::ResultData::failed(&failure)),
+    }
+}
+
+async fn test_network_probe(
+    request: HttpRequest,
+    service_id: web::Path<uuid::Uuid>,
+    body: web::Json<network_probe::Request>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session
+        .principal
+        .authorize(session.principal.tenant_id, Action::Read)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    if !csrf_is_valid(&request, &session) {
+        return HttpResponse::Forbidden().json(ErrorResponse {
+            code: "csrf_failed",
+        });
+    }
+    if state.config.deployment_mode != DeploymentMode::Community {
+        return HttpResponse::NotFound().json(ErrorResponse { code: "not_found" });
+    }
+    if require_rate_limit(&request, &state, RateLimitScope::NetworkProbe)
+        .await
+        .is_err()
+    {
+        return rate_limited();
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, session.principal.tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let exists = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM services WHERE tenant_id = $1 AND id = $2",
+    )
+    .bind(session.principal.tenant_id)
+    .bind(service_id.into_inner())
+    .fetch_optional(&mut *transaction)
+    .await;
+    if transaction.commit().await.is_err() {
+        return database_unavailable();
+    }
+    match exists {
+        Ok(Some(_)) => {}
+        Ok(None) => return HttpResponse::NotFound().json(ErrorResponse { code: "not_found" }),
+        Err(_) => return database_unavailable(),
+    }
+    match network_probe::probe(&body).await {
+        Ok(result) => HttpResponse::Ok()
+            .insert_header((header::CACHE_CONTROL, "no-store"))
+            .json(result),
+        Err(network_probe::Failure::InvalidRequest) => {
+            HttpResponse::BadRequest().json(ErrorResponse {
+                code: "invalid_probe_request",
+            })
+        }
+        Err(network_probe::Failure::UnsafeDestination) => {
+            HttpResponse::BadRequest().json(ErrorResponse {
+                code: "unsafe_probe_destination",
+            })
+        }
+        Err(failure) => HttpResponse::Ok()
+            .insert_header((header::CACHE_CONTROL, "no-store"))
+            .json(network_probe::ResultData::failed(body.kind, &failure)),
     }
 }
 

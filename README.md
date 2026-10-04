@@ -121,13 +121,14 @@ its [game-server beta plan](docs/game-server-beta.md) is currently paused.
 
 | | |
 | --- | --- |
-| Code version | **0.2.0** |
-| Release channel | **Developer Preview** |
-| Current delivery phase | **0.2 Community Alpha** |
+| Code version | **0.3.0-alpha.1** |
+| Release channel | **Monitoring Alpha prerelease** |
+| Current delivery phase | **0.3 Monitoring Alpha — in progress** |
 | Stable target | **1.0.0 Community** |
 
-`0.2.0` is the version declared in the Rust workspace and web package. A signed `v0.2.0`
-GitHub Release has not been published yet. See the canonical
+`0.3.0-alpha.1` is the version declared in the Rust workspace and web package. It starts the
+Monitoring Alpha line; it does not mean the `0.3.0` exit gate has passed. A signed
+`v0.3.0-alpha.1` GitHub Release has not been published yet. See the canonical
 [roadmap to 1.0](docs/roadmap-to-1.0.md) for milestone scope and measurable exit gates.
 
 > **Status: developer preview.** Phases 0 and 1 are complete. Phase 2 now has the
@@ -326,6 +327,19 @@ manual test reports version, server-reported player counts, and response time fr
 Community control plane. It does not prove player login or gameplay, does not save an
 uptime record, and does not send alerts. Private or reserved destinations are blocked;
 Cloud probing stays disabled until separate network egress controls are in place.
+
+## Manual network diagnostics (0.3 alpha)
+
+Open any service in the Console and expand **Test a network destination**. You can run one HTTP,
+HTTPS, TCP-port, DNS, or TLS-certificate check from the Community control plane. The result shows
+response time, HTTP status, public DNS-answer count, and certificate days remaining when relevant.
+
+This is deliberately a diagnostic, not an uptime claim: the result is not retained and cannot
+open or resolve an incident. The server checks every DNS answer before connecting, rejects any
+private, loopback, link-local, reserved, or mixed-trust answer set, connects only to the validated
+numeric answers, follows no redirects, and limits each check to 250–10,000 ms. Scheduled checks,
+failure consensus, durable history, and incident/alert projection remain required for final
+`0.3.0`.
 
 For development without containers:
 

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Meerkateer API",
-    "version": "0.2.0",
+    "version": "0.3.0-alpha.1",
     "description": "Tenant-isolated Meerkateer control-plane API. Browser mutations require both the session cookie and the X-Meerkateer-CSRF header."
   },
   "servers": [{ "url": "/" }],
@@ -874,6 +874,38 @@
         }
       }
     },
+    "/v1/services/{service_id}/network-probe": {
+      "post": {
+        "operationId": "testNetworkDestination",
+        "description": "Run one bounded HTTP, HTTPS, TCP, DNS, or TLS-certificate diagnostic from the Community control plane. Every DNS answer must be public and the validated numeric answers are pinned for the connection. Redirects are never followed. This manual result is not scheduled monitoring and does not change service health.",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/ServiceId" },
+          { "$ref": "#/components/parameters/CsrfHeader" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/NetworkProbeRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The bounded diagnostic outcome, including resolution, timeout, status, and certificate information when applicable.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NetworkProbeResponse" } } }
+          },
+          "400": { "description": "The request is invalid or its DNS answer set includes a non-public destination." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "The session or CSRF proof is insufficient." },
+          "404": { "description": "The service is not in this company or Cloud mode is active." },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
     "/v1/enrollment-tokens": {
       "post": {
         "operationId": "issueEnrollmentToken",
@@ -1657,6 +1689,36 @@
           "version_name": { "type": ["string", "null"], "maxLength": 80 },
           "players_online": { "type": ["integer", "null"], "minimum": 0 },
           "players_max": { "type": ["integer", "null"], "minimum": 0 }
+        }
+      },
+      "NetworkProbeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "host"],
+        "properties": {
+          "kind": { "enum": ["http", "https", "tcp", "dns", "tls"] },
+          "host": { "type": "string", "minLength": 1, "maxLength": 253, "description": "Bare public DNS name or IP address; no URL scheme, path, or credentials." },
+          "port": { "type": ["integer", "null"], "minimum": 1, "maximum": 65535, "description": "Required for TCP; otherwise defaults to the protocol port." },
+          "path": { "type": ["string", "null"], "minLength": 1, "maxLength": 2048, "pattern": "^/([^/].*)?$", "description": "Optional HTTP path. Redirects are not followed." },
+          "expected_status": { "type": ["integer", "null"], "minimum": 100, "maximum": 599, "description": "Optional exact HTTP/HTTPS status. The default accepts 2xx and 3xx." },
+          "timeout_ms": { "type": ["integer", "null"], "minimum": 250, "maximum": 10000, "default": 5000 }
+        }
+      },
+      "NetworkProbeResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "state", "message", "probe_location", "observed_at", "response_ms", "status_code", "resolved_addresses", "tls_expires_at", "tls_days_remaining"],
+        "properties": {
+          "kind": { "enum": ["http", "https", "tcp", "dns", "tls"] },
+          "state": { "enum": ["responding", "unexpected_status", "could_not_resolve", "no_response", "timed_out", "invalid_certificate"] },
+          "message": { "type": "string" },
+          "probe_location": { "const": "community_control_plane" },
+          "observed_at": { "type": "string", "format": "date-time" },
+          "response_ms": { "type": ["integer", "null"], "minimum": 0 },
+          "status_code": { "type": ["integer", "null"], "minimum": 100, "maximum": 599 },
+          "resolved_addresses": { "type": "integer", "minimum": 0, "maximum": 32 },
+          "tls_expires_at": { "type": ["string", "null"], "format": "date-time" },
+          "tls_days_remaining": { "type": ["integer", "null"] }
         }
       },
       "ServiceResponse": {

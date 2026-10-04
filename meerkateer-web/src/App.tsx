@@ -75,6 +75,7 @@ import {
 } from "./api";
 import { GameProbePanel } from "./GameProbePanel";
 import { CloudAccessPage, LandingPage, RoadmapPage } from "./LandingPage";
+import { NetworkProbePanel } from "./NetworkProbePanel";
 
 const ResourcePage = lazy(() =>
   import("./ResourcePage").then((module) => ({ default: module.ResourcePage })),
@@ -2866,6 +2867,7 @@ function ServiceDetail({
       {service.game?.kind === "minecraft_java" ? (
         <GameProbePanel key={service.id} service={service} />
       ) : null}
+      <NetworkProbePanel key={`network-${service.id}`} service={service} />
       {mode === "incident" ? (
         <>
           <AvailabilityBoard key={service.id} service={service} timeline={timeline} />

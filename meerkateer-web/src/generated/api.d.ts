@@ -699,6 +699,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/services/{service_id}/network-probe": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** @description Run one bounded HTTP, HTTPS, TCP, DNS, or TLS-certificate diagnostic from the Community control plane. Every DNS answer must be public and the validated numeric answers are pinned for the connection. Redirects are never followed. This manual result is not scheduled monitoring and does not change service health. */
+    post: operations["testNetworkDestination"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/enrollment-tokens": {
     parameters: {
       query?: never;
@@ -1222,6 +1239,43 @@ export interface components {
       version_name: string | null;
       players_online: number | null;
       players_max: number | null;
+    };
+    NetworkProbeRequest: {
+      /** @enum {unknown} */
+      kind: "http" | "https" | "tcp" | "dns" | "tls";
+      /** @description Bare public DNS name or IP address; no URL scheme, path, or credentials. */
+      host: string;
+      /** @description Required for TCP; otherwise defaults to the protocol port. */
+      port?: number | null;
+      /** @description Optional HTTP path. Redirects are not followed. */
+      path?: string | null;
+      /** @description Optional exact HTTP/HTTPS status. The default accepts 2xx and 3xx. */
+      expected_status?: number | null;
+      /** @default 5000 */
+      timeout_ms: number | null;
+    };
+    NetworkProbeResponse: {
+      /** @enum {unknown} */
+      kind: "http" | "https" | "tcp" | "dns" | "tls";
+      /** @enum {unknown} */
+      state:
+        | "responding"
+        | "unexpected_status"
+        | "could_not_resolve"
+        | "no_response"
+        | "timed_out"
+        | "invalid_certificate";
+      message: string;
+      /** @constant */
+      probe_location: "community_control_plane";
+      /** Format: date-time */
+      observed_at: string;
+      response_ms: number | null;
+      status_code: number | null;
+      resolved_addresses: number;
+      /** Format: date-time */
+      tls_expires_at: string | null;
+      tls_days_remaining: number | null;
     };
     ServiceResponse: {
       /** Format: uuid */
@@ -3996,6 +4050,71 @@ export interface operations {
       };
       /** @description The game configuration is incomplete. */
       409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      429: components["responses"]["RateLimited"];
+      /** @description The control database is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  testNetworkDestination: {
+    parameters: {
+      query?: never;
+      header: {
+        "X-Meerkateer-CSRF": components["parameters"]["CsrfHeader"];
+      };
+      path: {
+        service_id: components["parameters"]["ServiceId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["NetworkProbeRequest"];
+      };
+    };
+    responses: {
+      /** @description The bounded diagnostic outcome, including resolution, timeout, status, and certificate information when applicable. */
+      200: {
+        headers: {
+          "Cache-Control"?: "no-store";
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["NetworkProbeResponse"];
+        };
+      };
+      /** @description The request is invalid or its DNS answer set includes a non-public destination. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The session or CSRF proof is insufficient. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The service is not in this company or Cloud mode is active. */
+      404: {
         headers: {
           [name: string]: unknown;
         };

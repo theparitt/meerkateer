@@ -14,6 +14,8 @@ export type AgentTelemetrySnapshotResponse =
 export type IssuedEnrollmentTokenResponse = components["schemas"]["IssuedEnrollmentTokenResponse"];
 export type TimelineItemResponse = components["schemas"]["TimelineItemResponse"];
 export type GameProbeResponse = components["schemas"]["GameProbeResponse"];
+export type NetworkProbeRequest = components["schemas"]["NetworkProbeRequest"];
+export type NetworkProbeResponse = components["schemas"]["NetworkProbeResponse"];
 export type IncidentResponse = components["schemas"]["IncidentResponse"];
 export type IncidentActivityResponse = components["schemas"]["IncidentActivityResponse"];
 export type AlertDeliveryResponse = components["schemas"]["AlertDeliveryResponse"];
@@ -614,4 +616,24 @@ export async function testMinecraftStatus(serviceId: string): Promise<GameProbeR
     throw new Error("Minecraft status probe returned an unsupported contract");
   }
   return body as GameProbeResponse;
+}
+
+export async function testNetworkDestination(
+  serviceId: string,
+  request: NetworkProbeRequest,
+): Promise<NetworkProbeResponse> {
+  const body = await mutateJson(
+    "POST",
+    `/v1/services/${encodeURIComponent(serviceId)}/network-probe`,
+    request,
+  );
+  if (
+    !isObject(body) ||
+    typeof body.kind !== "string" ||
+    typeof body.state !== "string" ||
+    typeof body.observed_at !== "string"
+  ) {
+    throw new Error("Network probe returned an unsupported contract");
+  }
+  return body as NetworkProbeResponse;
 }

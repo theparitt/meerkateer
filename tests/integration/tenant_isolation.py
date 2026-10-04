@@ -236,6 +236,11 @@ def attack_from_primary(rival: dict[str, str]) -> None:
     )
     assert_not_found("GET", f"/v1/services/{rival['service']}/timeline")
     assert_not_found("POST", f"/v1/services/{rival['service']}/game-probe")
+    assert_not_found(
+        "POST",
+        f"/v1/services/{rival['service']}/network-probe",
+        {"kind": "dns", "host": "example.com"},
+    )
     assert_not_found("POST", f"/v1/services/{rival['service']}/credentials")
     assert_not_found(
         "POST",

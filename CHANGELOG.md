@@ -5,11 +5,17 @@ Keep a Changelog principles, and releases use Semantic Versioning.
 
 ## [Unreleased]
 
-Current developer-preview code version: `0.2.0` (Community Alpha). This is not a stable release
-or a claim that the `v0.2.0` release gates have passed.
+Current developer-preview code version: `0.3.0-alpha.1` (Monitoring Alpha prerelease). This is
+not a stable release or a claim that the final `v0.3.0` release gates have passed.
 
 ### Added
 
+- Service-level manual HTTP, HTTPS, TCP, DNS, and TLS-certificate diagnostics in the Console and
+  public API. Checks are CSRF- and tenant-protected, Community-only, rate-limited, bounded to a
+  250–10,000 ms timeout, and fail closed when any DNS answer is private, local, reserved, or mixed
+  trust. Connections pin the validated numeric answers, HTTP redirects are disabled, TLS chains
+  are verified, and only bounded operational metadata is returned. These diagnostics are
+  intentionally unretained until scheduled-probe consensus and incident projection land.
 - Complete email-free local credential recovery for Community members. The Account screen changes
   a signed-in member's password and revokes every other session. Owner/admin users can issue a
   digest-only, expiring, one-time reset link for a non-owner member; replacing a link cancels the

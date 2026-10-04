@@ -382,6 +382,49 @@ def bootstrap_and_inventory() -> tuple[str, str, str, str]:
         404,
         "not_found",
     )
+    network_probe = {
+        "kind": "https",
+        "host": "127.0.0.1",
+        "port": 443,
+        "path": "/",
+        "expected_status": None,
+        "timeout_ms": 5000,
+    }
+    expect(
+        call("POST", f"/v1/services/{service['id']}/network-probe", body=network_probe),
+        403,
+        "csrf_failed",
+    )
+    expect(
+        call(
+            "POST",
+            f"/v1/services/{service['id']}/network-probe",
+            body=network_probe,
+            headers=browser_headers(),
+        ),
+        400,
+        "unsafe_probe_destination",
+    )
+    expect(
+        call(
+            "POST",
+            f"/v1/services/{service['id']}/network-probe",
+            body={**network_probe, "host": "https://example.com"},
+            headers=browser_headers(),
+        ),
+        400,
+        "invalid_probe_request",
+    )
+    expect(
+        call(
+            "POST",
+            "/v1/services/00000000-0000-4000-8000-000000000099/network-probe",
+            body=network_probe,
+            headers=browser_headers(),
+        ),
+        404,
+        "not_found",
+    )
     assert service["status"] == {
         "state": "unknown",
         "reported_state": None,

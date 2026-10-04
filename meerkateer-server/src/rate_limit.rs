@@ -17,6 +17,7 @@ pub(crate) enum Scope {
     PasswordResetAcceptance,
     PasswordLogin,
     GameProbe,
+    NetworkProbe,
     Ingestion,
 }
 
