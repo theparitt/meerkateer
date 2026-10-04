@@ -23,7 +23,9 @@ services:
       - ../migrations/0012_incident_workflow.sql:/docker-entrypoint-initdb.d/012-incident-workflow.sql:ro
       - ../migrations/0013_alert_replay_cooldown.sql:/docker-entrypoint-initdb.d/013-alert-replay-cooldown.sql:ro
       - ../migrations/0014_worker_progress.sql:/docker-entrypoint-initdb.d/014-worker-progress.sql:ro
+      - ../migrations/0015_internal_member_invitations.sql:/docker-entrypoint-initdb.d/015-internal-member-invitations.sql:ro
       - ../dev/init-runtime-role.sh:/docker-entrypoint-initdb.d/015-runtime-role.sh:ro
+      - ../migrations/0016_member_access_recovery.sql:/docker-entrypoint-initdb.d/016-member-access-recovery.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s

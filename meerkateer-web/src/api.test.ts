@@ -1,12 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   acceptMemberInvitation,
+  acceptMemberPasswordReset,
   assignWorkspaceAgent,
+  cancelMemberInvitation,
+  changePassword,
   createMemberInvitation,
+  createMemberPasswordReset,
   createService,
   createWorkspace,
   declineMemberInvitation,
   inspectMemberInvitation,
+  inspectMemberPasswordReset,
   issueServiceCredential,
   issueWorkspaceEnrollmentToken,
   unassignWorkspaceAgent,
@@ -219,5 +224,70 @@ describe("management API", () => {
       expect(String(init?.body)).toContain("mki_");
       expect(init?.headers).not.toHaveProperty("X-Meerkateer-CSRF");
     }
+  });
+
+  it("keeps password-reset tokens out of URLs and protects administrator and account mutations", async () => {
+    setDocumentCookie("meerkateer_csrf=csrf-proof");
+    const fetchMock = vi.fn((input: string | URL | Request, _init?: RequestInit) => {
+      const path = String(input);
+      if (path.endsWith("/password-reset-links")) {
+        return Promise.resolve(
+          json({ secret: "mkr_private_once", expires_at: "2026-10-05T00:00:00Z" }, 201),
+        );
+      }
+      if (path === "/v1/member-password-resets/inspect") {
+        return Promise.resolve(
+          json(
+            {
+              company: "Acme Games",
+              username: "nina_ops",
+              display_name: "Nina",
+              expires_at: "2026-10-05T00:00:00Z",
+            },
+            200,
+          ),
+        );
+      }
+      if (path === "/v1/member-password-resets/accept") {
+        return Promise.resolve(
+          json(
+            {
+              tenant_id: "00000000-0000-4000-8000-000000000001",
+              user_id: "00000000-0000-4000-8000-000000000011",
+              role: "operator",
+              email: "internal@internal.meerkateer.invalid",
+              username: "nina_ops",
+              display_name: "Nina",
+            },
+            200,
+          ),
+        );
+      }
+      return Promise.resolve(new Response(null, { status: 204 }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const reset = await createMemberPasswordReset("member-id", 3_600);
+    await inspectMemberPasswordReset(reset.secret);
+    await acceptMemberPasswordReset(reset.secret, "member-new-password-123");
+    await cancelMemberInvitation("invitation-id");
+    await changePassword({
+      current_password: "member-current-password-123",
+      new_password: "member-new-password-456",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    for (const [path] of fetchMock.mock.calls) expect(String(path)).not.toContain("mkr_");
+    expect(fetchMock.mock.calls[0][1]?.headers).toMatchObject({
+      "X-Meerkateer-CSRF": "csrf-proof",
+    });
+    expect(fetchMock.mock.calls[1][1]?.headers).not.toHaveProperty("X-Meerkateer-CSRF");
+    expect(fetchMock.mock.calls[2][1]?.headers).not.toHaveProperty("X-Meerkateer-CSRF");
+    expect(fetchMock.mock.calls[3][1]?.headers).toMatchObject({
+      "X-Meerkateer-CSRF": "csrf-proof",
+    });
+    expect(fetchMock.mock.calls[4][1]?.headers).toMatchObject({
+      "X-Meerkateer-CSRF": "csrf-proof",
+    });
   });
 });

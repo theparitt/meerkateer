@@ -294,6 +294,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/session/password": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** @description Change the signed-in Community member password and revoke every other active session for that member. */
+    put: operations["changeCurrentMemberPassword"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/session": {
     parameters: {
       query?: never;
@@ -345,6 +362,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/members/invitations/{invitation_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** @description Cancel one pending internal invitation without deleting its audit history. */
+    delete: operations["cancelMemberInvitation"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/member-invitations/inspect": {
     parameters: {
       query?: never;
@@ -390,6 +424,57 @@ export interface paths {
     put?: never;
     /** @description Decline an internal invitation without creating an account. */
     post: operations["declineMemberInvitation"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/members/{user_id}/password-reset-links": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** @description Create a one-time internal password-reset link for a non-owner member. No email is sent and older pending links are cancelled. */
+    post: operations["createMemberPasswordReset"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/member-password-resets/inspect": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** @description Preview a one-time internal password-reset token sent in the request body. */
+    post: operations["inspectMemberPasswordReset"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/member-password-resets/accept": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** @description Set a new local password, revoke previous sessions, consume the reset token, and issue a fresh browser session. */
+    post: operations["acceptMemberPasswordReset"];
     delete?: never;
     options?: never;
     head?: never;
@@ -870,6 +955,10 @@ export interface components {
     PasswordSetupRequest: {
       password: string;
     };
+    ChangePasswordRequest: {
+      current_password: string;
+      new_password: string;
+    };
     BootstrapResponse: {
       /** Format: uuid */
       tenant_id: string;
@@ -922,7 +1011,7 @@ export interface components {
       /** Format: date-time */
       expires_at: string;
       /** @enum {unknown} */
-      status: "pending" | "accepted" | "declined" | "expired";
+      status: "pending" | "accepted" | "declined" | "cancelled" | "expired";
       /** Format: date-time */
       created_at: string;
     };
@@ -946,6 +1035,25 @@ export interface components {
       display_name: string;
       /** @enum {unknown} */
       role: "admin" | "operator" | "viewer";
+      /** Format: date-time */
+      expires_at: string;
+    };
+    CreateMemberPasswordResetRequest: {
+      expires_in_seconds: number;
+    };
+    AcceptMemberPasswordResetRequest: {
+      token: string;
+      password: string;
+    };
+    IssuedMemberPasswordResetResponse: {
+      secret: string;
+      /** Format: date-time */
+      expires_at: string;
+    };
+    PasswordResetPreviewResponse: {
+      company: string;
+      username: string;
+      display_name: string;
       /** Format: date-time */
       expires_at: string;
     };
@@ -2495,6 +2603,63 @@ export interface operations {
       };
     };
   };
+  changeCurrentMemberPassword: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ChangePasswordRequest"];
+      };
+    };
+    responses: {
+      /** @description Password changed; the current session remains active and all other sessions are revoked. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The new password is invalid or unchanged. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The session or current password is invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description CSRF proof is insufficient. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The password changed concurrently; retry with the latest password. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The control database is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   getCurrentSession: {
     parameters: {
       query?: never;
@@ -2697,6 +2862,47 @@ export interface operations {
       };
     };
   };
+  cancelMemberInvitation: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        invitation_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Invitation cancelled. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Permission or CSRF proof is insufficient. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The invitation is absent, tenant-hidden, expired, or no longer pending. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   inspectMemberInvitation: {
     parameters: {
       query?: never;
@@ -2796,6 +3002,138 @@ export interface operations {
         content?: never;
       };
       /** @description The invitation is invalid, expired, accepted, or already declined. */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      429: components["responses"]["RateLimited"];
+    };
+  };
+  createMemberPasswordReset: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        user_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateMemberPasswordResetRequest"];
+      };
+    };
+    responses: {
+      /** @description Reset link secret issued once. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["IssuedMemberPasswordResetResponse"];
+        };
+      };
+      /** @description The target or expiry is invalid. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Permission or CSRF proof is insufficient. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The member is absent or tenant-hidden. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The protected owner cannot use an internal reset link. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  inspectMemberPasswordReset: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["InvitationTokenRequest"];
+      };
+    };
+    responses: {
+      /** @description Password reset preview. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PasswordResetPreviewResponse"];
+        };
+      };
+      /** @description The reset is invalid, expired, cancelled, or consumed. */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      429: components["responses"]["RateLimited"];
+    };
+  };
+  acceptMemberPasswordReset: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AcceptMemberPasswordResetRequest"];
+      };
+    };
+    responses: {
+      /** @description Password reset completed and a new browser session issued. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SessionResponse"];
+        };
+      };
+      /** @description The new password is invalid. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The reset is invalid, expired, cancelled, or consumed. */
       410: {
         headers: {
           [name: string]: unknown;

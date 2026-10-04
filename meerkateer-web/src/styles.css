@@ -5348,7 +5348,7 @@ body:has(.resource-page)::after {
 
 .member-invite-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(120px, 0.55fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(110px, 0.5fr) minmax(120px, 0.55fr) auto;
   gap: 10px;
   align-items: end;
   padding: 16px;
@@ -5472,9 +5472,42 @@ body:has(.resource-page)::after {
 }
 
 .status-declined,
+.status-cancelled,
 .status-expired {
   color: #59647e;
   background: #eef1f6;
+}
+
+.account-card {
+  grid-template-columns: minmax(220px, 0.7fr) minmax(300px, 1.3fr);
+  align-items: start;
+}
+
+.account-password-form {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid #cfe0f2;
+  border-radius: 16px;
+  background: #f3f9ff;
+}
+
+.account-password-form label {
+  display: grid;
+  gap: 7px;
+  color: #34415f;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.account-password-form input {
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid #c7d3e4;
+  border-radius: 11px;
+  color: var(--navy);
+  background: white;
+  font: inherit;
 }
 
 @media (max-width: 900px) {
@@ -5488,6 +5521,10 @@ body:has(.resource-page)::after {
 
   .invitation-secret > div {
     grid-column: 1 / -1;
+  }
+
+  .account-card {
+    grid-template-columns: 1fr;
   }
 }
 

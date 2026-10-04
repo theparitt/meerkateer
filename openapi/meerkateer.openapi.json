@@ -317,6 +317,22 @@
         }
       }
     },
+    "/v1/session/password": {
+      "put": {
+        "operationId": "changeCurrentMemberPassword",
+        "description": "Change the signed-in Community member password and revoke every other active session for that member.",
+        "security": [{ "sessionCookie": [], "csrfHeader": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChangePasswordRequest" } } } },
+        "responses": {
+          "204": { "description": "Password changed; the current session remains active and all other sessions are revoked." },
+          "400": { "description": "The new password is invalid or unchanged." },
+          "401": { "description": "The session or current password is invalid." },
+          "403": { "description": "CSRF proof is insufficient." },
+          "409": { "description": "The password changed concurrently; retry with the latest password." },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
     "/v1/session": {
       "get": {
         "operationId": "getCurrentSession",
@@ -385,6 +401,20 @@
         }
       }
     },
+    "/v1/members/invitations/{invitation_id}": {
+      "delete": {
+        "operationId": "cancelMemberInvitation",
+        "description": "Cancel one pending internal invitation without deleting its audit history.",
+        "security": [{ "sessionCookie": [], "csrfHeader": [] }],
+        "parameters": [{ "name": "invitation_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": {
+          "204": { "description": "Invitation cancelled." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "Permission or CSRF proof is insufficient." },
+          "409": { "description": "The invitation is absent, tenant-hidden, expired, or no longer pending." }
+        }
+      }
+    },
     "/v1/member-invitations/inspect": {
       "post": {
         "operationId": "inspectMemberInvitation",
@@ -419,6 +449,48 @@
         "responses": {
           "204": { "description": "Invitation declined." },
           "410": { "description": "The invitation is invalid, expired, accepted, or already declined." },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/v1/members/{user_id}/password-reset-links": {
+      "post": {
+        "operationId": "createMemberPasswordReset",
+        "description": "Create a one-time internal password-reset link for a non-owner member. No email is sent and older pending links are cancelled.",
+        "security": [{ "sessionCookie": [], "csrfHeader": [] }],
+        "parameters": [{ "name": "user_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateMemberPasswordResetRequest" } } } },
+        "responses": {
+          "201": { "description": "Reset link secret issued once.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IssuedMemberPasswordResetResponse" } } } },
+          "400": { "description": "The target or expiry is invalid." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "Permission or CSRF proof is insufficient." },
+          "404": { "description": "The member is absent or tenant-hidden." },
+          "409": { "description": "The protected owner cannot use an internal reset link." }
+        }
+      }
+    },
+    "/v1/member-password-resets/inspect": {
+      "post": {
+        "operationId": "inspectMemberPasswordReset",
+        "description": "Preview a one-time internal password-reset token sent in the request body.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InvitationTokenRequest" } } } },
+        "responses": {
+          "200": { "description": "Password reset preview.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PasswordResetPreviewResponse" } } } },
+          "410": { "description": "The reset is invalid, expired, cancelled, or consumed." },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/v1/member-password-resets/accept": {
+      "post": {
+        "operationId": "acceptMemberPasswordReset",
+        "description": "Set a new local password, revoke previous sessions, consume the reset token, and issue a fresh browser session.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AcceptMemberPasswordResetRequest" } } } },
+        "responses": {
+          "200": { "description": "Password reset completed and a new browser session issued.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SessionResponse" } } } },
+          "400": { "description": "The new password is invalid." },
+          "410": { "description": "The reset is invalid, expired, cancelled, or consumed." },
           "429": { "$ref": "#/components/responses/RateLimited" }
         }
       }
@@ -1227,6 +1299,15 @@
         "required": ["password"],
         "properties": { "password": { "type": "string", "minLength": 12, "maxLength": 1024, "writeOnly": true } }
       },
+      "ChangePasswordRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["current_password", "new_password"],
+        "properties": {
+          "current_password": { "type": "string", "minLength": 12, "maxLength": 1024, "writeOnly": true },
+          "new_password": { "type": "string", "minLength": 12, "maxLength": 1024, "writeOnly": true }
+        }
+      },
       "BootstrapResponse": {
         "type": "object",
         "additionalProperties": false,
@@ -1290,7 +1371,7 @@
           "display_name": { "type": "string" },
           "role": { "enum": ["admin", "operator", "viewer"] },
           "expires_at": { "type": "string", "format": "date-time" },
-          "status": { "enum": ["pending", "accepted", "declined", "expired"] },
+          "status": { "enum": ["pending", "accepted", "declined", "cancelled", "expired"] },
           "created_at": { "type": "string", "format": "date-time" }
         }
       },
@@ -1333,6 +1414,41 @@
           "username": { "type": "string" },
           "display_name": { "type": "string" },
           "role": { "enum": ["admin", "operator", "viewer"] },
+          "expires_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateMemberPasswordResetRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["expires_in_seconds"],
+        "properties": { "expires_in_seconds": { "type": "integer", "minimum": 300, "maximum": 604800 } }
+      },
+      "AcceptMemberPasswordResetRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["token", "password"],
+        "properties": {
+          "token": { "type": "string", "minLength": 1, "maxLength": 160, "writeOnly": true },
+          "password": { "type": "string", "minLength": 12, "maxLength": 1024, "writeOnly": true }
+        }
+      },
+      "IssuedMemberPasswordResetResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["secret", "expires_at"],
+        "properties": {
+          "secret": { "type": "string", "writeOnly": true },
+          "expires_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "PasswordResetPreviewResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["company", "username", "display_name", "expires_at"],
+        "properties": {
+          "company": { "type": "string" },
+          "username": { "type": "string" },
+          "display_name": { "type": "string" },
           "expires_at": { "type": "string", "format": "date-time" }
         }
       },

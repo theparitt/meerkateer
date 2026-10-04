@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
@@ -769,5 +769,54 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Decline" }));
     expect(await screen.findByRole("heading", { name: "Invitation declined." })).toBeTruthy();
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("strips a password-reset secret from the URL and completes the local reset", async () => {
+    window.history.replaceState({}, "", "/reset-password#mkr_test_secret");
+    const fetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/v1/member-password-resets/inspect") {
+        expect(JSON.parse(String(init?.body))).toEqual({ token: "mkr_test_secret" });
+        return Promise.resolve(
+          json({
+            company: "Acme Games",
+            username: "nina_ops",
+            display_name: "Nina",
+            expires_at: "2026-10-05T00:00:00Z",
+          }),
+        );
+      }
+      if (path === "/v1/member-password-resets/accept") {
+        expect(JSON.parse(String(init?.body))).toEqual({
+          token: "mkr_test_secret",
+          password: "member-new-password-123",
+        });
+        return Promise.resolve(
+          json({
+            tenant_id: "00000000-0000-4000-8000-000000000001",
+            user_id: "00000000-0000-4000-8000-000000000011",
+            role: "operator",
+            email: "internal@internal.meerkateer.invalid",
+            username: "nina_ops",
+            display_name: "Nina",
+          }),
+        );
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Reset @nina_ops?" })).toBeTruthy();
+    expect(window.location.pathname).toBe("/reset-password");
+    expect(window.location.hash).toBe("");
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "member-new-password-123" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: "member-new-password-123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reset password" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
   });
 });

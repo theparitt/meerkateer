@@ -30,6 +30,10 @@ export type CreateMemberInvitationRequest = components["schemas"]["CreateMemberI
 export type IssuedMemberInvitationResponse =
   components["schemas"]["IssuedMemberInvitationResponse"];
 export type InvitationPreviewResponse = components["schemas"]["InvitationPreviewResponse"];
+export type ChangePasswordRequest = components["schemas"]["ChangePasswordRequest"];
+export type IssuedMemberPasswordResetResponse =
+  components["schemas"]["IssuedMemberPasswordResetResponse"];
+export type PasswordResetPreviewResponse = components["schemas"]["PasswordResetPreviewResponse"];
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -254,6 +258,29 @@ export async function createMemberInvitation(
   return body as IssuedMemberInvitationResponse;
 }
 
+export async function cancelMemberInvitation(invitationId: string): Promise<void> {
+  await mutateJson("DELETE", `/v1/members/invitations/${encodeURIComponent(invitationId)}`);
+}
+
+export async function createMemberPasswordReset(
+  userId: string,
+  expiresInSeconds = 86_400,
+): Promise<IssuedMemberPasswordResetResponse> {
+  const body = await mutateJson(
+    "POST",
+    `/v1/members/${encodeURIComponent(userId)}/password-reset-links`,
+    { expires_in_seconds: expiresInSeconds },
+  );
+  if (!isObject(body) || typeof body.secret !== "string" || typeof body.expires_at !== "string") {
+    throw new Error("Password reset creation returned an unsupported contract");
+  }
+  return body as IssuedMemberPasswordResetResponse;
+}
+
+export async function changePassword(input: ChangePasswordRequest): Promise<void> {
+  await mutateJson("PUT", "/v1/session/password", input);
+}
+
 export async function updateMemberRole(
   userId: string,
   role: "admin" | "operator" | "viewer",
@@ -306,6 +333,27 @@ export async function acceptMemberInvitation(
 
 export async function declineMemberInvitation(token: string): Promise<void> {
   await invitationMutation("/v1/member-invitations/decline", { token });
+}
+
+export async function inspectMemberPasswordReset(
+  token: string,
+): Promise<PasswordResetPreviewResponse> {
+  const body = await invitationMutation("/v1/member-password-resets/inspect", { token });
+  if (!isObject(body) || typeof body.company !== "string") {
+    throw new Error("Password reset preview returned an unsupported contract");
+  }
+  return body as PasswordResetPreviewResponse;
+}
+
+export async function acceptMemberPasswordReset(
+  token: string,
+  password: string,
+): Promise<SessionResponse> {
+  const body = await invitationMutation("/v1/member-password-resets/accept", { token, password });
+  if (!isObject(body) || typeof body.user_id !== "string") {
+    throw new Error("Password reset acceptance returned an unsupported contract");
+  }
+  return body as SessionResponse;
 }
 
 export async function fetchHealth(signal: AbortSignal): Promise<HealthResponse> {

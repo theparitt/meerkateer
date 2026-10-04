@@ -23,7 +23,7 @@ there is runnable code, but the requested operator outcome is not yet verified.
 | Capability | Source | Current result | Evidence | Gap |
 | --- | --- | --- | --- | --- |
 | Owner setup and login | `meerkateer-server/src/lib.rs` (`bootstrap`, `password_login`, `password_setup`), `migrations/0009_community_owner_password.sql`, `meerkateer-web/src/App.tsx` | Partial | `tests/integration/api_e2e.py` rejects second bootstrap, tests password login/recovery and retired setup-key login; `/` routes fresh Community to setup | No clean-machine browser journey recorded |
-| Internal members | `migrations/0015_internal_member_invitations.sql`, `/v1/members*`, `/v1/member-invitations/*`, Console Admin and `/join` | Partial | PostgreSQL E2E covers owner/admin creation, no-email one-time link, digest-only storage, inspect, accept/decline, username login, CSRF, roles, expiry, replay, simultaneous accept, audit, and secret non-disclosure | OIDC/SSO, invitation cancellation, password reset for non-owner members, and independent security review remain |
+| Internal members | migrations `0015`–`0016`, `/v1/members*`, `/v1/member-invitations/*`, `/v1/member-password-resets/*`, Console Admin/Account, `/join`, and `/reset-password` | Partial | PostgreSQL E2E covers no-email digest-only invitations, configurable expiry, accept/decline/admin cancellation, username login, self password change, internal reset replacement/expiry/replay/concurrency, session revocation, roles, CSRF, audit, and secret non-disclosure | Optional OIDC/SSO and independent security review remain |
 | Host enrollment and telemetry | `meerkateer-agent/src/main.rs`, `meerkateer-agent/src/collector.rs`, `migrations/0006_agent_telemetry.sql`, server `/v1/agent/telemetry` and `/v1/agents/{agent_id}/telemetry` | Partial | Cross-platform CLI inspect plus enroll/doctor/run collect bounded CPU, memory, fixed-filesystem and exact-name process samples; a tenant-scoped latest-batch read model and responsive Machine detail UI expose complete/partial/unavailable, stale, and stopped-process evidence; unit/E2E tests cover shape, durable retry, never-seen, current snapshot and unknown agent | Inodes, memory pressure, network/service-manager collection, native installers, signed updates, historical charts and process alert policies remain |
 | Service signals | `sdk/{node,go,rust,python,php}`, server `ingest_heartbeat`, `ingest_event`, `ingest_deploy` | Partial | MKS E2E proves auth, idempotency, status transitions and timeline; SDK unit tests pass | No scheduled HTTP/TLS check |
 | Status and staleness | `service_snapshots`, `service_from_row` and `agent_responses` in server, `AvailabilityBoard.tsx` | Partial | E2E proves fresh down then fresh recovery and aged heartbeat becomes `unknown` | Permission failure and collector failure are not first-class status reasons |
@@ -40,7 +40,7 @@ this repository. It does not count as delivered Meerkateer functionality.
 The CE-0 isolated `make integration` run passed on 2026-10-04: bootstrap and
 password login, agent enrollment and replay protection, ingest status/recovery,
 incident correlation, operator acknowledgement/assignment/notes, maintenance suppression, alert
-outcomes, cooldown/replay, migration 0007→0015, worker retry, durable worker-stall detection,
+outcomes, cooldown/replay, migration 0007→0016, worker retry, durable worker-stall detection,
 and dead-letter. The separate Compose
 volume and containers were removed by the harness. This is test-environment
 evidence; it does not verify any real production host.

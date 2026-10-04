@@ -194,6 +194,11 @@ company machines can also be assigned to or removed from a workspace without rev
 Company owners and admins can create an internal invitation from **Console → Admin**. Meerkateer
 does not send email: copy the one-time link to the person directly. They see the company and role,
 then choose Accept or Decline and create a local username/password account only after accepting.
+Admins can choose a one-hour, 24-hour, or seven-day expiry and cancel a pending link. Every member
+can change their password under **Console → Account**; all of their other sessions are revoked.
+If a non-owner forgets a password, an owner or admin can generate a one-time internal reset link
+from the member row. Reset secrets are shown once, stored only as digests, and never sent by email.
+The protected owner continues to recover with the installation setup key.
 
 <a id="quick-start"></a>
 

@@ -62,6 +62,7 @@ impl AppState {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn configure_routes(config: &mut web::ServiceConfig) {
     config
         .route("/live", web::get().to(live))
@@ -99,6 +100,7 @@ pub fn configure_routes(config: &mut web::ServiceConfig) {
                 .route("/admin/summary", web::get().to(admin_summary))
                 .service(member_routes())
                 .service(invitation_routes())
+                .service(password_reset_routes())
                 .route("/ingest/heartbeat", web::post().to(ingest_heartbeat))
                 .route("/ingest/event", web::post().to(ingest_event))
                 .route("/ingest/deploy", web::post().to(ingest_deploy))
@@ -169,6 +171,7 @@ fn session_routes() -> actix_web::Scope {
     web::scope("/session")
         .route("/password-login", web::post().to(password_login))
         .route("/password-setup", web::post().to(password_setup))
+        .route("/password", web::put().to(change_password))
         .route("", web::get().to(current_session))
         .route("", web::delete().to(logout))
 }
@@ -178,6 +181,14 @@ fn member_routes() -> actix_web::Scope {
         .route("", web::get().to(list_members))
         .route("/invitations", web::get().to(list_member_invitations))
         .route("/invitations", web::post().to(create_member_invitation))
+        .route(
+            "/invitations/{invitation_id}",
+            web::delete().to(cancel_member_invitation),
+        )
+        .route(
+            "/{user_id}/password-reset-links",
+            web::post().to(create_member_password_reset),
+        )
         .route("/{user_id}/role", web::put().to(update_member_role))
         .route("/{user_id}", web::delete().to(remove_member))
 }
@@ -187,6 +198,12 @@ fn invitation_routes() -> actix_web::Scope {
         .route("/inspect", web::post().to(inspect_member_invitation))
         .route("/accept", web::post().to(accept_member_invitation))
         .route("/decline", web::post().to(decline_member_invitation))
+}
+
+fn password_reset_routes() -> actix_web::Scope {
+    web::scope("/member-password-resets")
+        .route("/inspect", web::post().to(inspect_member_password_reset))
+        .route("/accept", web::post().to(accept_member_password_reset))
 }
 
 fn incident_routes() -> actix_web::Scope {
@@ -356,6 +373,12 @@ struct PasswordLoginRequest {
 #[derive(Deserialize)]
 struct PasswordSetupRequest {
     password: String,
+}
+
+#[derive(Deserialize)]
+struct ChangePasswordRequest {
+    current_password: String,
+    new_password: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -726,6 +749,31 @@ struct InvitationPreviewResponse {
     username: String,
     display_name: String,
     role: String,
+    expires_at: chrono::DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateMemberPasswordResetRequest {
+    expires_in_seconds: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct AcceptMemberPasswordResetRequest {
+    token: String,
+    password: String,
+}
+
+#[derive(Debug, Serialize)]
+struct IssuedMemberPasswordResetResponse {
+    secret: String,
+    expires_at: chrono::DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+struct PasswordResetPreviewResponse {
+    company: String,
+    username: String,
+    display_name: String,
     expires_at: chrono::DateTime<Utc>,
 }
 
@@ -1172,6 +1220,149 @@ async fn insert_local_member_session(
     transaction.commit().await.map_err(|_| ())
 }
 
+async fn verify_local_password_value(
+    state: &AppState,
+    value: String,
+    password_hash: String,
+) -> Result<bool, ()> {
+    let permit = Arc::clone(&state.credential_verifier)
+        .acquire_owned()
+        .await
+        .map_err(|_| ())?;
+    let password = secrecy::SecretString::from(value);
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        Ok::<bool, ()>(verify_local_password(&password, &password_hash).is_ok())
+    })
+    .await
+    .map_err(|_| ())?
+}
+
+async fn change_password(
+    request: HttpRequest,
+    body: web::Json<ChangePasswordRequest>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    if state.config.deployment_mode != DeploymentMode::Community {
+        return HttpResponse::NotFound().json(ErrorResponse { code: "not_found" });
+    }
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if !csrf_is_valid(&request, &session) {
+        return HttpResponse::Forbidden().json(ErrorResponse {
+            code: "csrf_failed",
+        });
+    }
+    if !valid_local_password(&body.current_password)
+        || !valid_local_password(&body.new_password)
+        || body.current_password == body.new_password
+    {
+        return HttpResponse::BadRequest().json(ErrorResponse {
+            code: "invalid_password",
+        });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let current_hash = match find_current_member_password_hash(database, session.principal).await {
+        Ok(Some(value)) => value,
+        Ok(None) => return unauthorized(),
+        Err(()) => return database_unavailable(),
+    };
+    match verify_local_password_value(&state, body.current_password.clone(), current_hash.clone())
+        .await
+    {
+        Ok(true) => {}
+        Ok(false) => {
+            return HttpResponse::Unauthorized().json(ErrorResponse {
+                code: "invalid_current_password",
+            });
+        }
+        Err(()) => return database_unavailable(),
+    }
+    let Ok(password_hash) = hash_owner_password(&state, &body.new_password).await else {
+        return database_unavailable();
+    };
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, session.principal.tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let password_updated = sqlx::query(
+        "UPDATE users SET local_password_hash = $2 WHERE id = $1 AND local_password_hash = $3",
+    )
+    .bind(session.principal.user_id)
+    .bind(password_hash)
+    .bind(current_hash)
+    .execute(&mut *transaction)
+    .await;
+    match password_updated {
+        Ok(result) if result.rows_affected() == 1 => {}
+        Ok(_) => {
+            return HttpResponse::Conflict().json(ErrorResponse {
+                code: "password_changed_during_request",
+            });
+        }
+        Err(_) => return database_unavailable(),
+    }
+    if sqlx::query(
+        "UPDATE sessions SET revoked_at = now() WHERE tenant_id = $1 AND user_id = $2 \
+             AND id <> $3 AND revoked_at IS NULL",
+    )
+    .bind(session.principal.tenant_id)
+    .bind(session.principal.user_id)
+    .bind(session.session_id)
+    .execute(&mut *transaction)
+    .await
+    .is_err()
+        || sqlx::query(
+            "INSERT INTO audit_events \
+             (tenant_id, actor_type, actor_id, action, target_type, target_id) \
+             VALUES ($1, 'user', $2, 'member.password_changed', 'user', $2)",
+        )
+        .bind(session.principal.tenant_id)
+        .bind(session.principal.user_id)
+        .execute(&mut *transaction)
+        .await
+        .is_err()
+        || transaction.commit().await.is_err()
+    {
+        return database_unavailable();
+    }
+    HttpResponse::NoContent()
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .finish()
+}
+
+async fn find_current_member_password_hash(
+    database: &PgPool,
+    principal: Principal,
+) -> Result<Option<String>, ()> {
+    let mut transaction = database.begin().await.map_err(|_| ())?;
+    set_tenant_context(&mut transaction, principal.tenant_id)
+        .await
+        .map_err(|_| ())?;
+    let result = sqlx::query_scalar::<_, String>(
+        "SELECT users.local_password_hash FROM users \
+         JOIN memberships ON memberships.user_id = users.id \
+         WHERE memberships.tenant_id = $1 AND users.id = $2 \
+           AND users.disabled_at IS NULL AND users.local_password_hash IS NOT NULL",
+    )
+    .bind(principal.tenant_id)
+    .bind(principal.user_id)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(|_| ())?;
+    transaction.commit().await.map_err(|_| ())?;
+    Ok(result)
+}
+
 async fn password_setup(
     request: HttpRequest,
     body: web::Json<PasswordSetupRequest>,
@@ -1468,7 +1659,7 @@ async fn require_rate_limit(
     );
     let limit = match scope {
         RateLimitScope::Authentication => state.config.authentication_rate_limit_per_minute,
-        RateLimitScope::InvitationAcceptance => 20,
+        RateLimitScope::InvitationAcceptance | RateLimitScope::PasswordResetAcceptance => 20,
         RateLimitScope::PasswordLogin | RateLimitScope::GameProbe => 10,
         RateLimitScope::Ingestion => state.config.ingestion_rate_limit_per_minute,
     };
@@ -2942,9 +3133,10 @@ async fn list_member_invitations(request: HttpRequest, state: web::Data<AppState
             chrono::DateTime<Utc>,
             Option<chrono::DateTime<Utc>>,
             Option<chrono::DateTime<Utc>>,
+            Option<chrono::DateTime<Utc>>,
         ),
     >(
-        "SELECT id, username, display_name, role, expires_at, created_at, accepted_at, declined_at \
+        "SELECT id, username, display_name, role, expires_at, created_at, accepted_at, declined_at, cancelled_at \
          FROM member_invitations WHERE tenant_id = $1 \
          ORDER BY created_at DESC, id LIMIT 100",
     )
@@ -2971,6 +3163,8 @@ async fn list_member_invitations(request: HttpRequest, state: web::Data<AppState
                 "accepted"
             } else if row.7.is_some() {
                 "declined"
+            } else if row.8.is_some() {
+                "cancelled"
             } else if row.4 <= now {
                 "expired"
             } else {
@@ -3099,7 +3293,8 @@ async fn store_member_invitation(
     let username_taken = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS (SELECT 1 FROM users WHERE username = $1) OR EXISTS (\
            SELECT 1 FROM member_invitations WHERE tenant_id = $2 AND username = $1 \
-             AND accepted_at IS NULL AND declined_at IS NULL AND expires_at > now())",
+             AND accepted_at IS NULL AND declined_at IS NULL AND cancelled_at IS NULL \
+             AND expires_at > now())",
     )
     .bind(username)
     .bind(principal.tenant_id)
@@ -3224,6 +3419,7 @@ async fn inspect_member_invitation(
          WHERE member_invitations.tenant_id = $1 AND member_invitations.token_digest = $2 \
            AND member_invitations.accepted_at IS NULL \
            AND member_invitations.declined_at IS NULL \
+           AND member_invitations.cancelled_at IS NULL \
            AND member_invitations.expires_at > now()",
     )
     .bind(tenant_id)
@@ -3248,6 +3444,81 @@ async fn inspect_member_invitation(
             role: preview.3,
             expires_at: preview.4,
         })
+}
+
+async fn cancel_member_invitation(
+    request: HttpRequest,
+    invitation_id: web::Path<uuid::Uuid>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    if state.config.deployment_mode != DeploymentMode::Community {
+        return HttpResponse::NotFound().json(ErrorResponse { code: "not_found" });
+    }
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session
+        .principal
+        .authorize(session.principal.tenant_id, Action::MemberManage)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    if !csrf_is_valid(&request, &session) {
+        return HttpResponse::Forbidden().json(ErrorResponse {
+            code: "csrf_failed",
+        });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let invitation_id = invitation_id.into_inner();
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, session.principal.tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let cancelled = sqlx::query_scalar::<_, uuid::Uuid>(
+        "UPDATE member_invitations SET cancelled_at = now() \
+         WHERE tenant_id = $1 AND id = $2 AND accepted_at IS NULL \
+           AND declined_at IS NULL AND cancelled_at IS NULL AND expires_at > now() RETURNING id",
+    )
+    .bind(session.principal.tenant_id)
+    .bind(invitation_id)
+    .fetch_optional(&mut *transaction)
+    .await;
+    let cancelled = match cancelled {
+        Ok(Some(value)) => value,
+        Ok(None) => {
+            return HttpResponse::Conflict().json(ErrorResponse {
+                code: "invitation_not_pending",
+            });
+        }
+        Err(_) => return database_unavailable(),
+    };
+    if sqlx::query(
+        "INSERT INTO audit_events \
+         (tenant_id, actor_type, actor_id, action, target_type, target_id) \
+         VALUES ($1, 'user', $2, 'member.invitation_cancelled', 'member_invitation', $3)",
+    )
+    .bind(session.principal.tenant_id)
+    .bind(session.principal.user_id)
+    .bind(cancelled)
+    .execute(&mut *transaction)
+    .await
+    .is_err()
+        || transaction.commit().await.is_err()
+    {
+        return database_unavailable();
+    }
+    HttpResponse::NoContent()
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .finish()
 }
 
 async fn decline_member_invitation(
@@ -3282,7 +3553,7 @@ async fn decline_member_invitation(
     let invitation_id = sqlx::query_scalar::<_, uuid::Uuid>(
         "UPDATE member_invitations SET declined_at = now() \
          WHERE tenant_id = $1 AND token_digest = $2 AND accepted_at IS NULL \
-           AND declined_at IS NULL AND expires_at > now() RETURNING id",
+           AND declined_at IS NULL AND cancelled_at IS NULL AND expires_at > now() RETURNING id",
     )
     .bind(tenant_id)
     .bind(digest.as_slice())
@@ -3347,7 +3618,7 @@ async fn accept_member_invitation(
     let invitation = sqlx::query_as::<_, (uuid::Uuid, String, String, String)>(
         "SELECT id, username, display_name, role FROM member_invitations \
          WHERE tenant_id = $1 AND token_digest = $2 AND accepted_at IS NULL \
-           AND declined_at IS NULL AND expires_at > now() FOR UPDATE",
+           AND declined_at IS NULL AND cancelled_at IS NULL AND expires_at > now() FOR UPDATE",
     )
     .bind(tenant_id)
     .bind(digest.as_slice())
@@ -3560,6 +3831,415 @@ fn invalid_invitation() -> HttpResponse {
         .json(ErrorResponse {
             code: "invitation_unavailable",
         })
+}
+
+fn issue_member_password_reset_secret(tenant_id: uuid::Uuid) -> String {
+    format!(
+        "mkr_{}_{}{}",
+        tenant_id.simple(),
+        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::new_v4().simple()
+    )
+}
+
+fn parse_member_password_reset_secret(secret: &str) -> Option<(uuid::Uuid, [u8; 32])> {
+    if secret.len() > 160 || !secret.is_ascii() {
+        return None;
+    }
+    let mut parts = secret.split('_');
+    if parts.next()? != "mkr" {
+        return None;
+    }
+    let tenant_id = uuid::Uuid::parse_str(parts.next()?).ok()?;
+    let random = parts.next()?;
+    if parts.next().is_some()
+        || random.len() != 64
+        || !random.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return None;
+    }
+    Some((tenant_id, invitation_token_digest(secret)))
+}
+
+fn invalid_password_reset() -> HttpResponse {
+    HttpResponse::Gone()
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .json(ErrorResponse {
+            code: "password_reset_unavailable",
+        })
+}
+
+async fn create_member_password_reset(
+    request: HttpRequest,
+    user_id: web::Path<uuid::Uuid>,
+    body: web::Json<CreateMemberPasswordResetRequest>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    if state.config.deployment_mode != DeploymentMode::Community {
+        return HttpResponse::NotFound().json(ErrorResponse { code: "not_found" });
+    }
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session
+        .principal
+        .authorize(session.principal.tenant_id, Action::MemberManage)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    if !csrf_is_valid(&request, &session) {
+        return HttpResponse::Forbidden().json(ErrorResponse {
+            code: "csrf_failed",
+        });
+    }
+    let user_id = user_id.into_inner();
+    if user_id == session.principal.user_id || !(300..=604_800).contains(&body.expires_in_seconds) {
+        return HttpResponse::BadRequest().json(ErrorResponse {
+            code: "invalid_request",
+        });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let created_at = Utc::now();
+    let expires_at = created_at + ChronoDuration::seconds(i64::from(body.expires_in_seconds));
+    let reset_id = uuid::Uuid::new_v4();
+    let secret = issue_member_password_reset_secret(session.principal.tenant_id);
+    let digest = invitation_token_digest(&secret);
+    match store_member_password_reset(
+        database,
+        session.principal,
+        user_id,
+        reset_id,
+        &digest,
+        created_at,
+        expires_at,
+    )
+    .await
+    {
+        Ok(()) => {}
+        Err(PasswordResetStoreError::NotFound) => {
+            return HttpResponse::NotFound().json(ErrorResponse { code: "not_found" });
+        }
+        Err(PasswordResetStoreError::Protected) => {
+            return HttpResponse::Conflict().json(ErrorResponse {
+                code: "owner_protected",
+            });
+        }
+        Err(PasswordResetStoreError::Database) => return database_unavailable(),
+    }
+    HttpResponse::Created()
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .json(IssuedMemberPasswordResetResponse { secret, expires_at })
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PasswordResetStoreError {
+    NotFound,
+    Protected,
+    Database,
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn store_member_password_reset(
+    database: &PgPool,
+    principal: Principal,
+    user_id: uuid::Uuid,
+    reset_id: uuid::Uuid,
+    digest: &[u8; 32],
+    created_at: chrono::DateTime<Utc>,
+    expires_at: chrono::DateTime<Utc>,
+) -> Result<(), PasswordResetStoreError> {
+    let mut transaction = database
+        .begin()
+        .await
+        .map_err(|_| PasswordResetStoreError::Database)?;
+    set_tenant_context(&mut transaction, principal.tenant_id)
+        .await
+        .map_err(|_| PasswordResetStoreError::Database)?;
+    let target = sqlx::query_as::<_, (String, Option<String>)>(
+        "SELECT memberships.role, users.username FROM memberships \
+         JOIN users ON users.id = memberships.user_id \
+         WHERE memberships.tenant_id = $1 AND memberships.user_id = $2 \
+           AND users.disabled_at IS NULL AND users.local_password_hash IS NOT NULL FOR UPDATE",
+    )
+    .bind(principal.tenant_id)
+    .bind(user_id)
+    .fetch_optional(&mut *transaction)
+    .await;
+    let target = match target {
+        Ok(Some(value)) => value,
+        Ok(None) => return Err(PasswordResetStoreError::NotFound),
+        Err(_) => return Err(PasswordResetStoreError::Database),
+    };
+    if target.0 == "owner" || target.1.is_none() {
+        return Err(PasswordResetStoreError::Protected);
+    }
+    if sqlx::query(
+        "UPDATE member_password_resets SET cancelled_at = now() \
+         WHERE tenant_id = $1 AND user_id = $2 AND consumed_at IS NULL \
+           AND cancelled_at IS NULL",
+    )
+    .bind(principal.tenant_id)
+    .bind(user_id)
+    .execute(&mut *transaction)
+    .await
+    .is_err()
+        || sqlx::query(
+            "INSERT INTO member_password_resets \
+             (tenant_id, id, user_id, token_digest, created_by, created_at, expires_at) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        )
+        .bind(principal.tenant_id)
+        .bind(reset_id)
+        .bind(user_id)
+        .bind(digest.as_slice())
+        .bind(principal.user_id)
+        .bind(created_at)
+        .bind(expires_at)
+        .execute(&mut *transaction)
+        .await
+        .is_err()
+        || sqlx::query(
+            "INSERT INTO audit_events \
+             (tenant_id, actor_type, actor_id, action, target_type, target_id) \
+             VALUES ($1, 'user', $2, 'member.password_reset_created', 'user', $3)",
+        )
+        .bind(principal.tenant_id)
+        .bind(principal.user_id)
+        .bind(user_id)
+        .execute(&mut *transaction)
+        .await
+        .is_err()
+        || transaction.commit().await.is_err()
+    {
+        return Err(PasswordResetStoreError::Database);
+    }
+    Ok(())
+}
+
+async fn inspect_member_password_reset(
+    request: HttpRequest,
+    body: web::Json<InvitationTokenRequest>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    if state.config.deployment_mode != DeploymentMode::Community {
+        return HttpResponse::NotFound().json(ErrorResponse { code: "not_found" });
+    }
+    if require_rate_limit(&request, &state, RateLimitScope::Authentication)
+        .await
+        .is_err()
+    {
+        return rate_limited();
+    }
+    let Some((tenant_id, digest)) = parse_member_password_reset_secret(&body.token) else {
+        return invalid_password_reset();
+    };
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let preview = sqlx::query_as::<_, (String, String, String, chrono::DateTime<Utc>)>(
+        "SELECT tenants.display_name, users.username, users.display_name, \
+           member_password_resets.expires_at FROM member_password_resets \
+         JOIN tenants ON tenants.id = member_password_resets.tenant_id \
+         JOIN users ON users.id = member_password_resets.user_id \
+         WHERE member_password_resets.tenant_id = $1 \
+           AND member_password_resets.token_digest = $2 \
+           AND member_password_resets.consumed_at IS NULL \
+           AND member_password_resets.cancelled_at IS NULL \
+           AND member_password_resets.expires_at > now() AND users.disabled_at IS NULL",
+    )
+    .bind(tenant_id)
+    .bind(digest.as_slice())
+    .fetch_optional(&mut *transaction)
+    .await;
+    let preview = match preview {
+        Ok(Some(value)) => value,
+        Ok(None) => return invalid_password_reset(),
+        Err(_) => return database_unavailable(),
+    };
+    if transaction.commit().await.is_err() {
+        return database_unavailable();
+    }
+    HttpResponse::Ok()
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .json(PasswordResetPreviewResponse {
+            company: preview.0,
+            username: preview.1,
+            display_name: preview.2,
+            expires_at: preview.3,
+        })
+}
+
+async fn accept_member_password_reset(
+    request: HttpRequest,
+    body: web::Json<AcceptMemberPasswordResetRequest>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    if state.config.deployment_mode != DeploymentMode::Community {
+        return HttpResponse::NotFound().json(ErrorResponse { code: "not_found" });
+    }
+    if !valid_local_password(&body.password) {
+        return HttpResponse::BadRequest().json(ErrorResponse {
+            code: "invalid_password",
+        });
+    }
+    if require_rate_limit(&request, &state, RateLimitScope::PasswordResetAcceptance)
+        .await
+        .is_err()
+    {
+        return rate_limited();
+    }
+    let Some((tenant_id, digest)) = parse_member_password_reset_secret(&body.token) else {
+        return invalid_password_reset();
+    };
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let Ok(password_hash) = hash_owner_password(&state, &body.password).await else {
+        return database_unavailable();
+    };
+    let issued_session = IssuedSession::issue(tenant_id);
+    let expires_at = Utc::now() + ChronoDuration::hours(12);
+    let reset = match consume_member_password_reset(
+        database,
+        tenant_id,
+        &digest,
+        &password_hash,
+        &issued_session,
+        expires_at,
+    )
+    .await
+    {
+        Ok(value) => value,
+        Err(PasswordResetConsumeError::Unavailable) => return invalid_password_reset(),
+        Err(PasswordResetConsumeError::Database) => return database_unavailable(),
+    };
+    authenticated_session_response(
+        &state,
+        &issued_session,
+        (reset.0, reset.4, reset.1, reset.2, reset.3),
+        expires_at,
+    )
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PasswordResetConsumeError {
+    Unavailable,
+    Database,
+}
+
+type PasswordResetIdentity = (uuid::Uuid, String, Option<String>, String, String);
+
+async fn consume_member_password_reset(
+    database: &PgPool,
+    tenant_id: uuid::Uuid,
+    digest: &[u8; 32],
+    password_hash: &str,
+    issued_session: &IssuedSession,
+    expires_at: chrono::DateTime<Utc>,
+) -> Result<PasswordResetIdentity, PasswordResetConsumeError> {
+    let mut transaction = database
+        .begin()
+        .await
+        .map_err(|_| PasswordResetConsumeError::Database)?;
+    set_tenant_context(&mut transaction, tenant_id)
+        .await
+        .map_err(|_| PasswordResetConsumeError::Database)?;
+    let reset = sqlx::query_as::<
+        _,
+        (
+            uuid::Uuid,
+            uuid::Uuid,
+            String,
+            Option<String>,
+            String,
+            String,
+        ),
+    >(
+        "SELECT member_password_resets.id, users.id, users.email, users.username, \
+           users.display_name, memberships.role FROM member_password_resets \
+         JOIN users ON users.id = member_password_resets.user_id \
+         JOIN memberships ON memberships.tenant_id = member_password_resets.tenant_id \
+           AND memberships.user_id = member_password_resets.user_id \
+         WHERE member_password_resets.tenant_id = $1 \
+           AND member_password_resets.token_digest = $2 \
+           AND member_password_resets.consumed_at IS NULL \
+           AND member_password_resets.cancelled_at IS NULL \
+           AND member_password_resets.expires_at > now() AND users.disabled_at IS NULL FOR UPDATE",
+    )
+    .bind(tenant_id)
+    .bind(digest.as_slice())
+    .fetch_optional(&mut *transaction)
+    .await;
+    let reset = match reset {
+        Ok(Some(value)) => value,
+        Ok(None) => return Err(PasswordResetConsumeError::Unavailable),
+        Err(_) => return Err(PasswordResetConsumeError::Database),
+    };
+    if sqlx::query("UPDATE users SET local_password_hash = $2 WHERE id = $1")
+        .bind(reset.1)
+        .bind(password_hash)
+        .execute(&mut *transaction)
+        .await
+        .is_err()
+        || sqlx::query(
+            "UPDATE member_password_resets SET consumed_at = now() WHERE tenant_id = $1 AND id = $2",
+        )
+        .bind(tenant_id)
+        .bind(reset.0)
+        .execute(&mut *transaction)
+        .await
+        .is_err()
+        || sqlx::query(
+            "UPDATE sessions SET revoked_at = now() WHERE tenant_id = $1 AND user_id = $2 \
+             AND revoked_at IS NULL",
+        )
+        .bind(tenant_id)
+        .bind(reset.1)
+        .execute(&mut *transaction)
+        .await
+        .is_err()
+        || sqlx::query(
+            "INSERT INTO sessions \
+             (id, tenant_id, user_id, token_digest, csrf_digest, expires_at) \
+             VALUES ($1, $2, $3, $4, $5, $6)",
+        )
+        .bind(issued_session.session_id)
+        .bind(tenant_id)
+        .bind(reset.1)
+        .bind(issued_session.digest.as_slice())
+        .bind(issued_session.csrf_digest.as_slice())
+        .bind(expires_at)
+        .execute(&mut *transaction)
+        .await
+        .is_err()
+        || sqlx::query(
+            "INSERT INTO audit_events \
+             (tenant_id, actor_type, actor_id, action, target_type, target_id) \
+             VALUES ($1, 'user', $2, 'member.password_reset_completed', 'user', $2)",
+        )
+        .bind(tenant_id)
+        .bind(reset.1)
+        .execute(&mut *transaction)
+        .await
+        .is_err()
+        || transaction.commit().await.is_err()
+    {
+        return Err(PasswordResetConsumeError::Database);
+    }
+    Ok((reset.1, reset.2, reset.3, reset.4, reset.5))
 }
 
 async fn update_member_role(
@@ -7630,8 +8310,9 @@ mod tests {
 
     use super::{
         AppState, AuthenticatedSession, agent_telemetry_snapshot, configure_routes, csrf_is_valid,
-        invitation_token_digest, issue_member_invitation_secret, parse_member_invitation_secret,
-        worker_runtime_status,
+        invitation_token_digest, issue_member_invitation_secret,
+        issue_member_password_reset_secret, parse_member_invitation_secret,
+        parse_member_password_reset_secret, worker_runtime_status,
     };
 
     #[actix_web::test]
@@ -7646,6 +8327,20 @@ mod tests {
         );
         assert!(parse_member_invitation_secret("mki_bad").is_none());
         assert!(parse_member_invitation_secret(&(first + "_extra")).is_none());
+    }
+
+    #[actix_web::test]
+    async fn internal_password_reset_secret_is_scoped_random_and_strictly_parsed() {
+        let tenant_id = uuid::Uuid::new_v4();
+        let first = issue_member_password_reset_secret(tenant_id);
+        let second = issue_member_password_reset_secret(tenant_id);
+        assert_ne!(first, second);
+        assert_eq!(
+            parse_member_password_reset_secret(&first),
+            Some((tenant_id, invitation_token_digest(&first)))
+        );
+        assert!(parse_member_password_reset_secret("mkr_bad").is_none());
+        assert!(parse_member_password_reset_secret(&(first + "_extra")).is_none());
     }
 
     #[actix_web::test]

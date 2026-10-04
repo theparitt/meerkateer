@@ -8,6 +8,7 @@ import {
   type AlertPolicyResponse,
   type AuditEventResponse,
   acceptMemberInvitation,
+  acceptMemberPasswordReset,
   acknowledgeIncident,
   addIncidentNote,
   assignWorkspaceAgent,
@@ -17,8 +18,11 @@ import {
   type CreateProjectRequest,
   type CreateServiceRequest,
   cancelMaintenanceWindow,
+  cancelMemberInvitation,
+  changePassword,
   createMaintenanceWindow,
   createMemberInvitation,
+  createMemberPasswordReset,
   createService,
   createWorkspace,
   declineMemberInvitation,
@@ -46,11 +50,13 @@ import {
   type IssuedCredentialResponse,
   type IssuedEnrollmentTokenResponse,
   inspectMemberInvitation,
+  inspectMemberPasswordReset,
   issueServiceCredential,
   issueWorkspaceEnrollmentToken,
   type MaintenanceWindowResponse,
   type MemberInvitationResponse,
   type MemberResponse,
+  type PasswordResetPreviewResponse,
   type ProjectResponse,
   passwordLogin,
   removeMember,
@@ -96,6 +102,7 @@ type ConsoleView =
   | "incidents"
   | "alerts"
   | "maintenance"
+  | "account"
   | "admin"
   | "integrations";
 type ConsoleRoute = { view: ConsoleView; serviceId?: string; machineId?: string };
@@ -112,6 +119,7 @@ const consoleNavigation: Array<{
   { view: "incidents", href: "/app/incidents", label: "Incidents", icon: "!" },
   { view: "alerts", href: "/app/alerts", label: "Alerts", icon: "◉" },
   { view: "maintenance", href: "/app/maintenance", label: "Maintenance", icon: "☾" },
+  { view: "account", href: "/app/account", label: "Account", icon: "☺" },
   { view: "admin", href: "/app/admin", label: "Admin", icon: "⚙" },
   { view: "integrations", href: "/app/integrations", label: "Connect", icon: "+" },
 ];
@@ -183,6 +191,8 @@ type ManagementActions = {
   addIncidentNote: (incidentId: string, note: string) => Promise<void>;
   replayAlertDelivery: (deliveryId: string) => Promise<void>;
   createMemberInvitation: (input: CreateMemberInvitationRequest) => Promise<string>;
+  cancelMemberInvitation: (invitationId: string) => Promise<void>;
+  createMemberPasswordReset: (userId: string) => Promise<string>;
   updateMemberRole: (userId: string, role: "admin" | "operator" | "viewer") => Promise<void>;
   removeMember: (userId: string) => Promise<void>;
 };
@@ -205,6 +215,7 @@ export function App() {
   if (path === "/setup") return <CommunityAccessPage mode="setup" />;
   if (path === "/recover") return <CommunityAccessPage mode="recover" />;
   if (path === "/join") return <InvitationPage />;
+  if (path === "/reset-password") return <PasswordResetPage />;
   if (isResourceRoute(path)) {
     return (
       <Suspense fallback={<main className="page-width resource-loading">Loading guide…</main>}>
@@ -470,6 +481,139 @@ function InvitationPage() {
   );
 }
 
+type PasswordResetPageState =
+  | { phase: "loading" }
+  | { phase: "ready"; preview: PasswordResetPreviewResponse }
+  | { phase: "error"; message: string };
+
+function PasswordResetPage() {
+  const [token] = useState(() => {
+    const encoded = window.location.hash.slice(1);
+    if (!encoded) return "";
+    try {
+      return decodeURIComponent(encoded);
+    } catch {
+      return "";
+    }
+  });
+  const [state, setState] = useState<PasswordResetPageState>({ phase: "loading" });
+  const [pending, setPending] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    window.history.replaceState({}, "", "/reset-password");
+    if (!token) {
+      setState({ phase: "error", message: "This password reset link is incomplete." });
+      return;
+    }
+    inspectMemberPasswordReset(token)
+      .then((preview) => setState({ phase: "ready", preview }))
+      .catch(() =>
+        setState({
+          phase: "error",
+          message: "This password reset link has expired, was replaced, or was already used.",
+        }),
+      );
+  }, [token]);
+
+  async function reset(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const password = String(form.get("password") ?? "");
+    if (password !== String(form.get("confirm_password") ?? "")) {
+      setFeedback("Passwords do not match.");
+      return;
+    }
+    setPending(true);
+    setFeedback(null);
+    try {
+      await acceptMemberPasswordReset(token, password);
+      window.location.assign("/app");
+    } catch (error) {
+      setFeedback(
+        message(error) === "invalid_password"
+          ? "Use a new password of at least 12 characters."
+          : "This password reset link has expired, was replaced, or was already used.",
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="setup-page page-width invitation-page">
+      <header className="setup-header">
+        <a className="brand" href="/" aria-label="Meerkateer home">
+          <img className="brand-mascot" src="/logo.png" alt="" />
+          <span>
+            <img className="brand-wordmark" src="/wordmark.png" alt="Meerkateer" />
+            <small>Server reliability</small>
+          </span>
+        </a>
+        <a href="/login">Sign in instead</a>
+      </header>
+      <main className="invitation-main">
+        <section className="access-panel invitation-card" aria-live="polite">
+          <div className="access-copy">
+            <img className="invitation-mascot" src="/logo.png" alt="" />
+            <p className="eyebrow">Internal password reset</p>
+            {state.phase === "loading" ? <h1>Checking your reset link…</h1> : null}
+            {state.phase === "error" ? (
+              <>
+                <h1>Reset link unavailable.</h1>
+                <p role="alert">{state.message}</p>
+              </>
+            ) : null}
+            {state.phase === "ready" ? (
+              <>
+                <h1>Reset @{state.preview.username}?</h1>
+                <p>
+                  Set a new password for <strong>{state.preview.display_name}</strong> at{" "}
+                  <strong>{state.preview.company}</strong>.
+                </p>
+                <p>This link is valid until {formatMoment(state.preview.expires_at)}.</p>
+              </>
+            ) : null}
+          </div>
+          {state.phase === "ready" ? (
+            <form className="access-form" onSubmit={(event) => void reset(event)}>
+              <p>Completing this reset signs out every older session for this account.</p>
+              <label>
+                New password
+                <input
+                  autoComplete="new-password"
+                  minLength={12}
+                  name="password"
+                  required
+                  type="password"
+                />
+              </label>
+              <label>
+                Confirm password
+                <input
+                  autoComplete="new-password"
+                  minLength={12}
+                  name="confirm_password"
+                  required
+                  type="password"
+                />
+              </label>
+              <button disabled={pending} type="submit">
+                {pending ? "Resetting…" : "Reset password"}
+              </button>
+              {feedback ? (
+                <p className="access-feedback" role="alert">
+                  {feedback}
+                </p>
+              ) : null}
+            </form>
+          ) : null}
+        </section>
+      </main>
+    </div>
+  );
+}
+
 function ConsoleApp({ route }: { route: ConsoleRoute }) {
   const { view } = route;
   const [health, setHealth] = useState<HealthState>({ phase: "loading" });
@@ -666,6 +810,23 @@ function ConsoleApp({ route }: { route: ConsoleRoute }) {
     return `${window.location.origin}/join#${encodeURIComponent(issued.secret)}`;
   }
 
+  async function cancelMemberInvitationAction(invitationId: string) {
+    if (dashboard.phase !== "ready") throw new Error("Dashboard is not ready");
+    await cancelMemberInvitation(invitationId);
+    setDashboard({
+      ...dashboard,
+      memberInvitations: dashboard.memberInvitations.map((invitation) =>
+        invitation.id === invitationId ? { ...invitation, status: "cancelled" } : invitation,
+      ),
+    });
+  }
+
+  async function createMemberPasswordResetAction(userId: string) {
+    if (dashboard.phase !== "ready") throw new Error("Dashboard is not ready");
+    const issued = await createMemberPasswordReset(userId);
+    return `${window.location.origin}/reset-password#${encodeURIComponent(issued.secret)}`;
+  }
+
   async function updateMemberRoleAction(userId: string, role: "admin" | "operator" | "viewer") {
     if (dashboard.phase !== "ready") throw new Error("Dashboard is not ready");
     await updateMemberRole(userId, role);
@@ -763,6 +924,8 @@ function ConsoleApp({ route }: { route: ConsoleRoute }) {
             addIncidentNote: addIncidentNoteAction,
             replayAlertDelivery: replayAlertDeliveryAction,
             createMemberInvitation: createMemberInvitationAction,
+            cancelMemberInvitation: cancelMemberInvitationAction,
+            createMemberPasswordReset: createMemberPasswordResetAction,
             updateMemberRole: updateMemberRoleAction,
             removeMember: removeMemberAction,
           }}
@@ -1336,11 +1499,100 @@ function MaintenanceBoard({
   );
 }
 
+function AccountPanel({ session }: { session: SessionResponse }) {
+  const [pending, setPending] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const currentPassword = String(data.get("current_password") ?? "");
+    const newPassword = String(data.get("new_password") ?? "");
+    if (newPassword !== String(data.get("confirm_password") ?? "")) {
+      setFeedback("New passwords do not match.");
+      return;
+    }
+    setPending(true);
+    setFeedback(null);
+    try {
+      await changePassword({ current_password: currentPassword, new_password: newPassword });
+      form.reset();
+      setFeedback("Password changed. Other signed-in sessions were closed.");
+    } catch (error) {
+      const detail = message(error);
+      setFeedback(
+        detail.includes("invalid_current_password")
+          ? "The current password is incorrect."
+          : "The password could not be changed. Use at least 12 characters and choose a new value.",
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <section className="operations-card account-card">
+      <div>
+        <p className="eyebrow">Signed-in member</p>
+        <h2>{session.display_name}</h2>
+        <p>
+          {session.username ? `@${session.username}` : session.email} · {session.role}
+        </p>
+      </div>
+      <form className="account-password-form" onSubmit={(event) => void submit(event)}>
+        <h3>Change password</h3>
+        <p>Your current browser stays signed in. Every other session is revoked.</p>
+        <label>
+          Current password
+          <input
+            autoComplete="current-password"
+            minLength={12}
+            name="current_password"
+            required
+            type="password"
+          />
+        </label>
+        <label>
+          New password
+          <input
+            autoComplete="new-password"
+            minLength={12}
+            name="new_password"
+            required
+            type="password"
+          />
+        </label>
+        <label>
+          Confirm new password
+          <input
+            autoComplete="new-password"
+            minLength={12}
+            name="confirm_password"
+            required
+            type="password"
+          />
+        </label>
+        <button disabled={pending} type="submit">
+          {pending ? "Changing…" : "Change password"}
+        </button>
+        {feedback ? (
+          <p className="access-feedback" role="status">
+            {feedback}
+          </p>
+        ) : null}
+      </form>
+    </section>
+  );
+}
+
 function MemberAdminPanel({
   members,
   invitations,
   currentUserId,
   onCreateInvitation,
+  onCancelInvitation,
+  onCreatePasswordReset,
   onRole,
   onRemove,
 }: {
@@ -1348,10 +1600,13 @@ function MemberAdminPanel({
   invitations: MemberInvitationResponse[];
   currentUserId: string;
   onCreateInvitation: (input: CreateMemberInvitationRequest) => Promise<string>;
+  onCancelInvitation: (invitationId: string) => Promise<void>;
+  onCreatePasswordReset: (userId: string) => Promise<string>;
   onRole: (userId: string, role: "admin" | "operator" | "viewer") => Promise<void>;
   onRemove: (userId: string) => Promise<void>;
 }) {
   const [issuedLink, setIssuedLink] = useState<string | null>(null);
+  const [issuedKind, setIssuedKind] = useState<"invitation" | "password reset">("invitation");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
 
@@ -1369,8 +1624,9 @@ function MemberAdminPanel({
           .toLowerCase(),
         display_name: String(data.get("display_name") ?? "").trim(),
         role: String(data.get("role") ?? "viewer") as "admin" | "operator" | "viewer",
-        expires_in_seconds: 86_400,
+        expires_in_seconds: Number(data.get("expires_in_seconds") ?? 86_400),
       });
+      setIssuedKind("invitation");
       setIssuedLink(link);
       form.reset();
     } catch (error) {
@@ -1405,6 +1661,36 @@ function MemberAdminPanel({
       await onRemove(user.user_id);
     } catch {
       setFeedback("The member could not be removed. Refresh and try again.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function createPasswordReset(user: MemberResponse) {
+    if (!window.confirm(`Create a one-time password reset link for ${user.display_name}?`)) return;
+    setPending(user.user_id);
+    setFeedback(null);
+    setIssuedLink(null);
+    try {
+      const link = await onCreatePasswordReset(user.user_id);
+      setIssuedKind("password reset");
+      setIssuedLink(link);
+    } catch {
+      setFeedback("The password reset link could not be created. Refresh and try again.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function cancelInvitation(invitation: MemberInvitationResponse) {
+    if (!window.confirm(`Cancel the invitation for @${invitation.username}?`)) return;
+    setPending(invitation.id);
+    setFeedback(null);
+    try {
+      await onCancelInvitation(invitation.id);
+      setFeedback(`Invitation for @${invitation.username} cancelled.`);
+    } catch {
+      setFeedback("The invitation is no longer pending. Refresh and try again.");
     } finally {
       setPending(null);
     }
@@ -1445,6 +1731,14 @@ function MemberAdminPanel({
             <option value="admin">Admin</option>
           </select>
         </label>
+        <label>
+          Link expires
+          <select defaultValue="86400" name="expires_in_seconds">
+            <option value="3600">1 hour</option>
+            <option value="86400">24 hours</option>
+            <option value="604800">7 days</option>
+          </select>
+        </label>
         <button disabled={pending !== null} type="submit">
           {pending === "invite" ? "Creating…" : "Create invitation"}
         </button>
@@ -1452,8 +1746,8 @@ function MemberAdminPanel({
       {issuedLink ? (
         <div className="invitation-secret" role="status">
           <div>
-            <strong>Copy this link now</strong>
-            <p>It expires in 24 hours and cannot be shown again.</p>
+            <strong>Copy this {issuedKind} link now</strong>
+            <p>It is shown once. Share it only with the intended person.</p>
           </div>
           <input aria-label="Invitation link" readOnly value={issuedLink} />
           <button
@@ -1491,6 +1785,14 @@ function MemberAdminPanel({
                 <span className="status-pill status-online">{member.role}</span>
               ) : (
                 <div className="member-row-actions">
+                  <button
+                    className="text-button"
+                    disabled={pending === member.user_id}
+                    onClick={() => void createPasswordReset(member)}
+                    type="button"
+                  >
+                    Reset link
+                  </button>
                   <select
                     aria-label={`Role for ${member.display_name}`}
                     disabled={pending === member.user_id}
@@ -1528,7 +1830,21 @@ function MemberAdminPanel({
               <span>
                 <strong>{`@${invitation.username}`}</strong> · {invitation.role}
               </span>
-              <span className={`status-pill status-${invitation.status}`}>{invitation.status}</span>
+              <div className="member-row-actions">
+                <span className={`status-pill status-${invitation.status}`}>
+                  {invitation.status}
+                </span>
+                {invitation.status === "pending" ? (
+                  <button
+                    className="text-button"
+                    disabled={pending === invitation.id}
+                    onClick={() => void cancelInvitation(invitation)}
+                    type="button"
+                  >
+                    Cancel
+                  </button>
+                ) : null}
+              </div>
             </div>
           ))}
         </div>
@@ -1544,6 +1860,8 @@ function AdminBoard({
   invitations,
   currentUserId,
   onCreateInvitation,
+  onCancelInvitation,
+  onCreatePasswordReset,
   onRole,
   onRemove,
 }: {
@@ -1553,6 +1871,8 @@ function AdminBoard({
   invitations: MemberInvitationResponse[];
   currentUserId: string;
   onCreateInvitation: (input: CreateMemberInvitationRequest) => Promise<string>;
+  onCancelInvitation: (invitationId: string) => Promise<void>;
+  onCreatePasswordReset: (userId: string) => Promise<string>;
   onRole: (userId: string, role: "admin" | "operator" | "viewer") => Promise<void>;
   onRemove: (userId: string) => Promise<void>;
 }) {
@@ -1637,6 +1957,8 @@ function AdminBoard({
         invitations={invitations}
         currentUserId={currentUserId}
         onCreateInvitation={onCreateInvitation}
+        onCancelInvitation={onCancelInvitation}
+        onCreatePasswordReset={onCreatePasswordReset}
         onRole={onRole}
         onRemove={onRemove}
       />
@@ -2211,6 +2533,15 @@ function Operations({
             />
           </ConsolePage>
         ) : null}
+        {view === "account" ? (
+          <ConsolePage
+            title="Your account"
+            eyebrow="Security"
+            copy="Review your local identity and keep its password private."
+          >
+            <AccountPanel session={ready.session} />
+          </ConsolePage>
+        ) : null}
         {view === "admin" ? (
           <ConsolePage
             title="Administration"
@@ -2225,6 +2556,8 @@ function Operations({
                 invitations={ready.memberInvitations}
                 currentUserId={ready.session.user_id}
                 onCreateInvitation={management.createMemberInvitation}
+                onCancelInvitation={management.cancelMemberInvitation}
+                onCreatePasswordReset={management.createMemberPasswordReset}
                 onRole={management.updateMemberRole}
                 onRemove={management.removeMember}
               />

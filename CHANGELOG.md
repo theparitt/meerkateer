@@ -10,6 +10,11 @@ or a claim that the `v0.2.0` release gates have passed.
 
 ### Added
 
+- Complete email-free local credential recovery for Community members. The Account screen changes
+  a signed-in member's password and revokes every other session. Owner/admin users can issue a
+  digest-only, expiring, one-time reset link for a non-owner member; replacing a link cancels the
+  older one, completion revokes old sessions, and concurrent/replayed/expired attempts fail closed.
+  Pending invitations now have configurable expiry and audited cancellation from the Admin UI.
 - Email-free internal member invitations for Community. Owner/admin users create a one-time,
   24-hour local invite link from the Admin Console; recipients see the company, username, and role
   before choosing Accept or Decline and create their own local password only when accepting. Invite

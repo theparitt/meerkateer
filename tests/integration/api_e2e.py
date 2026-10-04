@@ -78,11 +78,25 @@ def expect(response: Response, status: int, code: str | None = None) -> Response
 
 
 def isolated_call(method: str, path: str, body: Any) -> Response:
-    payload = json.dumps(body, separators=(",", ":")).encode()
+    return isolated_request(method, path, body=body)
+
+
+def isolated_request(
+    method: str,
+    path: str,
+    *,
+    body: Any | None = None,
+    headers: dict[str, str] | None = None,
+) -> Response:
+    request_headers = dict(headers or {})
+    payload = None
+    if body is not None:
+        payload = json.dumps(body, separators=(",", ":")).encode()
+        request_headers.setdefault("Content-Type", "application/json")
     request = urllib.request.Request(
         f"{BASE_URL}{path}",
         data=payload,
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        headers={"Accept": "application/json", **request_headers},
         method=method,
     )
     isolated_client = urllib.request.build_opener()
@@ -95,11 +109,12 @@ def isolated_call(method: str, path: str, body: Any) -> Response:
     return Response(response.status, parsed, response.headers)
 
 
-def force_invitation_expired(secret: str) -> None:
+def force_token_expired(secret: str, table: str = "member_invitations") -> None:
     assert E2E_PROJECT and E2E_DB and E2E_DB_OWNER, "integration database context is required"
+    assert table in {"member_invitations", "member_password_resets"}
     digest = hashlib.sha256(secret.encode()).hexdigest()
     statement = (
-        "UPDATE member_invitations SET created_at = now() - interval '10 minutes', "
+        f"UPDATE {table} SET created_at = now() - interval '10 minutes', "
         "expires_at = now() - interval '1 second' "
         f"WHERE token_digest = decode('{digest}', 'hex');"
     )
@@ -126,6 +141,10 @@ def force_invitation_expired(secret: str) -> None:
         text=True,
         timeout=20,
     )
+
+
+def force_invitation_expired(secret: str) -> None:
+    force_token_expired(secret)
 
 
 def utc(offset: dt.timedelta = dt.timedelta()) -> str:
@@ -1180,6 +1199,7 @@ def enroll_agent(project_id: str) -> tuple[str, str]:
         403,
         "csrf_failed",
     )
+    expect(call("GET", "/v1/session"), 200)
     expect(
         call(
             "DELETE",
@@ -1495,6 +1515,7 @@ def internal_member_invitations() -> None:
     ).body
     assert accepted["username"] == "nina_ops" and accepted["role"] == "viewer", accepted
     assert "internal.meerkateer.invalid" in accepted["email"], accepted
+    first_member_session = {cookie.name: cookie.value for cookie in cookies}
     expect(
         call("POST", "/v1/member-invitations/inspect", body={"token": secret}),
         410,
@@ -1520,7 +1541,71 @@ def internal_member_invitations() -> None:
         ),
         200,
     )
-    expect(call("GET", "/v1/members"), 403, "forbidden")
+    expect(
+        call(
+            "PUT",
+            "/v1/session/password",
+            body={
+                "current_password": "wrong-current-password",
+                "new_password": "member-test-password-789",
+            },
+            headers=browser_headers(),
+        ),
+        401,
+        "invalid_current_password",
+    )
+    expect(
+        call(
+            "PUT",
+            "/v1/session/password",
+            body={
+                "current_password": "member-test-password-123",
+                "new_password": "member-test-password-789",
+            },
+            headers=browser_headers(),
+        ),
+        204,
+    )
+    expect(
+        call(
+            "PUT",
+            "/v1/session/password",
+            body={
+                "current_password": "member-test-password-789",
+                "new_password": "member-test-password-999",
+            },
+        ),
+        403,
+        "csrf_failed",
+    )
+    old_cookie = (
+        f"meerkateer_session={first_member_session['meerkateer_session']}; "
+        f"meerkateer_csrf={first_member_session['meerkateer_csrf']}"
+    )
+    expect(
+        isolated_request("GET", "/v1/session", headers={"Cookie": old_cookie}),
+        401,
+        "authentication_required",
+    )
+    cookies.clear()
+    expect(
+        call(
+            "POST",
+            "/v1/session/password-login",
+            body={"email": "nina_ops", "password": "member-test-password-123"},
+        ),
+        401,
+        "invalid_credentials",
+    )
+    expect(
+        call(
+            "POST",
+            "/v1/session/password-login",
+            body={"email": "nina_ops", "password": "member-test-password-789"},
+        ),
+        200,
+    )
+    changed_member_session = {cookie.name: cookie.value for cookie in cookies}
     cookies.clear()
     expect(
         call(
@@ -1532,6 +1617,52 @@ def internal_member_invitations() -> None:
             },
         ),
         200,
+    )
+
+    cancelled = expect(
+        call(
+            "POST",
+            "/v1/members/invitations",
+            body={
+                "username": "cancelled_user",
+                "display_name": "Cancelled User",
+                "role": "viewer",
+                "expires_in_seconds": 3_600,
+            },
+            headers=browser_headers(),
+        ),
+        201,
+    ).body
+    expect(
+        call("DELETE", f"/v1/members/invitations/{cancelled['invitation']['id']}"),
+        403,
+        "csrf_failed",
+    )
+    expect(
+        call(
+            "DELETE",
+            f"/v1/members/invitations/{cancelled['invitation']['id']}",
+            headers=browser_headers(),
+        ),
+        204,
+    )
+    expect(
+        call(
+            "POST",
+            "/v1/member-invitations/inspect",
+            body={"token": cancelled["secret"]},
+        ),
+        410,
+        "invitation_unavailable",
+    )
+    expect(
+        call(
+            "DELETE",
+            f"/v1/members/invitations/{cancelled['invitation']['id']}",
+            headers=browser_headers(),
+        ),
+        409,
+        "invitation_not_pending",
     )
 
     concurrent = expect(
@@ -1629,23 +1760,185 @@ def internal_member_invitations() -> None:
     members = expect(call("GET", "/v1/members"), 200).body["items"]
     assert any(member["username"] == "nina_ops" for member in members), members
     assert not any(member["username"] == "declined_user" for member in members), members
+    nina_id = next(member["user_id"] for member in members if member["username"] == "nina_ops")
+    owner_id = next(member["user_id"] for member in members if member["role"] == "owner")
     invitations = expect(call("GET", "/v1/members/invitations"), 200).body["items"]
     statuses = {item["username"]: item["status"] for item in invitations}
     assert statuses["nina_ops"] == "accepted", statuses
     assert statuses["concurrent_user"] == "accepted", statuses
     assert statuses["expired_user"] == "expired", statuses
     assert statuses["declined_user"] == "declined", statuses
+    assert statuses["cancelled_user"] == "cancelled", statuses
+
+    expect(
+        call(
+            "POST",
+            f"/v1/members/{nina_id}/password-reset-links",
+            body={"expires_in_seconds": 86_400},
+        ),
+        403,
+        "csrf_failed",
+    )
+    expect(
+        call(
+            "POST",
+            f"/v1/members/{owner_id}/password-reset-links",
+            body={"expires_in_seconds": 86_400},
+            headers=browser_headers(),
+        ),
+        400,
+        "invalid_request",
+    )
+    first_reset = expect(
+        call(
+            "POST",
+            f"/v1/members/{nina_id}/password-reset-links",
+            body={"expires_in_seconds": 86_400},
+            headers=browser_headers(),
+        ),
+        201,
+    ).body
+    assert first_reset["secret"].startswith("mkr_"), first_reset
+    reset_preview = expect(
+        call(
+            "POST",
+            "/v1/member-password-resets/inspect",
+            body={"token": first_reset["secret"]},
+        ),
+        200,
+    ).body
+    assert reset_preview["username"] == "nina_ops", reset_preview
+
+    replacement_reset = expect(
+        call(
+            "POST",
+            f"/v1/members/{nina_id}/password-reset-links",
+            body={"expires_in_seconds": 3_600},
+            headers=browser_headers(),
+        ),
+        201,
+    ).body
+    expect(
+        call(
+            "POST",
+            "/v1/member-password-resets/inspect",
+            body={"token": first_reset["secret"]},
+        ),
+        410,
+        "password_reset_unavailable",
+    )
+    reset_session = expect(
+        isolated_call(
+            "POST",
+            "/v1/member-password-resets/accept",
+            {
+                "token": replacement_reset["secret"],
+                "password": "member-reset-password-123",
+            },
+        ),
+        200,
+    ).body
+    assert reset_session["username"] == "nina_ops", reset_session
+    changed_cookie = (
+        f"meerkateer_session={changed_member_session['meerkateer_session']}; "
+        f"meerkateer_csrf={changed_member_session['meerkateer_csrf']}"
+    )
+    expect(
+        isolated_request("GET", "/v1/session", headers={"Cookie": changed_cookie}),
+        401,
+        "authentication_required",
+    )
+    expect(
+        call(
+            "POST",
+            "/v1/member-password-resets/accept",
+            body={
+                "token": replacement_reset["secret"],
+                "password": "member-reset-password-123",
+            },
+        ),
+        410,
+        "password_reset_unavailable",
+    )
+    expect(
+        isolated_call(
+            "POST",
+            "/v1/session/password-login",
+            {"email": "nina_ops", "password": "member-test-password-789"},
+        ),
+        401,
+        "invalid_credentials",
+    )
+
+    concurrent_reset = expect(
+        call(
+            "POST",
+            f"/v1/members/{nina_id}/password-reset-links",
+            body={"expires_in_seconds": 3_600},
+            headers=browser_headers(),
+        ),
+        201,
+    ).body
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(
+                isolated_call,
+                "POST",
+                "/v1/member-password-resets/accept",
+                {
+                    "token": concurrent_reset["secret"],
+                    "password": "member-concurrent-reset-123",
+                },
+            )
+            for _ in range(2)
+        ]
+        reset_results = [future.result() for future in futures]
+    assert sorted(result.status for result in reset_results) == [200, 410], reset_results
+
+    expired_reset = expect(
+        call(
+            "POST",
+            f"/v1/members/{nina_id}/password-reset-links",
+            body={"expires_in_seconds": 300},
+            headers=browser_headers(),
+        ),
+        201,
+    ).body
+    force_token_expired(expired_reset["secret"], "member_password_resets")
+    expect(
+        call(
+            "POST",
+            "/v1/member-password-resets/inspect",
+            body={"token": expired_reset["secret"]},
+        ),
+        410,
+        "password_reset_unavailable",
+    )
     audit = expect(call("GET", "/v1/audit-events?limit=100"), 200).body["items"]
     serialized_audit = json.dumps(audit)
     assert all(
         token not in serialized_audit
-        for token in (secret, concurrent_secret, expired_secret, declined_secret)
+        for token in (
+            secret,
+            concurrent_secret,
+            expired_secret,
+            declined_secret,
+            cancelled["secret"],
+            first_reset["secret"],
+            replacement_reset["secret"],
+            concurrent_reset["secret"],
+            expired_reset["secret"],
+        )
     )
     actions = {item["action"] for item in audit}
     assert {
         "member.invitation_created",
         "member.invitation_accepted",
         "member.invitation_declined",
+        "member.invitation_cancelled",
+        "member.password_changed",
+        "member.password_reset_created",
+        "member.password_reset_completed",
     } <= actions, actions
 
 
