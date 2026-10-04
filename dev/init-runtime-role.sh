@@ -42,6 +42,9 @@ BEGIN
     IF to_regprocedure('public.meerkateer_consume_rate_limit(text,bytea,integer)') IS NOT NULL THEN
         EXECUTE 'GRANT EXECUTE ON FUNCTION meerkateer_consume_rate_limit(text,bytea,integer) TO meerkateer_app';
     END IF;
+    IF to_regprocedure('public.meerkateer_claim_service_probes(uuid,integer)') IS NOT NULL THEN
+        EXECUTE 'GRANT EXECUTE ON FUNCTION meerkateer_claim_service_probes(uuid,integer) TO meerkateer_app';
+    END IF;
 END;
 $$;
 

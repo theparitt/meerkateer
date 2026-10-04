@@ -273,6 +273,9 @@ jobs:
             exit 1
           fi
           psql -h 127.0.0.1 -U meerkateer -d meerkateer -c "TRUNCATE distributed_rate_limits"
+          PGPASSWORD="$MEERKATEER_APP_PASSWORD" psql -h 127.0.0.1 -U meerkateer_app -d meerkateer -v ON_ERROR_STOP=1 \
+            -c "SELECT count(*) FROM meerkateer_claim_service_probes('00000000-0000-4000-8000-000000000018', 1)" \
+            >/dev/null
 
       - name: Prove writes cannot cross tenant boundary
         run: |
