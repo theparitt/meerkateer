@@ -10,6 +10,16 @@ not a stable release or a claim that the final `v0.3.0` release gates have passe
 
 ### Added
 
+- Early Security/Operations/Public Preview foundations pulled forward without closing their
+  release gates: PostgreSQL now enforces replica-wide fixed-window abuse budgets through a bounded
+  security-definer function and stores only installation-keyed peer digests; application logins
+  cannot read the limiter table directly. New `age`-encrypted backup and guarded restore commands
+  validate PostgreSQL archives, checksum encrypted output, record source/schema metadata, reapply
+  migrations, and require post-restore API readiness. A tag-gated multi-architecture OCI workflow
+  adds BuildKit SBOM/provenance and GitHub/Sigstore build attestations, and Controller DEB/MSI/ZIP
+  artifacts receive the same repository/workflow provenance evidence. These are foundations—not a
+  completed independent security review, off-host restore drill, platform signature, or clean
+  operator gate.
 - Service-level manual and scheduled HTTP, HTTPS, TCP, DNS, and TLS-certificate diagnostics in the Console and
   public API. Checks are CSRF- and tenant-protected, Community-only, rate-limited, bounded to a
   250–10,000 ms timeout, and fail closed when any DNS answer is private, local, reserved, or mixed

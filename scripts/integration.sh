@@ -41,6 +41,28 @@ until curl --fail --silent --max-time 2 "http://127.0.0.1:${api_port}/ready" >/d
     fi
     sleep 1
 done
+
+# The security limiter must be shared by independent application sessions while its pseudonymous
+# peer table remains unreadable to the runtime role.
+rate_limit_sql="SELECT meerkateer_consume_rate_limit('authentication', decode(repeat('ab', 32), 'hex'), 1);"
+distributed_first="$(printf '%s\n' "$rate_limit_sql" | docker compose -p "$project" exec -T \
+    -e "PGPASSWORD=$MEERKATEER_APP_PASSWORD" postgres \
+    psql -h 127.0.0.1 -U meerkateer_app -d "$POSTGRES_DB" -At -v ON_ERROR_STOP=1)"
+distributed_second="$(printf '%s\n' "$rate_limit_sql" | docker compose -p "$project" exec -T \
+    -e "PGPASSWORD=$MEERKATEER_APP_PASSWORD" postgres \
+    psql -h 127.0.0.1 -U meerkateer_app -d "$POSTGRES_DB" -At -v ON_ERROR_STOP=1)"
+test "$distributed_first" = t
+test "$distributed_second" = f
+if printf '%s\n' 'SELECT peer_digest FROM distributed_rate_limits;' \
+    | docker compose -p "$project" exec -T -e "PGPASSWORD=$MEERKATEER_APP_PASSWORD" postgres \
+        psql -h 127.0.0.1 -U meerkateer_app -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 \
+        >/dev/null 2>&1; then
+    echo 'application login unexpectedly has direct distributed limiter table access' >&2
+    exit 1
+fi
+docker compose -p "$project" exec -T postgres \
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c 'TRUNCATE distributed_rate_limits' >/dev/null
+
 MEERKATEER_E2E_URL="http://127.0.0.1:${api_port}" \
 MEERKATEER_E2E_PROJECT="$project" \
 MEERKATEER_E2E_DB="$POSTGRES_DB" \
@@ -86,9 +108,14 @@ docker compose -p "$project" exec -T postgres \
     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
     < tests/integration/seed_second_tenant.sql
 
-# Reset the bounded in-memory authentication budget exhausted by the abuse-control case,
-# prove the shared Cloud-ready core cannot cross company boundaries, then exercise a
-# concurrent real-agent fleet against the same isolated database.
+# Reset the distributed authentication budget exhausted by the abuse-control case. Restarting the
+# API alone deliberately does not clear it, so the integration owner resets only this disposable
+# test stack before the second-company login journey.
+docker compose -p "$project" exec -T postgres \
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c 'TRUNCATE distributed_rate_limits' >/dev/null
+
+# Prove the shared Cloud-ready core cannot cross company boundaries, then exercise a concurrent
+# real-agent fleet against the same isolated database.
 docker compose -p "$project" restart server >/dev/null
 until curl --fail --silent --max-time 2 "http://127.0.0.1:${api_port}/ready" >/dev/null; do
     sleep 1

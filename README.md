@@ -131,6 +131,11 @@ Monitoring Alpha line; it does not mean the `0.3.0` exit gate has passed. A sign
 `v0.3.0-alpha.2` GitHub Release has not been published yet. See the canonical
 [roadmap to 1.0](docs/roadmap-to-1.0.md) for milestone scope and measurable exit gates.
 
+Operators can start rehearsing the later gates with the
+[encrypted backup and restore guide](docs/backup-and-restore.md) and
+[release verification guide](docs/release-verification.md). A backup is not considered proven until
+it restores on another machine, and a build attestation is not the same as Windows platform signing.
+
 > **Status: developer preview.** Phases 0 and 1 are complete. Phase 2 now has the
 > tenant/RLS boundary, bootstrap session, local member invitations and roles, inventory,
 > service-key lifecycle, and agent enrollment/rotation/revocation. Phase 3 has durable MKS/MKA ingestion, first-class incidents with
@@ -167,9 +172,9 @@ versioned public images by digest; public core never imports private Cloud code.
 | `0.1` Foundation preview | Multi-workspace core, durable ingest, SDKs, agent, Console, test labs, and deploy packaging | Delivered |
 | `0.2` Community Alpha | Clean failure → evidence → alert → recovery journey | Foundation delivered |
 | `0.3` Monitoring Alpha | Production agent collectors, probes, and initial game/SME adapters | Current developer preview |
-| `0.4` Security Beta | Multi-user access, complete tenant tests, abuse controls, signed config, security review | Planned |
-| `0.5` Operations Beta | Restore, upgrade, retention, alert operations, observability, and fault drills | Planned |
-| `0.6–0.7` Public/Scale Beta | Signed artifacts, clean install, accessibility, capacity, compatibility, and soak | Planned |
+| `0.4` Security Beta | Multi-user access, tenant tests, shared abuse controls; signed config and review remain | Foundation active |
+| `0.5` Operations Beta | Encrypted backup/guarded restore tooling exists; off-host drills, retention, quotas, and RPO/RTO remain | Foundation active |
+| `0.6–0.7` Public/Scale Beta | SBOM/provenance workflows exist; publishing, platform signing, clean installs, accessibility, capacity, and soak remain | Foundation active |
 | `0.8` Hosted Beta | Free managed beta; parallel and non-blocking for Community | Planned |
 | `0.9` Release Candidate | Feature freeze, independent review, upgrade/restore rehearsal, 14-day operator soak | Planned |
 | `1.0` Stable | Supported Community release with published security, platform, capacity, and recovery contracts | Target |

@@ -21,6 +21,20 @@ pub(crate) enum Scope {
     Ingestion,
 }
 
+impl Scope {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Authentication => "authentication",
+            Self::InvitationAcceptance => "invitation_acceptance",
+            Self::PasswordResetAcceptance => "password_reset_acceptance",
+            Self::PasswordLogin => "password_login",
+            Self::GameProbe => "game_probe",
+            Self::NetworkProbe => "network_probe",
+            Self::Ingestion => "ingestion",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct Key {
     scope: Scope,

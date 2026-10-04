@@ -1765,11 +1765,61 @@ async fn require_rate_limit(
         | RateLimitScope::NetworkProbe => 10,
         RateLimitScope::Ingestion => state.config.ingestion_rate_limit_per_minute,
     };
-    if state.rate_limiter.allow(scope, address, limit).await {
+    let allowed = if let Some(database) = &state.database {
+        let peer_digest = rate_limit_peer_digest(&state.config, address);
+        if let Ok(allowed) =
+            sqlx::query_scalar::<_, bool>("SELECT meerkateer_consume_rate_limit($1, $2, $3)")
+                .bind(scope.as_str())
+                .bind(peer_digest.as_slice())
+                .bind(i32::try_from(limit).unwrap_or(i32::MAX))
+                .fetch_one(database)
+                .await
+        {
+            allowed
+        } else {
+            // Authentication and ingestion both require PostgreSQL. Failing closed here prevents
+            // a transient limiter error from becoming a multi-replica bypass.
+            tracing::warn!(
+                scope = scope.as_str(),
+                "distributed rate limiter unavailable"
+            );
+            false
+        }
+    } else {
+        state.rate_limiter.allow(scope, address, limit).await
+    };
+    if allowed {
         Ok(())
     } else {
         Err(AuthenticationFailure::RateLimited)
     }
+}
+
+fn rate_limit_peer_digest(config: &ServerConfig, address: std::net::IpAddr) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(b"meerkateer-rate-limit-v1\0");
+    if let Some(secret) = config
+        .bootstrap_token
+        .as_ref()
+        .or(config.metrics_token.as_ref())
+    {
+        hasher.update(secret.expose_secret().as_bytes());
+    } else {
+        // Database-backed production configuration always has a secret. This fallback keeps
+        // dependency-light development configurations deterministic without storing a raw IP.
+        hasher.update(b"development-only-unkeyed-peer-digest");
+    }
+    match address {
+        std::net::IpAddr::V4(value) => {
+            hasher.update([4]);
+            hasher.update(value.octets());
+        }
+        std::net::IpAddr::V6(value) => {
+            hasher.update([6]);
+            hasher.update(value.octets());
+        }
+    }
+    hasher.finalize().into()
 }
 
 fn rate_limited() -> HttpResponse {

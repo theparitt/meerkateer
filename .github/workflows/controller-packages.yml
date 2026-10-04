@@ -17,6 +17,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 concurrency:
   group: controller-packages-${{ github.ref }}
@@ -155,6 +157,14 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Attest Controller packages with GitHub's Sigstore-backed identity
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: |
+            dist/*.deb
+            dist/*.msi
+            dist/*.zip
+
       - name: Publish rolling developer preview
         env:
           GH_TOKEN: ${{ github.token }}
@@ -163,5 +173,5 @@ jobs:
           gh release create controller-preview dist/* \
             --target "$GITHUB_SHA" \
             --title "Meerkateer Controller developer preview" \
-            --notes "Unsigned developer-preview installers built from commit $GITHUB_SHA. Verify the adjacent SHA-256 file before installation. Each package includes the Developer Preview notice and first enrollment requires explicit consent." \
+            --notes "Developer-preview installers built from commit $GITHUB_SHA. The binaries are not platform code-signed yet: Windows SmartScreen may warn. Verify the adjacent SHA-256 file and GitHub build-provenance attestation before installation. Each package includes the Developer Preview notice and first enrollment requires explicit consent." \
             --prerelease

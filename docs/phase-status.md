@@ -25,18 +25,26 @@ or a release artifact verified on a clean machine.
 | --- | --- | --- |
 | 0 — Contract and OSS foundation | Complete | 13 schemas, 30 fixtures, policy/license/secret checks, seven accepted ADRs, Apache-2.0 governance |
 | 1 — Executable skeleton | Complete | Generated OpenAPI types, PostgreSQL 18 migration, storage ports, non-root/read-only Compose, API/worker/agent/web skeletons and full-stack smoke evidence |
-| 2 — Tenant, identity, machine trust | In progress | Bootstrap/session/CSRF, audited role-aware Community login and server-side logout/revocation, email-free one-time internal invitations and password recovery, member administration, viewer/operator/admin authorization boundaries, inventory, service/agent credential lifecycle, immutable audit, forced RLS, separate runtime roles, bounded node-local auth/ingest limits, and a disposable two-company read/write/ID isolation matrix pass real PostgreSQL E2E; multi-user OIDC, gateway-wide limits, cloning quarantine, and signed desired config remain |
+| 2 — Tenant, identity, machine trust | In progress | Bootstrap/session/CSRF, audited role-aware Community login and server-side logout/revocation, email-free one-time internal invitations and password recovery, member administration, viewer/operator/admin authorization boundaries, inventory, service/agent credential lifecycle, immutable audit, forced RLS, separate runtime roles, PostgreSQL-backed replica-wide auth/ingest limits with pseudonymous peers, and a disposable two-company read/write/ID isolation matrix pass real PostgreSQL E2E; multi-user OIDC, independent review, cloning quarantine, and signed desired config remain |
 | 3 — Durable ingestion/status | In progress | Authenticated MKS/MKA paths durably commit idempotent facts plus outbox; lease-based worker retry/DLQ, gap/replay/privacy, and service status/staleness read model pass E2E. Timeline APIs, retention, partial acknowledgement, state-machine completion, and load evidence remain |
 | 4 — Production agent | In progress | One Rust CLI builds for Linux/Windows and provides enrollment, doctor, local JSON inspection, CPU/memory/fixed-filesystem/inode collection, bounded exact-name process and systemd/Windows Service checks, HTTPS policy, atomic owner-only state, an ordered 128-batch/four-MiB outage spool, automatic/manual credential rotation, and signal-config rollback. A tenant-scoped latest-batch API and responsive Machine detail UI expose completeness, staleness, inode pressure, stopped processes, and active/failed/transitional/unknown OS-service state without mixing old evidence. Preview installers run least-privilege background agents through hardened systemd and an ACL-restricted Windows startup task; signed packages/native secret stores, historical charts, alert-policy integration, container collectors, signed updates, and the real 30-minute soak remain |
 | 5 — Game/SME adapters/probes | Not started | Protocol labs and SSRF boundary still required |
 | 6 — Usable web product | In progress | Cute responsive Console shell deep-links Overview, Machines, Services, Incidents, Alerts, Maintenance, Admin, and Connect; keeps workspace context visible; guides the first real signal; preserves tenant-safe detail URLs; enforces role-aware controls; manages credentials/enrollment; and renders durable incidents with acknowledgement/self-assignment/notes/activity, alert outcomes/policy, maintenance windows, worker progress, tenant counts, and audit activity. Pagination, incident-detail URLs, company switching, advanced routing, accessibility review, and visual regression remain |
 | 7 — Stripe Sandbox SaaS | Not started | Cloud mode fails closed; no billing calls or entitlements exist yet |
 | 8 — Resilience/alerts | In progress | Incident correlation plus audited operator acknowledgement/assignment/notes, Community webhook transitions, durable alert history, worker retry/dead-letter, audited down/recovery and bounded cooldown policy, maintenance suppression, immutable-source dead-letter replay, and durable worker-stall evidence pass isolated API/worker/database exercises. Delivery acknowledgement, escalation, multi-destination routing, and external watchdog remain |
-| 9 — Supply chain/release candidate | Not started | Signing, SBOM, Helm, security review outstanding |
+| 9 — Supply chain/release candidate | In progress | Tag/version gate, multi-architecture OCI workflow, BuildKit SBOM/provenance, checksums, and GitHub/Sigstore build-attestation workflows exist; published-tag verification, platform code signing, Helm decision, clean-operator trial, and security review remain |
 | 10 — Beta/GA | Not started | Requires representative users, soak, restore and billing lifecycle evidence |
 
 ## Latest local evidence
 
+- Operations/Public Preview foundations: `age`-encrypted PostgreSQL backup emits a validated custom
+  archive, SHA-256 checksum, and source/schema manifest without retaining plaintext. Restore is
+  explicitly destructive, verifies checksum/archive, stops writers, fails fast, reapplies
+  migrations, and requires API readiness. A separate release workflow checks Cargo/web/OpenAPI
+  version agreement, publishes Linux amd64/arm64 OCI manifests with SBOM and maximum provenance,
+  and attaches GitHub/Sigstore build attestations to OCI and Controller package subjects. No restore
+  or release claim is made yet: another-host restore, off-host scheduling, published artifacts,
+  platform signing, and fresh-operator verification remain.
 - Security Beta foundation: an isolated second company is seeded only inside the disposable test
   database, creates its own workspace, service, key, machine, maintenance window, and incident,
   and is attacked from the first company through list, direct-ID, nested-ID, mutation, and agent
@@ -51,7 +59,9 @@ or a release artifact verified on a clean machine.
   one-time invitations, previews and accepts, declines, or cancels them, logs in by username,
   changes and resets non-owner passwords, rejects replay and expiry, revokes older sessions, and
   proves two simultaneous invite or reset accepts create exactly one result. Secrets never
-  appear in list or audit responses.
+  appear in list or audit responses. Replica-wide fixed-window abuse buckets are now atomic in
+  PostgreSQL, retain only installation-keyed peer digests, survive API restart, and are consumable
+  through a bounded function while direct table access is denied to the application login.
 - Monitoring Alpha foundation: unit coverage proves a 60-batch default-interval outage fits the
   bounded spool, legacy one-batch configs migrate safely, ordered batches survive reload, and
   rollback preserves identity/credential/sequence. Real API E2E rotates the credential through
@@ -129,7 +139,7 @@ or a release artifact verified on a clean machine.
 - Commercial C0: new bootstrap requires an owner password, and the old setup-key
   session endpoint returns 404 even with a valid key. Owner password login and
   setup-key recovery pass real API/PostgreSQL E2E.
-- The isolated 0007→0017 migration exercise preserved a seeded service, proved
+- The isolated 0007→0018 migration exercise preserved a seeded service, proved
   workspace/password/operations schema objects exist, and passed twice. Fresh Compose install,
   API, worker, and dead-letter E2E passed. GitHub CI migration connectivity was
   corrected after local verification; the new remote run is pending.

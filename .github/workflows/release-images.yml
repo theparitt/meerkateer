@@ -1,0 +1,101 @@
+name: Release OCI images
+
+on:
+  push:
+    # GitHub tag filters use glob syntax; the version checker below performs strict validation.
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing version declaration to publish (without v)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: release-images-${{ github.ref }}-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Select and verify release version
+        id: version
+        env:
+          DISPATCH_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            version="$DISPATCH_VERSION"
+          else
+            version="${REF_NAME#v}"
+          fi
+          python3 scripts/check-release-version.py "$version"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+      - name: Enable emulated release architectures
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+
+      - name: Configure Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Authenticate to GHCR
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Refuse to replace an existing release tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          for image in meerkateer-server meerkateer-worker; do
+            if docker buildx imagetools inspect "ghcr.io/$OWNER/$image:$VERSION" >/dev/null 2>&1; then
+              echo "Refusing to replace existing ghcr.io/$OWNER/$image:$VERSION" >&2
+              exit 1
+            fi
+          done
+
+      - name: Build immutable multi-architecture image with SBOM and provenance
+        id: build
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          sbom: true
+          provenance: mode=max
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/meerkateer-server:${{ steps.version.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/meerkateer-worker:${{ steps.version.outputs.version }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Attest server image with GitHub's Sigstore-backed identity
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/meerkateer-server
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest worker image with GitHub's Sigstore-backed identity
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/meerkateer-worker
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true

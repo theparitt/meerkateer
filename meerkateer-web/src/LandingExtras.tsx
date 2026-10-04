@@ -379,13 +379,13 @@ const releasePhases = [
   {
     version: "0.4",
     name: "Security Beta",
-    state: "Planned",
+    state: "Foundation active",
     track: "Community critical path",
     outcome: "The identity, role, credential, and tenant boundary is ready for broader exposure.",
     features:
-      "Invitations, least-privilege roles, revocation, optional OIDC, distributed abuse controls, signed agent config, secure credential storage, and complete audit evidence.",
+      "Invitations, least-privilege roles, revocation, tenant isolation, and a replica-wide PostgreSQL abuse limiter with pseudonymous peer keys are implemented foundations. Optional OIDC, signed agent config, platform secret stores, and independent review remain.",
     tests:
-      "Two-tenant read/write/ID matrix across API, SQL, workers, exports, caches and pools; invite/session/CSRF tests; rotation under load; scans, fuzzing, and independent review.",
+      "Current evidence covers two tenants, role boundaries, invitations, recovery, sessions/CSRF, credential lifecycle, and shared limiter enforcement across database sessions. Full export/cache/pool coverage, rotation under load, scans, fuzzing, and independent review remain.",
     edges:
       "Mixed-tenant batches, pooled connection reuse, stale caches, deleted members with queued jobs, last-owner removal, confusable identities, and replica rate-limit bypass.",
     gate: "Zero known cross-tenant access and no unresolved critical or high security finding.",
@@ -393,13 +393,13 @@ const releasePhases = [
   {
     version: "0.5",
     name: "Operations Beta",
-    state: "Planned",
+    state: "Foundation active",
     track: "Community critical path",
     outcome: "Data, migrations, alerts, and the control plane remain recoverable under failure.",
     features:
-      "Versioned upgrades, encrypted off-host backup, restore, retention, quotas, alert replay/cooldown, metrics, trace correlation, watchdogs, and runbooks.",
+      "Versioned upgrades plus age-encrypted PostgreSQL backup, checksum, manifest, destructive-restore guard, post-restore migration, and readiness verification are implemented foundations. Scheduling, off-host storage, retention, quotas, trace correlation, and watchdogs remain.",
     tests:
-      "Restore to another host, upgrades from supported versions, interrupted migration, database/worker/network/disk/receiver fault injection, and RPO/RTO measurement.",
+      "Script syntax, configuration failure, migration, and existing database/worker/network/receiver fault labs are covered. A real encrypted restore on another host, interrupted upgrades, disk pressure, scheduled drills, and measured RPO/RTO remain release gates.",
     edges:
       "Corrupt archive, wrong key, partial upload, schema newer than binary, poison job, pool exhaustion, webhook recovery during retry, and retention/export races.",
     gate: "A verified restore and data-preserving upgrade meet published RPO/RTO; every fault is visible and has a rehearsed operator response.",
@@ -407,14 +407,14 @@ const releasePhases = [
   {
     version: "0.6",
     name: "Public Preview",
-    state: "Planned",
+    state: "Foundation active",
     track: "Community critical path",
     outcome:
       "An external operator can install and understand Meerkateer without repository knowledge.",
     features:
-      "Signed OCI and agent artifacts, checksums, SBOM and provenance, complete operator guides, guided onboarding, diagnostics, responsive UI, and WCAG 2.2 AA review.",
+      "Tag-gated multi-architecture OCI publishing now attaches SBOM and BuildKit provenance, while Controller packages gain checksums and GitHub/Sigstore build attestations. Guided onboarding, diagnostics, and responsive UI exist; platform code signing, full guides, and WCAG review remain.",
     tests:
-      "Fresh-operator install-to-recovery study, signature and SBOM validation, keyboard/screen-reader/mobile passes, proxy/custom-CA/IPv6/firewall installs, upgrade and uninstall.",
+      "Version declarations and workflow inputs are checked before publishing. Artifact-attestation verification, fresh-operator install-to-recovery studies, keyboard/screen-reader passes, proxy/custom-CA/IPv6/firewall installs, upgrade, and uninstall remain.",
     edges:
       "Port collision, read-only directories, low disk, proxy auth failure, missing CA, wrong architecture, mismatched agent/server versions, and retained-data uninstall.",
     gate: "At least three new operators complete the supported journey from published artifacts with no maintainer intervention.",

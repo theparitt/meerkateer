@@ -1,4 +1,4 @@
-.PHONY: bootstrap source-archive images publish-images production-env production-config production-pull production-up production-logs production-down dev migrate down logs test lint integration failure-lab control-plane-lab sdk-lab sdk-lab-test sdk-lab-down sdk-lab-logs smoke agent-doctor
+.PHONY: bootstrap source-archive images publish-images production-env production-config production-pull production-up production-logs production-down dev migrate backup restore down logs test lint integration failure-lab control-plane-lab sdk-lab sdk-lab-test sdk-lab-down sdk-lab-logs smoke agent-doctor
 
 PRODUCTION_ENV ?= deploy/.env.production
 PRODUCTION_COMPOSE ?= deploy/compose.production.yaml
@@ -52,6 +52,13 @@ dev: bootstrap source-archive
 migrate: bootstrap
 	docker compose up -d --wait postgres
 	./scripts/migrate-existing.sh
+
+backup:
+	./scripts/backup-encrypted.sh
+
+restore:
+	@test -n "$(BACKUP)" || (echo 'Usage: make restore BACKUP=/path/to/backup.dump.age' >&2; exit 2)
+	./scripts/restore-encrypted.sh "$(BACKUP)"
 
 down:
 	docker compose down

@@ -3,14 +3,21 @@ set -eu
 
 # Upgrade migrations added after the original Community installation.
 # Take a backup before upgrading a persistent installation.
+env_file="${MEERKATEER_ENV_FILE:-.env}"
+compose_file="${MEERKATEER_COMPOSE_FILE:-compose.yaml}"
+
+compose() {
+    docker compose --env-file "$env_file" -f "$compose_file" "$@"
+}
+
 query() {
-    docker compose exec -T -e "MEERKATEER_MIGRATION_DB=${MEERKATEER_MIGRATION_DB:-}" postgres sh -c \
+    compose exec -T -e "MEERKATEER_MIGRATION_DB=${MEERKATEER_MIGRATION_DB:-}" postgres sh -c \
         'psql --username "$POSTGRES_USER" --dbname "${MEERKATEER_MIGRATION_DB:-$POSTGRES_DB}" --set=ON_ERROR_STOP=1 -Atc "$1"' \
         sh "$1"
 }
 
 apply() {
-    docker compose exec -T -e "MEERKATEER_MIGRATION_DB=${MEERKATEER_MIGRATION_DB:-}" postgres sh -c \
+    compose exec -T -e "MEERKATEER_MIGRATION_DB=${MEERKATEER_MIGRATION_DB:-}" postgres sh -c \
         'psql --username "$POSTGRES_USER" --dbname "${MEERKATEER_MIGRATION_DB:-$POSTGRES_DB}" --set=ON_ERROR_STOP=1' \
         < "$1"
 }
@@ -55,6 +62,10 @@ scheduled_probe_state="$(query "SELECT to_regclass('public.service_probes') IS N
 if [ "$scheduled_probe_state" = "f" ]; then
     apply migrations/0017_scheduled_probes.sql
 fi
+distributed_rate_limit_state="$(query "SELECT to_regclass('public.distributed_rate_limits') IS NOT NULL")"
+if [ "$distributed_rate_limit_state" = "f" ]; then
+    apply migrations/0018_distributed_rate_limits.sql
+fi
 replay_index_unique="$(query "SELECT coalesce((SELECT indisunique FROM pg_index WHERE indexrelid = to_regclass('public.alert_deliveries_replay_idx')), false)")"
 if [ "$replay_index_unique" = "f" ]; then
     query "DROP INDEX IF EXISTS alert_deliveries_replay_idx; CREATE UNIQUE INDEX alert_deliveries_replay_idx ON alert_deliveries (tenant_id, replay_of) WHERE replay_of IS NOT NULL" >/dev/null
@@ -70,4 +81,5 @@ test "$(query "SELECT to_regclass('public.worker_runtime') IS NOT NULL")" = "t"
 test "$(query "SELECT to_regclass('public.member_invitations') IS NOT NULL")" = "t"
 test "$(query "SELECT to_regclass('public.member_password_resets') IS NOT NULL")" = "t"
 test "$(query "SELECT to_regclass('public.service_probes') IS NOT NULL")" = "t"
-echo 'Community schema upgraded through migration 0017.'
+test "$(query "SELECT to_regclass('public.distributed_rate_limits') IS NOT NULL")" = "t"
+echo 'Community schema upgraded through migration 0018.'

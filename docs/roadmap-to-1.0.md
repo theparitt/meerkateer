@@ -92,8 +92,8 @@ and automatic remediation. Each would require a separate threat model and approv
 | `0.2.0` | Community Alpha | One clean install reliably detects, explains, alerts, and recovers from a real fixture failure | Foundation delivered; remaining clean-host evidence carried into prerelease | 3–5 weeks |
 | `0.3.0` | Monitoring Alpha | Production-shaped agent collectors, scheduled probes, and first supported game/SME adapters | `0.3.0-alpha.2` in progress; secure scheduled probes and incident projection delivered | 4–6 weeks |
 | `0.4.0` | Security Beta | Multi-user access, complete tenant matrix, distributed abuse controls, signed config, and security review | Foundation in progress | 3–5 weeks |
-| `0.5.0` | Operations Beta | Tested restore/upgrade, retention, alert operations, observability, and fault tolerance | Planned | 4–6 weeks |
-| `0.6.0` | Public Preview | Installable, signed, documented release artifacts and an accessible first-user journey | Planned | 3–4 weeks |
+| `0.5.0` | Operations Beta | Tested restore/upgrade, retention, alert operations, observability, and fault tolerance | Foundation in progress | 4–6 weeks |
+| `0.6.0` | Public Preview | Installable, signed, documented release artifacts and an accessible first-user journey | Foundation in progress | 3–4 weeks |
 | `0.7.0` | Scale Beta | Published capacity, resource, compatibility, and sustained failure/recovery evidence | Planned | 3–4 weeks |
 | `0.8.0` | Hosted Beta | Optional free managed beta with isolated tenants, regional probes, backups, and service SLOs | Parallel; non-blocking | 4–8 weeks |
 | `0.9.0` | Release Candidate | Feature freeze, independent review, upgrade/rollback rehearsal, and operator soak | Planned | 3–4 weeks plus soak |
@@ -233,12 +233,18 @@ platform secret stores, optional production OIDC, and independent review remain 
 Community login now authenticates active owner, admin, operator, and viewer memberships, and the
 integration matrix proves representative allow/deny boundaries for every role. Member creation now
 uses the same public invitation lifecycle and responsive Admin UI exercised by PostgreSQL E2E.
+Authentication and ingestion abuse limits now consume atomic fixed-window buckets in PostgreSQL,
+so restarting or horizontally scaling the API does not reset the budget. Peer addresses are stored
+only as installation-keyed digests, the application role can call only the bounded function, and
+integration evidence proves a second database session is rejected after the first consumes the
+bucket. This closes the node-local limiter gap, not the independent-review gate.
 
 Required work:
 
 - finish optional production OIDC/SSO and independently review local recovery;
 - cross-tenant read/write/guessed-ID tests for every API, worker, export, and background job;
-- gateway-wide rate limits and abuse protection across replicas;
+- validate and tune the delivered database-wide limits behind supported reverse proxies, then add
+  broader gateway abuse controls for endpoints outside the application;
 - signed desired agent configuration and secure platform credential storage;
 - CSRF, session, audit, dependency, container, and secret rotation review; and
 - remediation of all critical/high findings from an independent security assessment.
@@ -268,6 +274,16 @@ regression test; accepted medium findings require an owner and expiry.
 ## 0.5 — Operations Beta
 
 Goal: make data and alerts recoverable under operational failure.
+
+Current evidence: operator scripts now create PostgreSQL custom-format backups into owner-only
+temporary files, validate the archive, encrypt it with an explicit `age` recipient, remove the
+plaintext, and emit an adjacent SHA-256 checksum plus source/schema manifest. Restore refuses to
+run without an exact destructive-action confirmation, verifies the checksum before decryption,
+validates the archive, stops writers, restores with fail-fast semantics, reapplies migrations, and
+requires API readiness before reporting success. The procedure is documented for disposable
+restore rehearsal and production Compose. This is a recoverability foundation only: no backup
+counts until it has been copied off-host and restored on another machine, and scheduling,
+retention/quotas, external watchdogs, and measured RPO/RTO remain open.
 
 Required work:
 
@@ -304,6 +320,15 @@ measured RPO/RTO and test topology. A backup that has not been restored does not
 ## 0.6 — Public Preview
 
 Goal: let an external operator install and understand Meerkateer without repository knowledge.
+
+Current evidence: a tag-gated release workflow rejects mismatched Cargo, web, and OpenAPI versions,
+then publishes one immutable Linux amd64/arm64 OCI manifest under the server and worker names with
+BuildKit SBOM and maximum provenance. GitHub's Sigstore-backed build attestations are attached to
+both OCI subjects and to the rolling DEB, MSI, and portable ZIP Controller packages; checksums and
+operator verification commands are documented. These attestations prove repository/workflow/source
+identity, but they are not Windows Authenticode or Microsoft Store signatures and do not eliminate
+SmartScreen warnings. The workflow and guides are foundations; published-tag verification,
+supported arm64 Controller packaging, accessibility review, and fresh-operator evidence remain.
 
 Required work:
 
