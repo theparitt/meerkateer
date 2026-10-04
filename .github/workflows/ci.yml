@@ -300,6 +300,9 @@ jobs:
           MEERKATEER_SERVICE_ENVIRONMENT: test
           MEERKATEER_BIND_ADDR: 127.0.0.1:18080
           MEERKATEER_E2E_URL: http://127.0.0.1:18080
+          MEERKATEER_E2E_DB_HOST: 127.0.0.1
+          MEERKATEER_E2E_DB: meerkateer
+          MEERKATEER_E2E_DB_OWNER: meerkateer
           RUST_LOG: warn
         run: |
           cargo build --locked -p meerkateer-agent

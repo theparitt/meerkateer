@@ -28,6 +28,7 @@ RUST_SDK_BIN = os.environ.get("MEERKATEER_RUST_SDK_BIN")
 E2E_PROJECT = os.environ.get("MEERKATEER_E2E_PROJECT")
 E2E_DB = os.environ.get("MEERKATEER_E2E_DB")
 E2E_DB_OWNER = os.environ.get("MEERKATEER_E2E_DB_OWNER")
+E2E_DB_HOST = os.environ.get("MEERKATEER_E2E_DB_HOST")
 
 
 @dataclass
@@ -111,7 +112,9 @@ def isolated_request(
 
 
 def force_token_expired(secret: str, table: str = "member_invitations") -> None:
-    assert E2E_PROJECT and E2E_DB and E2E_DB_OWNER, "integration database context is required"
+    assert E2E_DB and E2E_DB_OWNER and (E2E_PROJECT or E2E_DB_HOST), (
+        "integration database context is required"
+    )
     assert table in {"member_invitations", "member_password_resets"}
     digest = hashlib.sha256(secret.encode()).hexdigest()
     statement = (
@@ -119,12 +122,24 @@ def force_token_expired(secret: str, table: str = "member_invitations") -> None:
         "expires_at = now() - interval '1 second' "
         f"WHERE token_digest = decode('{digest}', 'hex');"
     )
-    subprocess.run(
-        [
+    if E2E_DB_HOST:
+        command = [
+            "psql",
+            "-h",
+            E2E_DB_HOST,
+            "-U",
+            E2E_DB_OWNER,
+            "-d",
+            E2E_DB,
+            "-v",
+            "ON_ERROR_STOP=1",
+        ]
+    else:
+        command = [
             "docker",
             "compose",
             "-p",
-            E2E_PROJECT,
+            E2E_PROJECT or "",
             "exec",
             "-T",
             "postgres",
@@ -135,7 +150,9 @@ def force_token_expired(secret: str, table: str = "member_invitations") -> None:
             E2E_DB,
             "-v",
             "ON_ERROR_STOP=1",
-        ],
+        ]
+    subprocess.run(
+        command,
         input=statement,
         check=True,
         capture_output=True,
