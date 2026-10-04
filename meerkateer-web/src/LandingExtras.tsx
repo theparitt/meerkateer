@@ -337,7 +337,7 @@ const releasePhases = [
   {
     version: "0.1",
     name: "Foundation Preview",
-    state: "Current code",
+    state: "Delivered",
     track: "Shared public core",
     outcome: "A runnable, multi-workspace foundation with durable reliability evidence.",
     features:
@@ -351,30 +351,30 @@ const releasePhases = [
   {
     version: "0.2",
     name: "Community Alpha",
-    state: "In progress",
+    state: "Foundation delivered",
     track: "Community critical path",
     outcome: "One clean installation detects, explains, alerts, and recovers from a real failure.",
     features:
-      "First-class incident workflow, alert outcome history/retry/dead-letter replay, audited cooldown policy, maintenance suppression, and guided first use are implemented; baseline host/process and HTTP/TLS checks remain.",
+      "First-class incidents, alert history/retry/dead-letter replay, cooldown policy, maintenance suppression, internal members, guided first use, host/process signals, and a reproducible failure lab are implemented.",
     tests:
-      "Fresh VM setup, two workspaces and machines, process/endpoint failure, receiver 429/500/timeout, service restarts, and three clean end-to-end repetitions.",
+      "Fresh Compose setup, two-company isolation, multi-workspace fleet failure/recovery, receiver 429/500/timeout, service restarts, migration, and repeated end-to-end fault exercises.",
     edges:
       "Clock skew, agent double-enrollment, queued alert after deletion, workspace reassignment, full spool, IPv6, Unicode names, and browser refresh during setup.",
-    gate: "Failure → evidence → one incident → alert → fresh recovery completes without manual SQL, Cloud, billing, or AI credentials.",
+    gate: "The core failure → evidence → one incident → alert → fresh recovery journey passes without manual SQL, Cloud, billing, or AI credentials; clean release-artifact evidence continues in later gates.",
   },
   {
     version: "0.3",
     name: "Monitoring Alpha",
-    state: "Planned",
+    state: "In progress · alpha.2",
     track: "Community critical path",
     outcome: "Production-shaped host, process, network, and first game/SME monitoring.",
     features:
-      "Linux and Windows services, bounded collectors, offline spool, HTTP/TCP/DNS/TLS probes, Minecraft compatibility, and safe configuration rollback.",
+      "Linux/Windows startup, bounded host/process/service collectors, offline spool, credential rotation, config rollback, and leased HTTP/HTTPS/TCP/DNS/TLS monitors with failure/recovery consensus, bounded history, incidents, alerts, and strict one-health-source rules are implemented. Docker collection and supported adapter matrices remain.",
     tests:
-      "Thirty-minute control-plane outage, spool drain, OS/service restart and upgrade, hostile probe fixtures, Minecraft protocol matrix, and resource benchmarks.",
+      "Current evidence covers SSRF and DNS rebinding, redirects, invalid inputs, consensus thresholds, scheduled outage/recovery, incident deletion safety, tenant isolation, migration 0007→0017, ten concurrent agents, spool recovery, and the full failure lab. Timed 30-minute outage, platform upgrade labs, compatibility matrices, and resource benchmarks remain.",
     edges:
       "PID reuse, permission denial, full disk, split-horizon DNS, DNS rebinding, private redirect, invalid certificates, sleep/resume, and malformed game responses.",
-    gate: "No unbounded collector, no duplicate drained facts, published compatibility, and reference usage below the declared CPU, memory, disk, and network ceilings.",
+    gate: "Before final v0.3.0: prove the 30-minute outage drain, publish supported OS/game/SME compatibility, add remaining container evidence, and stay below declared CPU, memory, disk, and network ceilings.",
   },
   {
     version: "0.4",
@@ -524,7 +524,10 @@ export function UpdatesRoadmapSection() {
         <section className="phase-grid" id="tests" aria-label="Meerkateer release milestones">
           {releasePhases.map((phase, index) => (
             <article
-              className={`phase-card phase-${phase.state.toLowerCase().replaceAll(" ", "-")}`}
+              className={`phase-card phase-${phase.state
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, "-")
+                .replace(/(^-|-$)/g, "")}`}
               key={phase.version}
             >
               <span className="phase-timeline-marker" aria-hidden="true">
@@ -537,7 +540,7 @@ export function UpdatesRoadmapSection() {
               <p className="phase-track">{phase.track}</p>
               <h3>{phase.name}</h3>
               <p className="phase-outcome">{phase.outcome}</p>
-              <details open={phase.state === "In progress" || phase.state === "Current code"}>
+              <details open={phase.version === "0.3"}>
                 <summary>Features, tests, edge cases, and pass gate</summary>
                 <dl>
                   <div>

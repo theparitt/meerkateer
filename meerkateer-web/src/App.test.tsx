@@ -167,12 +167,16 @@ describe("App", () => {
       screen.getByRole("heading", { name: "Ten milestones, one dependable product." }),
     ).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Community Alpha" })).toBeTruthy();
+    expect(screen.getByText("v0.3.0-alpha.2")).toBeTruthy();
+    expect(screen.getByText("In progress · alpha.2")).toBeTruthy();
+    expect(screen.getByText(/leased HTTP\/HTTPS\/TCP\/DNS\/TLS monitors/)).toBeTruthy();
+    expect(screen.getByText(/migration 0007→0017/)).toBeTruthy();
     expect(screen.getByRole("heading", { name: "No Cloud fork" })).toBeTruthy();
     expect(screen.getAllByRole("article")).toHaveLength(12);
     expect(container.querySelectorAll(".phase-card")).toHaveLength(10);
     expect(container.querySelectorAll(".phase-timeline-marker")).toHaveLength(10);
     expect(
-      screen.getByText(/Failure → evidence → one incident → alert → fresh recovery completes/),
+      screen.getByText(/core failure → evidence → one incident → alert → fresh recovery journey/),
     ).toBeTruthy();
     expect(fetch).not.toHaveBeenCalled();
   });

@@ -848,6 +848,9 @@ export function RoadmapPage() {
             </p>
             <ul className="roadmap-summary" aria-label="Roadmap summary">
               <li>
+                <strong>{PRODUCT_VERSION}</strong> current preview
+              </li>
+              <li>
                 <strong>10</strong> milestones
               </li>
               <li>
