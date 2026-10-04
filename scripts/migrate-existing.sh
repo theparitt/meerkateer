@@ -51,6 +51,10 @@ member_recovery_state="$(query "SELECT to_regclass('public.member_password_reset
 if [ "$member_recovery_state" = "f" ]; then
     apply migrations/0016_member_access_recovery.sql
 fi
+scheduled_probe_state="$(query "SELECT to_regclass('public.service_probes') IS NOT NULL")"
+if [ "$scheduled_probe_state" = "f" ]; then
+    apply migrations/0017_scheduled_probes.sql
+fi
 replay_index_unique="$(query "SELECT coalesce((SELECT indisunique FROM pg_index WHERE indexrelid = to_regclass('public.alert_deliveries_replay_idx')), false)")"
 if [ "$replay_index_unique" = "f" ]; then
     query "DROP INDEX IF EXISTS alert_deliveries_replay_idx; CREATE UNIQUE INDEX alert_deliveries_replay_idx ON alert_deliveries (tenant_id, replay_of) WHERE replay_of IS NOT NULL" >/dev/null
@@ -65,4 +69,5 @@ test "$(query "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE tab
 test "$(query "SELECT to_regclass('public.worker_runtime') IS NOT NULL")" = "t"
 test "$(query "SELECT to_regclass('public.member_invitations') IS NOT NULL")" = "t"
 test "$(query "SELECT to_regclass('public.member_password_resets') IS NOT NULL")" = "t"
-echo 'Community schema upgraded through migration 0016.'
+test "$(query "SELECT to_regclass('public.service_probes') IS NOT NULL")" = "t"
+echo 'Community schema upgraded through migration 0017.'

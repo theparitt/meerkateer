@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Meerkateer API",
-    "version": "0.3.0-alpha.1",
+    "version": "0.3.0-alpha.2",
     "description": "Tenant-isolated Meerkateer control-plane API. Browser mutations require both the session cookie and the X-Meerkateer-CSRF header."
   },
   "servers": [{ "url": "/" }],
@@ -906,6 +906,65 @@
         }
       }
     },
+    "/v1/services/{service_id}/scheduled-probe": {
+      "get": {
+        "operationId": "getScheduledProbe",
+        "description": "Read the single scheduled network monitor configured as this service's health source.",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ServiceId" }],
+        "responses": {
+          "200": { "description": "Scheduled probe configuration and latest consensus.", "headers": { "Cache-Control": { "schema": { "const": "no-store" } } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScheduledProbeResponse" } } } },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "The role is insufficient." },
+          "404": { "description": "No scheduled probe exists for this service." },
+          "503": { "description": "The control database is unavailable." }
+        }
+      },
+      "put": {
+        "operationId": "upsertScheduledProbe",
+        "description": "Create or replace the service's scheduled monitor. A service cannot use an active SDK credential and a scheduled probe at the same time, preventing contradictory health sources.",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ServiceId" }, { "$ref": "#/components/parameters/CsrfHeader" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScheduledProbeUpsertRequest" } } } },
+        "responses": {
+          "200": { "description": "Saved configuration. The scheduler leases it immediately when enabled.", "headers": { "Cache-Control": { "schema": { "const": "no-store" } } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScheduledProbeResponse" } } } },
+          "400": { "description": "The configuration is invalid or unbounded." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "Operator role and CSRF proof are required." },
+          "404": { "description": "The service is not in this company or Cloud mode is active." },
+          "409": { "description": "The service already has an active SDK credential." },
+          "503": { "description": "The control database is unavailable." }
+        }
+      },
+      "delete": {
+        "operationId": "deleteScheduledProbe",
+        "description": "Delete a recovered or never-failed scheduled monitor and its bounded observation history. An offline monitor must recover before deletion so an active incident cannot be hidden.",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ServiceId" }, { "$ref": "#/components/parameters/CsrfHeader" }],
+        "responses": {
+          "204": { "description": "Scheduled monitor deleted." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "Operator role and CSRF proof are required." },
+          "404": { "description": "No scheduled probe exists for this service." },
+          "409": { "description": "The monitor is offline and must recover before deletion." },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/services/{service_id}/scheduled-probe/history": {
+      "get": {
+        "operationId": "listScheduledProbeHistory",
+        "description": "Read the newest 50 bounded observations for this service's scheduled probe.",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ServiceId" }],
+        "responses": {
+          "200": { "description": "Newest observations first.", "headers": { "Cache-Control": { "schema": { "const": "no-store" } } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProbeObservationListResponse" } } } },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "The role is insufficient." },
+          "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
     "/v1/enrollment-tokens": {
       "post": {
         "operationId": "issueEnrollmentToken",
@@ -1720,6 +1779,69 @@
           "tls_expires_at": { "type": ["string", "null"], "format": "date-time" },
           "tls_days_remaining": { "type": ["integer", "null"] }
         }
+      },
+      "ScheduledProbeUpsertRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "host", "port", "path", "expected_status", "timeout_ms", "interval_seconds", "failure_threshold", "recovery_threshold", "enabled"],
+        "properties": {
+          "kind": { "enum": ["http", "https", "tcp", "dns", "tls"] },
+          "host": { "type": "string", "minLength": 1, "maxLength": 253 },
+          "port": { "type": ["integer", "null"], "minimum": 1, "maximum": 65535 },
+          "path": { "type": ["string", "null"], "minLength": 1, "maxLength": 2048, "pattern": "^/([^/].*)?$" },
+          "expected_status": { "type": ["integer", "null"], "minimum": 100, "maximum": 599 },
+          "timeout_ms": { "type": "integer", "minimum": 250, "maximum": 10000, "default": 5000 },
+          "interval_seconds": { "type": "integer", "minimum": 10, "maximum": 86400, "default": 15 },
+          "failure_threshold": { "type": "integer", "minimum": 1, "maximum": 5, "default": 2 },
+          "recovery_threshold": { "type": "integer", "minimum": 1, "maximum": 5, "default": 1 },
+          "enabled": { "type": "boolean", "default": true }
+        }
+      },
+      "ScheduledProbeResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ScheduledProbeUpsertRequest" },
+          {
+            "type": "object",
+            "required": ["id", "service_id", "consensus_state", "consecutive_failures", "consecutive_successes", "next_run_at", "last_state", "last_message", "last_observed_at", "last_response_ms", "last_status_code", "last_tls_expires_at"],
+            "properties": {
+              "id": { "type": "string", "format": "uuid" },
+              "service_id": { "type": "string", "format": "uuid" },
+              "consensus_state": { "enum": ["unknown", "online", "offline"] },
+              "consecutive_failures": { "type": "integer", "minimum": 0 },
+              "consecutive_successes": { "type": "integer", "minimum": 0 },
+              "next_run_at": { "type": "string", "format": "date-time" },
+              "last_state": { "type": ["string", "null"] },
+              "last_message": { "type": ["string", "null"], "maxLength": 512 },
+              "last_observed_at": { "type": ["string", "null"], "format": "date-time" },
+              "last_response_ms": { "type": ["integer", "null"], "minimum": 0 },
+              "last_status_code": { "type": ["integer", "null"], "minimum": 100, "maximum": 599 },
+              "last_tls_expires_at": { "type": ["string", "null"], "format": "date-time" }
+            }
+          }
+        ],
+        "unevaluatedProperties": false
+      },
+      "ProbeObservationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "state", "message", "observed_at", "response_ms", "status_code", "resolved_addresses", "tls_expires_at", "tls_days_remaining"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "state": { "type": "string" },
+          "message": { "type": "string", "maxLength": 512 },
+          "observed_at": { "type": "string", "format": "date-time" },
+          "response_ms": { "type": ["integer", "null"], "minimum": 0 },
+          "status_code": { "type": ["integer", "null"], "minimum": 100, "maximum": 599 },
+          "resolved_addresses": { "type": "integer", "minimum": 0, "maximum": 32 },
+          "tls_expires_at": { "type": ["string", "null"], "format": "date-time" },
+          "tls_days_remaining": { "type": ["integer", "null"] }
+        }
+      },
+      "ProbeObservationListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["items"],
+        "properties": { "items": { "type": "array", "maxItems": 50, "items": { "$ref": "#/components/schemas/ProbeObservationResponse" } } }
       },
       "ServiceResponse": {
         "type": "object",

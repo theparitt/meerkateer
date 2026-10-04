@@ -241,6 +241,24 @@ def attack_from_primary(rival: dict[str, str]) -> None:
         f"/v1/services/{rival['service']}/network-probe",
         {"kind": "dns", "host": "example.com"},
     )
+    assert_not_found("GET", f"/v1/services/{rival['service']}/scheduled-probe")
+    assert_not_found(
+        "PUT",
+        f"/v1/services/{rival['service']}/scheduled-probe",
+        {
+            "kind": "dns",
+            "host": "8.8.8.8",
+            "port": None,
+            "path": None,
+            "expected_status": None,
+            "timeout_ms": 1000,
+            "interval_seconds": 15,
+            "failure_threshold": 2,
+            "recovery_threshold": 1,
+            "enabled": True,
+        },
+    )
+    assert_not_found("DELETE", f"/v1/services/{rival['service']}/scheduled-probe")
     assert_not_found("POST", f"/v1/services/{rival['service']}/credentials")
     assert_not_found(
         "POST",

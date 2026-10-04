@@ -2,15 +2,15 @@
 
 | Item | Current value |
 | --- | --- |
-| Code version | `0.3.0-alpha.1` |
+| Code version | `0.3.0-alpha.2` |
 | Release channel | Monitoring Alpha prerelease |
 | Current delivery phase | `0.3` Monitoring Alpha — in progress |
 | Stable target | `1.0.0` Community |
 | Last reviewed | 2026-10-04 |
 
-`0.3.0-alpha.1` is the version declared by the Rust workspace and web package. It opens the
+`0.3.0-alpha.2` is the version declared by the Rust workspace and web package. It continues the
 Monitoring Alpha development line; it is not a claim that the final `0.3.0` exit gate passed or
-that a signed GitHub release was published. There is no `v0.3.0-alpha.1` Git tag yet.
+that a signed GitHub release was published. There is no `v0.3.0-alpha.2` Git tag yet.
 
 This document is the canonical release sequence. [Delivery status](phase-status.md) records
 what has actually passed, the [Community plan](community-first-roadmap.md) expands the current
@@ -90,7 +90,7 @@ and automatic remediation. Each would require a separate threat model and approv
 | --- | --- | --- | --- | --- |
 | `0.1.0` | Foundation preview | Executable multi-workspace core, durable ingest, SDKs, agent, Console, failure labs, and deployment packaging | Delivered | Implemented |
 | `0.2.0` | Community Alpha | One clean install reliably detects, explains, alerts, and recovers from a real fixture failure | Foundation delivered; remaining clean-host evidence carried into prerelease | 3–5 weeks |
-| `0.3.0` | Monitoring Alpha | Production-shaped agent collectors, scheduled probes, and first supported game/SME adapters | `0.3.0-alpha.1` in progress; manual secure probes delivered, scheduling remains | 4–6 weeks |
+| `0.3.0` | Monitoring Alpha | Production-shaped agent collectors, scheduled probes, and first supported game/SME adapters | `0.3.0-alpha.2` in progress; secure scheduled probes and incident projection delivered | 4–6 weeks |
 | `0.4.0` | Security Beta | Multi-user access, complete tenant matrix, distributed abuse controls, signed config, and security review | Foundation in progress | 3–5 weeks |
 | `0.5.0` | Operations Beta | Tested restore/upgrade, retention, alert operations, observability, and fault tolerance | Planned | 4–6 weeks |
 | `0.6.0` | Public Preview | Installable, signed, documented release artifacts and an accessible first-user journey | Planned | 3–4 weeks |

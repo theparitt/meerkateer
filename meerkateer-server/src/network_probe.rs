@@ -28,13 +28,24 @@ pub(crate) enum Kind {
 }
 
 impl Kind {
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Http => "http",
             Self::Https => "https",
             Self::Tcp => "tcp",
             Self::Dns => "dns",
             Self::Tls => "tls",
+        }
+    }
+
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        match value {
+            "http" => Some(Self::Http),
+            "https" => Some(Self::Https),
+            "tcp" => Some(Self::Tcp),
+            "dns" => Some(Self::Dns),
+            "tls" => Some(Self::Tls),
+            _ => None,
         }
     }
 
@@ -137,7 +148,7 @@ pub(crate) async fn probe(request: &Request) -> Result<ResultData, Failure> {
     }
 }
 
-fn validate(request: &Request) -> Result<(), Failure> {
+pub(crate) fn validate(request: &Request) -> Result<(), Failure> {
     if !valid_host(&request.host) || request.port == Some(0) {
         return Err(Failure::InvalidRequest);
     }

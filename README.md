@@ -121,14 +121,14 @@ its [game-server beta plan](docs/game-server-beta.md) is currently paused.
 
 | | |
 | --- | --- |
-| Code version | **0.3.0-alpha.1** |
+| Code version | **0.3.0-alpha.2** |
 | Release channel | **Monitoring Alpha prerelease** |
 | Current delivery phase | **0.3 Monitoring Alpha — in progress** |
 | Stable target | **1.0.0 Community** |
 
-`0.3.0-alpha.1` is the version declared in the Rust workspace and web package. It starts the
+`0.3.0-alpha.2` is the version declared in the Rust workspace and web package. It continues the
 Monitoring Alpha line; it does not mean the `0.3.0` exit gate has passed. A signed
-`v0.3.0-alpha.1` GitHub Release has not been published yet. See the canonical
+`v0.3.0-alpha.2` GitHub Release has not been published yet. See the canonical
 [roadmap to 1.0](docs/roadmap-to-1.0.md) for milestone scope and measurable exit gates.
 
 > **Status: developer preview.** Phases 0 and 1 are complete. Phase 2 now has the
@@ -165,8 +165,8 @@ versioned public images by digest; public core never imports private Cloud code.
 | Milestone | Outcome | State |
 | --- | --- | --- |
 | `0.1` Foundation preview | Multi-workspace core, durable ingest, SDKs, agent, Console, test labs, and deploy packaging | Delivered |
-| `0.2` Community Alpha | Clean failure → evidence → alert → recovery journey | Current developer preview |
-| `0.3` Monitoring Alpha | Production agent collectors, probes, and initial game/SME adapters | Planned |
+| `0.2` Community Alpha | Clean failure → evidence → alert → recovery journey | Foundation delivered |
+| `0.3` Monitoring Alpha | Production agent collectors, probes, and initial game/SME adapters | Current developer preview |
 | `0.4` Security Beta | Multi-user access, complete tenant tests, abuse controls, signed config, security review | Planned |
 | `0.5` Operations Beta | Restore, upgrade, retention, alert operations, observability, and fault drills | Planned |
 | `0.6–0.7` Public/Scale Beta | Signed artifacts, clean install, accessibility, capacity, compatibility, and soak | Planned |
@@ -328,18 +328,21 @@ Community control plane. It does not prove player login or gameplay, does not sa
 uptime record, and does not send alerts. Private or reserved destinations are blocked;
 Cloud probing stays disabled until separate network egress controls are in place.
 
-## Manual network diagnostics (0.3 alpha)
+## Network monitoring (0.3 alpha)
 
-Open any service in the Console and expand **Test a network destination**. You can run one HTTP,
-HTTPS, TCP-port, DNS, or TLS-certificate check from the Community control plane. The result shows
-response time, HTTP status, public DNS-answer count, and certificate days remaining when relevant.
+Open any service in the Console and expand **Test a network destination**. Run a one-off HTTP,
+HTTPS, TCP-port, DNS, or TLS-certificate check, or save it as that service's automatic monitor.
+Scheduled checks keep a bounded history, confirm failures and recoveries using configurable
+thresholds, and project the confirmed state into the same incident, alert, timeline, and recovery
+workflow as an SDK heartbeat. Pause, resume, update, refresh, and safe deletion are available in
+the same small panel.
 
-This is deliberately a diagnostic, not an uptime claim: the result is not retained and cannot
-open or resolve an incident. The server checks every DNS answer before connecting, rejects any
-private, loopback, link-local, reserved, or mixed-trust answer set, connects only to the validated
-numeric answers, follows no redirects, and limits each check to 250–10,000 ms. Scheduled checks,
-failure consensus, durable history, and incident/alert projection remain required for final
-`0.3.0`.
+A service has exactly one health source: an active SDK credential and a scheduled probe cannot be
+enabled together. The server checks every DNS answer before connecting, rejects any private,
+loopback, link-local, reserved, or mixed-trust answer set, connects only to validated numeric
+answers, follows no redirects, and limits each check to 250–10,000 ms. Claims use short database
+leases with `SKIP LOCKED`; history retains the newest 200 observations and the API returns 50.
+Cloud probing remains disabled until isolated regional egress and its threat model are complete.
 
 For development without containers:
 

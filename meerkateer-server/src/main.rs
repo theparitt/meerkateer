@@ -3,7 +3,9 @@ use std::sync::Arc;
 use actix_web::{App, HttpServer, middleware::DefaultHeaders, web};
 use anyhow::Context;
 use meerkateer_config::ServerConfig;
-use meerkateer_server::{AppState, configure_routes, graceful_shutdown_timeout};
+use meerkateer_server::{
+    AppState, configure_routes, graceful_shutdown_timeout, run_scheduled_probe_loop,
+};
 use secrecy::ExposeSecret;
 use sqlx::postgres::PgPoolOptions;
 use tracing::info;
@@ -42,7 +44,8 @@ async fn main() -> anyhow::Result<()> {
         "starting Meerkateer server"
     );
 
-    HttpServer::new(move || {
+    let scheduler = tokio::spawn(run_scheduled_probe_loop(state.get_ref().clone()));
+    let server_result = HttpServer::new(move || {
         App::new()
             .wrap(
                 DefaultHeaders::new()
@@ -61,6 +64,7 @@ async fn main() -> anyhow::Result<()> {
     .bind(bind_address)
     .with_context(|| format!("failed to bind {bind_address}"))?
     .run()
-    .await
-    .context("server stopped with an error")
+    .await;
+    scheduler.abort();
+    server_result.context("server stopped with an error")
 }

@@ -12,6 +12,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 import uuid
@@ -382,6 +383,125 @@ def bootstrap_and_inventory() -> tuple[str, str, str, str]:
         404,
         "not_found",
     )
+    probe_project = expect(
+        call(
+            "POST",
+            "/v1/projects",
+            body={"slug": "probe-lab", "display_name": "Probe lab"},
+            headers=browser_headers(),
+        ),
+        201,
+    ).body
+    probe_service = expect(
+        call(
+            "POST",
+            f"/v1/projects/{probe_project['id']}/services",
+            body={"slug": "external-status", "environment": "test"},
+            headers=browser_headers(),
+        ),
+        201,
+    ).body
+    scheduled_probe = {
+        "kind": "dns",
+        "host": "127.0.0.1",
+        "port": None,
+        "path": None,
+        "expected_status": None,
+        "timeout_ms": 1000,
+        "interval_seconds": 10,
+        "failure_threshold": 1,
+        "recovery_threshold": 1,
+        "enabled": True,
+    }
+    expect(
+        call(
+            "PUT",
+            f"/v1/services/{probe_service['id']}/scheduled-probe",
+            body=scheduled_probe,
+        ),
+        403,
+        "csrf_failed",
+    )
+    created_probe = expect(
+        call(
+            "PUT",
+            f"/v1/services/{probe_service['id']}/scheduled-probe",
+            body=scheduled_probe,
+            headers=browser_headers(),
+        ),
+        200,
+    ).body
+    assert created_probe["consensus_state"] == "unknown", created_probe
+    expect(
+        call(
+            "POST",
+            f"/v1/services/{probe_service['id']}/credentials",
+            headers=browser_headers(),
+        ),
+        409,
+        "service_has_scheduled_probe",
+    )
+    offline_probe = None
+    for _ in range(20):
+        candidate = expect(
+            call("GET", f"/v1/services/{probe_service['id']}/scheduled-probe"), 200
+        ).body
+        if candidate["consensus_state"] == "offline":
+            offline_probe = candidate
+            break
+        time.sleep(0.25)
+    assert offline_probe and offline_probe["last_state"] == "unsafe_destination", offline_probe
+    expect(
+        call(
+            "DELETE",
+            f"/v1/services/{probe_service['id']}/scheduled-probe",
+            headers=browser_headers(),
+        ),
+        409,
+        "probe_must_recover_before_delete",
+    )
+    probe_history = expect(
+        call("GET", f"/v1/services/{probe_service['id']}/scheduled-probe/history"), 200
+    ).body["items"]
+    assert probe_history and probe_history[0]["state"] == "unsafe_destination", probe_history
+    probe_incidents = expect(
+        call("GET", f"/v1/incidents?project_id={probe_project['id']}&limit=20"), 200
+    ).body["items"]
+    assert len(probe_incidents) == 1 and probe_incidents[0]["status"] == "open", probe_incidents
+
+    scheduled_probe["host"] = "8.8.8.8"
+    expect(
+        call(
+            "PUT",
+            f"/v1/services/{probe_service['id']}/scheduled-probe",
+            body=scheduled_probe,
+            headers=browser_headers(),
+        ),
+        200,
+    )
+    recovered_probe = None
+    for _ in range(20):
+        candidate = expect(
+            call("GET", f"/v1/services/{probe_service['id']}/scheduled-probe"), 200
+        ).body
+        if candidate["consensus_state"] == "online":
+            recovered_probe = candidate
+            break
+        time.sleep(0.25)
+    assert recovered_probe and recovered_probe["last_state"] == "responding", recovered_probe
+    probe_incidents = expect(
+        call("GET", f"/v1/incidents?project_id={probe_project['id']}&limit=20"), 200
+    ).body["items"]
+    assert len(probe_incidents) == 1 and probe_incidents[0]["status"] == "resolved", probe_incidents
+    expect(
+        call(
+            "DELETE",
+            f"/v1/services/{probe_service['id']}/scheduled-probe",
+            headers=browser_headers(),
+        ),
+        204,
+    )
+    expect(call("GET", f"/v1/services/{probe_service['id']}/scheduled-probe"), 404, "not_found")
     network_probe = {
         "kind": "https",
         "host": "127.0.0.1",

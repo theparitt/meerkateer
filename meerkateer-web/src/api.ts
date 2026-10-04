@@ -16,6 +16,9 @@ export type TimelineItemResponse = components["schemas"]["TimelineItemResponse"]
 export type GameProbeResponse = components["schemas"]["GameProbeResponse"];
 export type NetworkProbeRequest = components["schemas"]["NetworkProbeRequest"];
 export type NetworkProbeResponse = components["schemas"]["NetworkProbeResponse"];
+export type ScheduledProbeUpsertRequest = components["schemas"]["ScheduledProbeUpsertRequest"];
+export type ScheduledProbeResponse = components["schemas"]["ScheduledProbeResponse"];
+export type ProbeObservationResponse = components["schemas"]["ProbeObservationResponse"];
 export type IncidentResponse = components["schemas"]["IncidentResponse"];
 export type IncidentActivityResponse = components["schemas"]["IncidentActivityResponse"];
 export type AlertDeliveryResponse = components["schemas"]["AlertDeliveryResponse"];
@@ -636,4 +639,55 @@ export async function testNetworkDestination(
     throw new Error("Network probe returned an unsupported contract");
   }
   return body as NetworkProbeResponse;
+}
+
+export async function fetchScheduledProbe(
+  serviceId: string,
+  signal: AbortSignal,
+): Promise<ScheduledProbeResponse | null> {
+  const response = await fetch(`/v1/services/${encodeURIComponent(serviceId)}/scheduled-probe`, {
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+    signal,
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Scheduled monitor returned HTTP ${response.status}`);
+  const body: unknown = await response.json();
+  if (!isObject(body) || typeof body.id !== "string" || typeof body.kind !== "string") {
+    throw new Error("Scheduled monitor returned an unsupported contract");
+  }
+  return body as ScheduledProbeResponse;
+}
+
+export async function saveScheduledProbe(
+  serviceId: string,
+  request: ScheduledProbeUpsertRequest,
+): Promise<ScheduledProbeResponse> {
+  const body = await mutateJson(
+    "PUT",
+    `/v1/services/${encodeURIComponent(serviceId)}/scheduled-probe`,
+    request,
+  );
+  if (!isObject(body) || typeof body.id !== "string" || typeof body.kind !== "string") {
+    throw new Error("Scheduled monitor returned an unsupported contract");
+  }
+  return body as ScheduledProbeResponse;
+}
+
+export async function deleteScheduledProbe(serviceId: string): Promise<void> {
+  await mutateJson("DELETE", `/v1/services/${encodeURIComponent(serviceId)}/scheduled-probe`);
+}
+
+export async function fetchProbeObservations(
+  serviceId: string,
+  signal: AbortSignal,
+): Promise<ProbeObservationResponse[]> {
+  const body = await getJson(
+    `/v1/services/${encodeURIComponent(serviceId)}/scheduled-probe/history`,
+    signal,
+  );
+  if (!isObject(body) || !Array.isArray(body.items)) {
+    throw new Error("Scheduled monitor history returned an unsupported contract");
+  }
+  return body.items as ProbeObservationResponse[];
 }

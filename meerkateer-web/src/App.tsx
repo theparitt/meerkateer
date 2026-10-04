@@ -2457,6 +2457,7 @@ function Operations({
             <div className="service-layout">
               <ServiceList ready={ready} view="services" />
               <ServiceDetail
+                canManage={canManage}
                 service={selected}
                 timeline={ready.timeline}
                 mode="service"
@@ -2829,11 +2830,13 @@ function ServiceList({ ready, view }: { ready: DashboardReady; view: "services" 
 }
 
 function ServiceDetail({
+  canManage,
   service,
   timeline,
   mode,
   empty,
 }: {
+  canManage: boolean;
   service: ServiceResponse | null;
   timeline: TimelineItemResponse[];
   mode: "service" | "incident";
@@ -2867,7 +2870,7 @@ function ServiceDetail({
       {service.game?.kind === "minecraft_java" ? (
         <GameProbePanel key={service.id} service={service} />
       ) : null}
-      <NetworkProbePanel key={`network-${service.id}`} service={service} />
+      <NetworkProbePanel key={`network-${service.id}`} service={service} canManage={canManage} />
       {mode === "incident" ? (
         <>
           <AvailabilityBoard key={service.id} service={service} timeline={timeline} />

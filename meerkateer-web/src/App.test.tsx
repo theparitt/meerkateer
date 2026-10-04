@@ -97,7 +97,7 @@ describe("App", () => {
     expect(
       screen.getByRole("heading", { name: "Hosted by us. Built from public core." }),
     ).toBeTruthy();
-    expect(screen.getByText("v0.3.0-alpha.1")).toBeTruthy();
+    expect(screen.getByText("v0.3.0-alpha.2")).toBeTruthy();
     expect(screen.getByText("Current phase: 0.3 in progress")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Install one small Controller." })).toBeTruthy();
     expect(container.querySelectorAll(".controller-download-card")).toHaveLength(2);

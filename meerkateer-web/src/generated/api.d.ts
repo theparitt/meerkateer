@@ -716,6 +716,42 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/services/{service_id}/scheduled-probe": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** @description Read the single scheduled network monitor configured as this service's health source. */
+    get: operations["getScheduledProbe"];
+    /** @description Create or replace the service's scheduled monitor. A service cannot use an active SDK credential and a scheduled probe at the same time, preventing contradictory health sources. */
+    put: operations["upsertScheduledProbe"];
+    post?: never;
+    /** @description Delete a recovered or never-failed scheduled monitor and its bounded observation history. An offline monitor must recover before deletion so an active incident cannot be hidden. */
+    delete: operations["deleteScheduledProbe"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/services/{service_id}/scheduled-probe/history": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** @description Read the newest 50 bounded observations for this service's scheduled probe. */
+    get: operations["listScheduledProbeHistory"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/enrollment-tokens": {
     parameters: {
       query?: never;
@@ -1276,6 +1312,61 @@ export interface components {
       /** Format: date-time */
       tls_expires_at: string | null;
       tls_days_remaining: number | null;
+    };
+    ScheduledProbeUpsertRequest: {
+      /** @enum {unknown} */
+      kind: "http" | "https" | "tcp" | "dns" | "tls";
+      host: string;
+      port: number | null;
+      path: string | null;
+      expected_status: number | null;
+      /** @default 5000 */
+      timeout_ms: number;
+      /** @default 15 */
+      interval_seconds: number;
+      /** @default 2 */
+      failure_threshold: number;
+      /** @default 1 */
+      recovery_threshold: number;
+      /** @default true */
+      enabled: boolean;
+    };
+    ScheduledProbeResponse: components["schemas"]["ScheduledProbeUpsertRequest"] & {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      service_id: string;
+      /** @enum {unknown} */
+      consensus_state: "unknown" | "online" | "offline";
+      consecutive_failures: number;
+      consecutive_successes: number;
+      /** Format: date-time */
+      next_run_at: string;
+      last_state: string | null;
+      last_message: string | null;
+      /** Format: date-time */
+      last_observed_at: string | null;
+      last_response_ms: number | null;
+      last_status_code: number | null;
+      /** Format: date-time */
+      last_tls_expires_at: string | null;
+    };
+    ProbeObservationResponse: {
+      /** Format: uuid */
+      id: string;
+      state: string;
+      message: string;
+      /** Format: date-time */
+      observed_at: string;
+      response_ms: number | null;
+      status_code: number | null;
+      resolved_addresses: number;
+      /** Format: date-time */
+      tls_expires_at: string | null;
+      tls_days_remaining: number | null;
+    };
+    ProbeObservationListResponse: {
+      items: components["schemas"]["ProbeObservationResponse"][];
     };
     ServiceResponse: {
       /** Format: uuid */
@@ -4121,6 +4212,229 @@ export interface operations {
         content?: never;
       };
       429: components["responses"]["RateLimited"];
+      /** @description The control database is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  getScheduledProbe: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        service_id: components["parameters"]["ServiceId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Scheduled probe configuration and latest consensus. */
+      200: {
+        headers: {
+          "Cache-Control"?: "no-store";
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ScheduledProbeResponse"];
+        };
+      };
+      /** @description Authentication is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The role is insufficient. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description No scheduled probe exists for this service. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The control database is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  upsertScheduledProbe: {
+    parameters: {
+      query?: never;
+      header: {
+        "X-Meerkateer-CSRF": components["parameters"]["CsrfHeader"];
+      };
+      path: {
+        service_id: components["parameters"]["ServiceId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ScheduledProbeUpsertRequest"];
+      };
+    };
+    responses: {
+      /** @description Saved configuration. The scheduler leases it immediately when enabled. */
+      200: {
+        headers: {
+          "Cache-Control"?: "no-store";
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ScheduledProbeResponse"];
+        };
+      };
+      /** @description The configuration is invalid or unbounded. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Operator role and CSRF proof are required. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The service is not in this company or Cloud mode is active. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The service already has an active SDK credential. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The control database is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  deleteScheduledProbe: {
+    parameters: {
+      query?: never;
+      header: {
+        "X-Meerkateer-CSRF": components["parameters"]["CsrfHeader"];
+      };
+      path: {
+        service_id: components["parameters"]["ServiceId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Scheduled monitor deleted. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Operator role and CSRF proof are required. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description No scheduled probe exists for this service. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The monitor is offline and must recover before deletion. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The control database is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  listScheduledProbeHistory: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        service_id: components["parameters"]["ServiceId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Newest observations first. */
+      200: {
+        headers: {
+          "Cache-Control"?: "no-store";
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProbeObservationListResponse"];
+        };
+      };
+      /** @description Authentication is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The role is insufficient. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
       /** @description The control database is unavailable. */
       503: {
         headers: {

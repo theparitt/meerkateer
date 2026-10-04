@@ -1825,7 +1825,7 @@ dependencies = [
 
 [[package]]
 name = "meerkateer-agent"
-version = "0.3.0-alpha.1"
+version = "0.3.0-alpha.2"
 dependencies = [
  "anyhow",
  "atomic-write-file",
@@ -1848,7 +1848,7 @@ dependencies = [
 
 [[package]]
 name = "meerkateer-config"
-version = "0.3.0-alpha.1"
+version = "0.3.0-alpha.2"
 dependencies = [
  "secrecy",
  "thiserror",
@@ -1856,11 +1856,11 @@ dependencies = [
 
 [[package]]
 name = "meerkateer-domain"
-version = "0.3.0-alpha.1"
+version = "0.3.0-alpha.2"
 
 [[package]]
 name = "meerkateer-identity"
-version = "0.3.0-alpha.1"
+version = "0.3.0-alpha.2"
 dependencies = [
  "argon2",
  "secrecy",
@@ -1872,7 +1872,7 @@ dependencies = [
 
 [[package]]
 name = "meerkateer-protocol"
-version = "0.3.0-alpha.1"
+version = "0.3.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -1881,7 +1881,7 @@ dependencies = [
 
 [[package]]
 name = "meerkateer-sdk"
-version = "0.3.0-alpha.1"
+version = "0.3.0-alpha.2"
 dependencies = [
  "chrono",
  "meerkateer-protocol",
@@ -1896,7 +1896,7 @@ dependencies = [
 
 [[package]]
 name = "meerkateer-server"
-version = "0.3.0-alpha.1"
+version = "0.3.0-alpha.2"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -1920,7 +1920,7 @@ dependencies = [
 
 [[package]]
 name = "meerkateer-storage"
-version = "0.3.0-alpha.1"
+version = "0.3.0-alpha.2"
 dependencies = [
  "meerkateer-domain",
  "sqlx",
@@ -1930,7 +1930,7 @@ dependencies = [
 
 [[package]]
 name = "meerkateer-worker"
-version = "0.3.0-alpha.1"
+version = "0.3.0-alpha.2"
 dependencies = [
  "anyhow",
  "chrono",

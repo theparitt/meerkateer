@@ -10,8 +10,8 @@ describe("public resource links", () => {
     window.history.replaceState({}, "", "/docs/roadmap-to-1.0");
     render(<App />);
     expect(await screen.findByRole("heading", { name: "Roadmap to 1.0", level: 1 })).toBeTruthy();
-    expect(screen.getAllByText("0.3.0-alpha.1", { selector: "code" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("0.3.0-alpha.1", { selector: "code" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("0.3.0-alpha.2", { selector: "code" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("0.3.0-alpha.2", { selector: "code" }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("1.0.0", { selector: "code" }).length).toBeGreaterThan(0);
     expect(
       screen.getByText(/Stripe billing is deliberately not a Community 1.0 release gate/),

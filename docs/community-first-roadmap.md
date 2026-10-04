@@ -1,7 +1,7 @@
 # Meerkateer Community-first delivery plan
 
 This document expands the `0.2 Community Alpha` acceptance slice in the canonical
-[roadmap to 1.0](roadmap-to-1.0.md). The current code line is `0.3.0-alpha.1`; any unmet
+[roadmap to 1.0](roadmap-to-1.0.md). The current code line is `0.3.0-alpha.2`; any unmet
 Community Alpha evidence below remains a required gate instead of being hidden by the prerelease
 version change. Its CE phase identifiers remain acceptance-test groupings, not separate product
 version numbers.
@@ -27,7 +27,7 @@ there is runnable code, but the requested operator outcome is not yet verified.
 | Owner setup and login | `meerkateer-server/src/lib.rs` (`bootstrap`, `password_login`, `password_setup`), `migrations/0009_community_owner_password.sql`, `meerkateer-web/src/App.tsx` | Partial | `tests/integration/api_e2e.py` rejects second bootstrap, tests password login/recovery and retired setup-key login; `/` routes fresh Community to setup | No clean-machine browser journey recorded |
 | Internal members | migrations `0015`–`0016`, `/v1/members*`, `/v1/member-invitations/*`, `/v1/member-password-resets/*`, Console Admin/Account, `/join`, and `/reset-password` | Partial | PostgreSQL E2E covers no-email digest-only invitations, configurable expiry, accept/decline/admin cancellation, username login, self password change, internal reset replacement/expiry/replay/concurrency, session revocation, roles, CSRF, audit, and secret non-disclosure | Optional OIDC/SSO and independent security review remain |
 | Host enrollment and telemetry | `meerkateer-agent/src/main.rs`, `meerkateer-agent/src/collector.rs`, `migrations/0006_agent_telemetry.sql`, server `/v1/agent/telemetry` and `/v1/agents/{agent_id}/telemetry` | Partial | Cross-platform CLI inspect plus enroll/doctor/run collect bounded CPU, memory, fixed-filesystem and exact-name process samples; a tenant-scoped latest-batch read model and responsive Machine detail UI expose complete/partial/unavailable, stale, and stopped-process evidence; unit/E2E tests cover shape, durable retry, never-seen, current snapshot and unknown agent | Inodes, memory pressure, network/service-manager collection, native installers, signed updates, historical charts and process alert policies remain |
-| Service signals | `sdk/{node,go,rust,python,php}`, server `ingest_heartbeat`, `ingest_event`, `ingest_deploy` | Partial | MKS E2E proves auth, idempotency, status transitions and timeline; SDK unit tests pass | No scheduled HTTP/TLS check |
+| Service signals | `sdk/{node,go,rust,python,php}`, server ingest and scheduled-probe routes, migration `0017` | Partial | MKS E2E proves auth, idempotency, status transitions and timeline; scheduled HTTP/HTTPS/TCP/DNS/TLS probes prove leases, consensus, bounded history, incident recovery, and source exclusivity | Regional Cloud probe egress and supported-adapter load evidence remain |
 | Status and staleness | `service_snapshots`, `service_from_row` and `agent_responses` in server, `AvailabilityBoard.tsx` | Partial | E2E proves fresh down then fresh recovery and aged heartbeat becomes `unknown` | Permission failure and collector failure are not first-class status reasons |
 | Incidents | `incidents`, `incident_events`, `incident_activity`, `/v1/incidents`, Console Incidents view | Partial | E2E proves one incident per outage, reported cause, repeat-down deduplication, stale-transition rejection, fresh recovery, idempotent acknowledgement, self-assignment, immutable Unicode notes, audit, and unchanged health state after operator actions | Hypotheses, missing-evidence, richer ownership, and multi-signal correlation remain |
 | Alert delivery | `alert_policies`, `alert_deliveries`, `outbox`, worker, Console Alerts view | Partial | E2E covers delivery, stable retry, dead-letter, unconfigured/disabled/suppressed outcomes, audited policy, bounded repeat-down cooldown, maintenance suppression, and audited dead-letter replay with immutable source history | Multiple destinations, escalation, delivery acknowledgement, and external watchdog remain |
@@ -42,7 +42,7 @@ this repository. It does not count as delivered Meerkateer functionality.
 The CE-0 isolated `make integration` run passed on 2026-10-04: bootstrap and
 password login, agent enrollment and replay protection, ingest status/recovery,
 incident correlation, operator acknowledgement/assignment/notes, maintenance suppression, alert
-outcomes, cooldown/replay, migration 0007→0016, worker retry, durable worker-stall detection,
+outcomes, cooldown/replay, migration 0007→0017, worker retry, durable worker-stall detection,
 and dead-letter. The separate Compose
 volume and containers were removed by the harness. This is test-environment
 evidence; it does not verify any real production host.

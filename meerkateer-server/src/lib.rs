@@ -31,7 +31,7 @@ use meerkateer_protocol::mks1::{
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
 use subtle::ConstantTimeEq;
 use tokio::{sync::Semaphore, time::timeout};
 
@@ -158,6 +158,22 @@ pub fn configure_routes(config: &mut web::ServiceConfig) {
                 .route(
                     "/services/{service_id}/network-probe",
                     web::post().to(test_network_probe),
+                )
+                .route(
+                    "/services/{service_id}/scheduled-probe",
+                    web::get().to(get_scheduled_probe),
+                )
+                .route(
+                    "/services/{service_id}/scheduled-probe",
+                    web::put().to(upsert_scheduled_probe),
+                )
+                .route(
+                    "/services/{service_id}/scheduled-probe",
+                    web::delete().to(delete_scheduled_probe),
+                )
+                .route(
+                    "/services/{service_id}/scheduled-probe/history",
+                    web::get().to(list_probe_observations),
                 )
                 .route(
                     "/services/{service_id}/credentials/{credential_id}/rotate",
@@ -478,6 +494,85 @@ impl ServiceStatusResponse {
 #[derive(Debug, Serialize)]
 struct ServiceListResponse {
     items: Vec<ServiceResponse>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ScheduledProbeUpsertRequest {
+    kind: network_probe::Kind,
+    host: String,
+    port: Option<u16>,
+    path: Option<String>,
+    expected_status: Option<u16>,
+    timeout_ms: u16,
+    interval_seconds: u32,
+    failure_threshold: u8,
+    recovery_threshold: u8,
+    enabled: bool,
+}
+
+impl ScheduledProbeUpsertRequest {
+    fn as_probe_request(&self) -> network_probe::Request {
+        network_probe::Request {
+            kind: self.kind,
+            host: self.host.clone(),
+            port: self.port,
+            path: self.path.clone(),
+            expected_status: self.expected_status,
+            timeout_ms: Some(self.timeout_ms),
+        }
+    }
+
+    fn valid(&self) -> bool {
+        (10..=86_400).contains(&self.interval_seconds)
+            && (1..=5).contains(&self.failure_threshold)
+            && (1..=5).contains(&self.recovery_threshold)
+            && network_probe::validate(&self.as_probe_request()).is_ok()
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct ScheduledProbeResponse {
+    id: uuid::Uuid,
+    service_id: uuid::Uuid,
+    kind: String,
+    host: String,
+    port: Option<u16>,
+    path: Option<String>,
+    expected_status: Option<u16>,
+    timeout_ms: u16,
+    interval_seconds: u32,
+    failure_threshold: u8,
+    recovery_threshold: u8,
+    enabled: bool,
+    consensus_state: String,
+    consecutive_failures: u32,
+    consecutive_successes: u32,
+    next_run_at: chrono::DateTime<Utc>,
+    last_state: Option<String>,
+    last_message: Option<String>,
+    last_observed_at: Option<chrono::DateTime<Utc>>,
+    last_response_ms: Option<u64>,
+    last_status_code: Option<u16>,
+    last_tls_expires_at: Option<chrono::DateTime<Utc>>,
+}
+
+#[derive(Debug, Serialize)]
+struct ProbeObservationResponse {
+    id: uuid::Uuid,
+    state: String,
+    message: String,
+    observed_at: chrono::DateTime<Utc>,
+    response_ms: Option<u64>,
+    status_code: Option<u16>,
+    resolved_addresses: u8,
+    tls_expires_at: Option<chrono::DateTime<Utc>>,
+    tls_days_remaining: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+struct ProbeObservationListResponse {
+    items: Vec<ProbeObservationResponse>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -4704,6 +4799,778 @@ async fn test_network_probe(
     }
 }
 
+const SCHEDULED_PROBE_COLUMNS: &str = "id, service_id, kind, host, port, path, expected_status, \
+    timeout_ms, interval_seconds, failure_threshold, recovery_threshold, enabled, consensus_state, \
+    consecutive_failures, consecutive_successes, next_run_at, last_state, last_message, \
+    last_observed_at, last_response_ms, last_status_code, last_tls_expires_at";
+
+async fn get_scheduled_probe(
+    request: HttpRequest,
+    service_id: web::Path<uuid::Uuid>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session
+        .principal
+        .authorize(session.principal.tenant_id, Action::Read)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, session.principal.tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let query = format!(
+        "SELECT {SCHEDULED_PROBE_COLUMNS} FROM service_probes \
+         WHERE tenant_id = $1 AND service_id = $2"
+    );
+    let row = sqlx::query(&query)
+        .bind(session.principal.tenant_id)
+        .bind(service_id.into_inner())
+        .fetch_optional(&mut *transaction)
+        .await;
+    if transaction.commit().await.is_err() {
+        return database_unavailable();
+    }
+    match row {
+        Ok(Some(row)) => match scheduled_probe_from_row(&row) {
+            Ok(probe) => HttpResponse::Ok()
+                .insert_header((header::CACHE_CONTROL, "no-store"))
+                .json(probe),
+            Err(_) => database_unavailable(),
+        },
+        Ok(None) => HttpResponse::NotFound().json(ErrorResponse { code: "not_found" }),
+        Err(_) => database_unavailable(),
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+async fn upsert_scheduled_probe(
+    request: HttpRequest,
+    service_id: web::Path<uuid::Uuid>,
+    body: web::Json<ScheduledProbeUpsertRequest>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session
+        .principal
+        .authorize(session.principal.tenant_id, Action::ServiceWrite)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    if !csrf_is_valid(&request, &session) {
+        return HttpResponse::Forbidden().json(ErrorResponse {
+            code: "csrf_failed",
+        });
+    }
+    if state.config.deployment_mode != DeploymentMode::Community {
+        return HttpResponse::NotFound().json(ErrorResponse { code: "not_found" });
+    }
+    if !body.valid() {
+        return HttpResponse::BadRequest().json(ErrorResponse {
+            code: "invalid_probe_request",
+        });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let service_id = service_id.into_inner();
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, session.principal.tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let active_credential = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM service_credentials \
+         WHERE tenant_id = $1 AND service_id = $2 AND revoked_at IS NULL \
+           AND valid_after <= now() AND (expires_at IS NULL OR expires_at > now()))",
+    )
+    .bind(session.principal.tenant_id)
+    .bind(service_id)
+    .fetch_one(&mut *transaction)
+    .await;
+    match active_credential {
+        Ok(true) => {
+            return HttpResponse::Conflict().json(ErrorResponse {
+                code: "service_has_active_sdk_credential",
+            });
+        }
+        Ok(false) => {}
+        Err(_) => return database_unavailable(),
+    }
+    let probe_id = uuid::Uuid::new_v4();
+    let query = format!(
+        "INSERT INTO service_probes \
+         (tenant_id, id, project_id, service_id, kind, host, port, path, expected_status, \
+          timeout_ms, interval_seconds, failure_threshold, recovery_threshold, enabled, created_by) \
+         SELECT $1, $3, services.project_id, services.id, $4, $5, $6, $7, $8, $9, $10, \
+           $11, $12, $13, $14 FROM services \
+         WHERE services.tenant_id = $1 AND services.id = $2 \
+         ON CONFLICT (tenant_id, service_id) DO UPDATE SET \
+           kind = EXCLUDED.kind, host = EXCLUDED.host, port = EXCLUDED.port, path = EXCLUDED.path, \
+           expected_status = EXCLUDED.expected_status, timeout_ms = EXCLUDED.timeout_ms, \
+           interval_seconds = EXCLUDED.interval_seconds, failure_threshold = EXCLUDED.failure_threshold, \
+           recovery_threshold = EXCLUDED.recovery_threshold, enabled = EXCLUDED.enabled, \
+           next_run_at = now(), locked_at = NULL, locked_by = NULL, \
+           consecutive_failures = CASE WHEN ROW(service_probes.kind, service_probes.host, \
+             service_probes.port, service_probes.path, service_probes.expected_status, \
+             service_probes.timeout_ms) IS DISTINCT FROM ROW(EXCLUDED.kind, EXCLUDED.host, \
+             EXCLUDED.port, EXCLUDED.path, EXCLUDED.expected_status, EXCLUDED.timeout_ms) \
+             THEN 0 ELSE service_probes.consecutive_failures END, \
+           consecutive_successes = CASE WHEN ROW(service_probes.kind, service_probes.host, \
+             service_probes.port, service_probes.path, service_probes.expected_status, \
+             service_probes.timeout_ms) IS DISTINCT FROM ROW(EXCLUDED.kind, EXCLUDED.host, \
+             EXCLUDED.port, EXCLUDED.path, EXCLUDED.expected_status, EXCLUDED.timeout_ms) \
+             THEN 0 ELSE service_probes.consecutive_successes END, \
+           consensus_state = CASE WHEN ROW(service_probes.kind, service_probes.host, \
+             service_probes.port, service_probes.path, service_probes.expected_status, \
+             service_probes.timeout_ms) IS DISTINCT FROM ROW(EXCLUDED.kind, EXCLUDED.host, \
+             EXCLUDED.port, EXCLUDED.path, EXCLUDED.expected_status, EXCLUDED.timeout_ms) \
+             THEN 'unknown' ELSE service_probes.consensus_state END, \
+           updated_at = now() RETURNING {SCHEDULED_PROBE_COLUMNS}"
+    );
+    let row = sqlx::query(&query)
+        .bind(session.principal.tenant_id)
+        .bind(service_id)
+        .bind(probe_id)
+        .bind(body.kind.as_str())
+        .bind(&body.host)
+        .bind(body.port.map(i32::from))
+        .bind(&body.path)
+        .bind(body.expected_status.map(i32::from))
+        .bind(i32::from(body.timeout_ms))
+        .bind(i32::try_from(body.interval_seconds).unwrap_or(i32::MAX))
+        .bind(i32::from(body.failure_threshold))
+        .bind(i32::from(body.recovery_threshold))
+        .bind(body.enabled)
+        .bind(session.principal.user_id)
+        .fetch_optional(&mut *transaction)
+        .await;
+    let row = match row {
+        Ok(Some(row)) => row,
+        Ok(None) => return HttpResponse::NotFound().json(ErrorResponse { code: "not_found" }),
+        Err(_) => return database_unavailable(),
+    };
+    let Ok(saved) = scheduled_probe_from_row(&row) else {
+        return database_unavailable();
+    };
+    if sqlx::query(
+        "INSERT INTO audit_events \
+         (tenant_id, actor_type, actor_id, action, target_type, target_id) \
+         VALUES ($1, 'user', $2, 'scheduled_probe.upsert', 'service_probe', $3)",
+    )
+    .bind(session.principal.tenant_id)
+    .bind(session.principal.user_id)
+    .bind(saved.id)
+    .execute(&mut *transaction)
+    .await
+    .is_err()
+        || transaction.commit().await.is_err()
+    {
+        return database_unavailable();
+    }
+    HttpResponse::Ok()
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .json(saved)
+}
+
+async fn delete_scheduled_probe(
+    request: HttpRequest,
+    service_id: web::Path<uuid::Uuid>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session
+        .principal
+        .authorize(session.principal.tenant_id, Action::ServiceWrite)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    if !csrf_is_valid(&request, &session) {
+        return HttpResponse::Forbidden().json(ErrorResponse {
+            code: "csrf_failed",
+        });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let service_id = service_id.into_inner();
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, session.principal.tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let probe = sqlx::query_as::<_, (uuid::Uuid, bool)>(
+        "SELECT probes.id, EXISTS(SELECT 1 FROM incidents \
+           WHERE incidents.tenant_id = probes.tenant_id \
+             AND incidents.service_id = probes.service_id AND incidents.status = 'open') \
+         FROM service_probes AS probes \
+         WHERE probes.tenant_id = $1 AND probes.service_id = $2 FOR UPDATE OF probes",
+    )
+    .bind(session.principal.tenant_id)
+    .bind(service_id)
+    .fetch_optional(&mut *transaction)
+    .await;
+    let probe = match probe {
+        Ok(Some(probe)) => probe,
+        Ok(None) => return HttpResponse::NotFound().json(ErrorResponse { code: "not_found" }),
+        Err(_) => return database_unavailable(),
+    };
+    if probe.1 {
+        return HttpResponse::Conflict().json(ErrorResponse {
+            code: "probe_must_recover_before_delete",
+        });
+    }
+    if sqlx::query("DELETE FROM service_probes WHERE tenant_id = $1 AND id = $2")
+        .bind(session.principal.tenant_id)
+        .bind(probe.0)
+        .execute(&mut *transaction)
+        .await
+        .is_err()
+        || sqlx::query("DELETE FROM service_snapshots WHERE tenant_id = $1 AND service_id = $2")
+            .bind(session.principal.tenant_id)
+            .bind(service_id)
+            .execute(&mut *transaction)
+            .await
+            .is_err()
+        || sqlx::query(
+            "INSERT INTO audit_events \
+             (tenant_id, actor_type, actor_id, action, target_type, target_id) \
+             VALUES ($1, 'user', $2, 'scheduled_probe.delete', 'service_probe', $3)",
+        )
+        .bind(session.principal.tenant_id)
+        .bind(session.principal.user_id)
+        .bind(probe.0)
+        .execute(&mut *transaction)
+        .await
+        .is_err()
+        || transaction.commit().await.is_err()
+    {
+        return database_unavailable();
+    }
+    HttpResponse::NoContent()
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .finish()
+}
+
+async fn list_probe_observations(
+    request: HttpRequest,
+    service_id: web::Path<uuid::Uuid>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session
+        .principal
+        .authorize(session.principal.tenant_id, Action::Read)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, session.principal.tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let rows = sqlx::query_as::<
+        _,
+        (
+            uuid::Uuid,
+            String,
+            String,
+            chrono::DateTime<Utc>,
+            Option<i64>,
+            Option<i32>,
+            i32,
+            Option<chrono::DateTime<Utc>>,
+            Option<i64>,
+        ),
+    >(
+        "SELECT observations.id, observations.state, observations.message, \
+           observations.observed_at, observations.response_ms, observations.status_code, \
+           observations.resolved_addresses, observations.tls_expires_at, \
+           observations.tls_days_remaining FROM probe_observations AS observations \
+         JOIN service_probes AS probes ON probes.tenant_id = observations.tenant_id \
+           AND probes.id = observations.probe_id \
+         WHERE observations.tenant_id = $1 AND observations.service_id = $2 \
+         ORDER BY observations.observed_at DESC, observations.id DESC LIMIT 50",
+    )
+    .bind(session.principal.tenant_id)
+    .bind(service_id.into_inner())
+    .fetch_all(&mut *transaction)
+    .await;
+    if transaction.commit().await.is_err() {
+        return database_unavailable();
+    }
+    match rows {
+        Ok(rows) => HttpResponse::Ok()
+            .insert_header((header::CACHE_CONTROL, "no-store"))
+            .json(ProbeObservationListResponse {
+                items: rows
+                    .into_iter()
+                    .map(|row| ProbeObservationResponse {
+                        id: row.0,
+                        state: row.1,
+                        message: row.2,
+                        observed_at: row.3,
+                        response_ms: row.4.and_then(|value| u64::try_from(value).ok()),
+                        status_code: row.5.and_then(|value| u16::try_from(value).ok()),
+                        resolved_addresses: u8::try_from(row.6).unwrap_or(u8::MAX),
+                        tls_expires_at: row.7,
+                        tls_days_remaining: row.8,
+                    })
+                    .collect(),
+            }),
+        Err(_) => database_unavailable(),
+    }
+}
+
+fn scheduled_probe_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> Result<ScheduledProbeResponse, sqlx::Error> {
+    Ok(ScheduledProbeResponse {
+        id: row.try_get("id")?,
+        service_id: row.try_get("service_id")?,
+        kind: row.try_get("kind")?,
+        host: row.try_get("host")?,
+        port: row
+            .try_get::<Option<i32>, _>("port")?
+            .and_then(|value| u16::try_from(value).ok()),
+        path: row.try_get("path")?,
+        expected_status: row
+            .try_get::<Option<i32>, _>("expected_status")?
+            .and_then(|value| u16::try_from(value).ok()),
+        timeout_ms: u16::try_from(row.try_get::<i32, _>("timeout_ms")?).unwrap_or(u16::MAX),
+        interval_seconds: u32::try_from(row.try_get::<i32, _>("interval_seconds")?)
+            .unwrap_or(u32::MAX),
+        failure_threshold: u8::try_from(row.try_get::<i32, _>("failure_threshold")?)
+            .unwrap_or(u8::MAX),
+        recovery_threshold: u8::try_from(row.try_get::<i32, _>("recovery_threshold")?)
+            .unwrap_or(u8::MAX),
+        enabled: row.try_get("enabled")?,
+        consensus_state: row.try_get("consensus_state")?,
+        consecutive_failures: u32::try_from(row.try_get::<i32, _>("consecutive_failures")?)
+            .unwrap_or(u32::MAX),
+        consecutive_successes: u32::try_from(row.try_get::<i32, _>("consecutive_successes")?)
+            .unwrap_or(u32::MAX),
+        next_run_at: row.try_get("next_run_at")?,
+        last_state: row.try_get("last_state")?,
+        last_message: row.try_get("last_message")?,
+        last_observed_at: row.try_get("last_observed_at")?,
+        last_response_ms: row
+            .try_get::<Option<i64>, _>("last_response_ms")?
+            .and_then(|value| u64::try_from(value).ok()),
+        last_status_code: row
+            .try_get::<Option<i32>, _>("last_status_code")?
+            .and_then(|value| u16::try_from(value).ok()),
+        last_tls_expires_at: row.try_get("last_tls_expires_at")?,
+    })
+}
+
+#[derive(Debug)]
+struct ClaimedScheduledProbe {
+    id: uuid::Uuid,
+    tenant_id: uuid::Uuid,
+    project_id: uuid::Uuid,
+    service_id: uuid::Uuid,
+    request: network_probe::Request,
+    interval_seconds: u32,
+    failure_threshold: u8,
+    recovery_threshold: u8,
+    service_slug: String,
+    project_slug: String,
+    environment: String,
+}
+
+/// Run the Community scheduled-probe lease loop until its task is cancelled by process shutdown.
+pub async fn run_scheduled_probe_loop(state: AppState) {
+    if state.config.deployment_mode != DeploymentMode::Community || state.database.is_none() {
+        return;
+    }
+    let worker_id = uuid::Uuid::new_v4();
+    let mut interval = tokio::time::interval(Duration::from_secs(1));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        interval.tick().await;
+        let Some(database) = &state.database else {
+            return;
+        };
+        let Ok(claims) = claim_scheduled_probes(database, worker_id, 10).await else {
+            tracing::warn!(%worker_id, "scheduled probe claim failed");
+            continue;
+        };
+        let mut tasks = Vec::with_capacity(claims.len());
+        for claim in claims {
+            let task_state = state.clone();
+            tasks.push(tokio::spawn(async move {
+                run_claimed_probe(&task_state, worker_id, claim).await;
+            }));
+        }
+        for task in tasks {
+            if task.await.is_err() {
+                tracing::warn!(%worker_id, "scheduled probe task failed");
+            }
+        }
+    }
+}
+
+async fn claim_scheduled_probes(
+    database: &PgPool,
+    worker_id: uuid::Uuid,
+    limit: i32,
+) -> Result<Vec<ClaimedScheduledProbe>, ()> {
+    let rows = sqlx::query("SELECT * FROM meerkateer_claim_service_probes($1, $2)")
+        .bind(worker_id)
+        .bind(limit)
+        .fetch_all(database)
+        .await
+        .map_err(|_| ())?;
+    rows.into_iter()
+        .map(|row| {
+            let kind_text: String = row.try_get("kind").map_err(|_| ())?;
+            let kind = network_probe::Kind::parse(&kind_text).ok_or(())?;
+            let timeout_ms = u16::try_from(row.try_get::<i32, _>("timeout_ms").map_err(|_| ())?)
+                .map_err(|_| ())?;
+            let port = row
+                .try_get::<Option<i32>, _>("port")
+                .map_err(|_| ())?
+                .map(u16::try_from)
+                .transpose()
+                .map_err(|_| ())?;
+            let expected_status = row
+                .try_get::<Option<i32>, _>("expected_status")
+                .map_err(|_| ())?
+                .map(u16::try_from)
+                .transpose()
+                .map_err(|_| ())?;
+            Ok(ClaimedScheduledProbe {
+                id: row.try_get("probe_id").map_err(|_| ())?,
+                tenant_id: row.try_get("tenant_id").map_err(|_| ())?,
+                project_id: row.try_get("project_id").map_err(|_| ())?,
+                service_id: row.try_get("service_id").map_err(|_| ())?,
+                request: network_probe::Request {
+                    kind,
+                    host: row.try_get("host").map_err(|_| ())?,
+                    port,
+                    path: row.try_get("path").map_err(|_| ())?,
+                    expected_status,
+                    timeout_ms: Some(timeout_ms),
+                },
+                interval_seconds: u32::try_from(
+                    row.try_get::<i32, _>("interval_seconds").map_err(|_| ())?,
+                )
+                .map_err(|_| ())?,
+                failure_threshold: u8::try_from(
+                    row.try_get::<i32, _>("failure_threshold").map_err(|_| ())?,
+                )
+                .map_err(|_| ())?,
+                recovery_threshold: u8::try_from(
+                    row.try_get::<i32, _>("recovery_threshold")
+                        .map_err(|_| ())?,
+                )
+                .map_err(|_| ())?,
+                service_slug: row.try_get("service_slug").map_err(|_| ())?,
+                project_slug: row.try_get("project_slug").map_err(|_| ())?,
+                environment: row.try_get("environment").map_err(|_| ())?,
+            })
+        })
+        .collect()
+}
+
+async fn run_claimed_probe(state: &AppState, worker_id: uuid::Uuid, claim: ClaimedScheduledProbe) {
+    let result = match network_probe::probe(&claim.request).await {
+        Ok(result) => result,
+        Err(failure) => network_probe::ResultData::failed(claim.request.kind, &failure),
+    };
+    let Some(database) = &state.database else {
+        return;
+    };
+    if complete_scheduled_probe(
+        database,
+        worker_id,
+        &claim,
+        &result,
+        state.config.deployment_mode == DeploymentMode::Community
+            && alert_webhook_url().is_ok_and(|url| url.is_some()),
+    )
+    .await
+    .is_err()
+    {
+        tracing::warn!(probe_id = %claim.id, %worker_id, "scheduled probe completion failed");
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+async fn complete_scheduled_probe(
+    database: &PgPool,
+    worker_id: uuid::Uuid,
+    claim: &ClaimedScheduledProbe,
+    result: &network_probe::ResultData,
+    webhook_configured: bool,
+) -> Result<(), IngestWriteError> {
+    let mut transaction = database
+        .begin()
+        .await
+        .map_err(|_| IngestWriteError::Database)?;
+    set_tenant_context(&mut transaction, claim.tenant_id)
+        .await
+        .map_err(|_| IngestWriteError::Database)?;
+    let current = sqlx::query_as::<_, (bool, i32, i32, String)>(
+        "SELECT enabled, consecutive_failures, consecutive_successes, consensus_state \
+         FROM service_probes WHERE tenant_id = $1 AND id = $2 AND locked_by = $3 FOR UPDATE",
+    )
+    .bind(claim.tenant_id)
+    .bind(claim.id)
+    .bind(worker_id)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(|_| IngestWriteError::Database)?;
+    let Some((enabled, previous_failures, previous_successes, previous_consensus)) = current else {
+        transaction
+            .rollback()
+            .await
+            .map_err(|_| IngestWriteError::Database)?;
+        return Ok(());
+    };
+    if !enabled {
+        sqlx::query(
+            "UPDATE service_probes SET locked_at = NULL, locked_by = NULL, updated_at = now() \
+             WHERE tenant_id = $1 AND id = $2 AND locked_by = $3",
+        )
+        .bind(claim.tenant_id)
+        .bind(claim.id)
+        .bind(worker_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|_| IngestWriteError::Database)?;
+        transaction
+            .commit()
+            .await
+            .map_err(|_| IngestWriteError::Database)?;
+        return Ok(());
+    }
+    let succeeded = result.state == "responding";
+    let (failures, successes, consensus) = advance_probe_consensus(
+        succeeded,
+        previous_failures,
+        previous_successes,
+        &previous_consensus,
+        claim.failure_threshold,
+        claim.recovery_threshold,
+    );
+    sqlx::query(
+        "INSERT INTO probe_observations \
+         (tenant_id, probe_id, service_id, state, message, observed_at, response_ms, status_code, \
+          resolved_addresses, tls_expires_at, tls_days_remaining) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+    )
+    .bind(claim.tenant_id)
+    .bind(claim.id)
+    .bind(claim.service_id)
+    .bind(result.state)
+    .bind(&result.message)
+    .bind(result.observed_at)
+    .bind(
+        result
+            .response_ms
+            .and_then(|value| i64::try_from(value).ok()),
+    )
+    .bind(result.status_code.map(i32::from))
+    .bind(i32::from(result.resolved_addresses))
+    .bind(result.tls_expires_at)
+    .bind(result.tls_days_remaining)
+    .execute(&mut *transaction)
+    .await
+    .map_err(|_| IngestWriteError::Database)?;
+    let updated = sqlx::query(
+        "UPDATE service_probes SET consecutive_failures = $4, consecutive_successes = $5, \
+           consensus_state = $6, last_state = $7, last_message = $8, last_observed_at = $9, \
+           last_response_ms = $10, last_status_code = $11, last_tls_expires_at = $12, \
+           next_run_at = clock_timestamp() + make_interval(secs => $13::double precision), \
+           locked_at = NULL, locked_by = NULL, updated_at = clock_timestamp() \
+         WHERE tenant_id = $1 AND id = $2 AND locked_by = $3",
+    )
+    .bind(claim.tenant_id)
+    .bind(claim.id)
+    .bind(worker_id)
+    .bind(failures)
+    .bind(successes)
+    .bind(consensus)
+    .bind(result.state)
+    .bind(&result.message)
+    .bind(result.observed_at)
+    .bind(
+        result
+            .response_ms
+            .and_then(|value| i64::try_from(value).ok()),
+    )
+    .bind(result.status_code.map(i32::from))
+    .bind(result.tls_expires_at)
+    .bind(i32::try_from(claim.interval_seconds).unwrap_or(i32::MAX))
+    .execute(&mut *transaction)
+    .await
+    .map_err(|_| IngestWriteError::Database)?;
+    if updated.rows_affected() != 1 {
+        transaction
+            .rollback()
+            .await
+            .map_err(|_| IngestWriteError::Database)?;
+        return Ok(());
+    }
+    sqlx::query(
+        "DELETE FROM probe_observations WHERE tenant_id = $1 AND probe_id = $2 AND id NOT IN (\
+           SELECT id FROM probe_observations WHERE tenant_id = $1 AND probe_id = $2 \
+           ORDER BY observed_at DESC, id DESC LIMIT 200)",
+    )
+    .bind(claim.tenant_id)
+    .bind(claim.id)
+    .execute(&mut *transaction)
+    .await
+    .map_err(|_| IngestWriteError::Database)?;
+
+    if consensus != "unknown" {
+        let status = if consensus == "online" {
+            HeartbeatStatus::Ok
+        } else {
+            HeartbeatStatus::Down
+        };
+        let message = if !succeeded && consensus == "online" {
+            format!(
+                "Scheduled {} probe failed {failures}/{} times; waiting for confirmation.",
+                claim.request.kind.as_str(),
+                claim.failure_threshold
+            )
+        } else {
+            format!(
+                "Scheduled {} probe: {}",
+                claim.request.kind.as_str(),
+                result.message
+            )
+        };
+        let heartbeat = HeartbeatIngest {
+            interface_version: INTERFACE_VERSION.to_owned(),
+            service: claim.service_slug.clone(),
+            project: claim.project_slug.clone(),
+            environment: claim.environment.clone(),
+            status,
+            message: Some(message),
+            timestamp: result
+                .observed_at
+                .to_rfc3339_opts(SecondsFormat::Millis, true),
+        };
+        let payload = serde_json::to_value(heartbeat).map_err(|_| IngestWriteError::Database)?;
+        let idempotency_key = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO ingest_messages \
+             (tenant_id, service_id, idempotency_key, message_kind, observed_at, payload) \
+             VALUES ($1, $2, $3, 'heartbeat', $4, $5)",
+        )
+        .bind(claim.tenant_id)
+        .bind(claim.service_id)
+        .bind(idempotency_key)
+        .bind(result.observed_at)
+        .bind(&payload)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|_| IngestWriteError::Database)?;
+        let service = AuthenticatedService {
+            tenant: claim.tenant_id,
+            project: claim.project_id,
+            service: claim.service_id,
+            credential: uuid::Uuid::nil(),
+            service_slug: claim.service_slug.clone(),
+            project_slug: claim.project_slug.clone(),
+            environment: claim.environment.clone(),
+        };
+        project_accepted_ingest(
+            &mut transaction,
+            AcceptedIngest {
+                service: &service,
+                idempotency_key,
+                kind: IngestKind::Heartbeat,
+                observed_at: result.observed_at,
+                payload: &payload,
+                snapshot_state: Some(consensus),
+                webhook_configured,
+            },
+        )
+        .await?;
+    }
+    transaction
+        .commit()
+        .await
+        .map_err(|_| IngestWriteError::Database)
+}
+
+fn advance_probe_consensus(
+    succeeded: bool,
+    previous_failures: i32,
+    previous_successes: i32,
+    previous_consensus: &str,
+    failure_threshold: u8,
+    recovery_threshold: u8,
+) -> (i32, i32, &'static str) {
+    let failures = if succeeded {
+        0
+    } else {
+        previous_failures.saturating_add(1)
+    };
+    let successes = if succeeded {
+        previous_successes.saturating_add(1)
+    } else {
+        0
+    };
+    let consensus = if !succeeded && failures >= i32::from(failure_threshold) {
+        "offline"
+    } else if succeeded && successes >= i32::from(recovery_threshold) {
+        "online"
+    } else {
+        match previous_consensus {
+            "online" => "online",
+            "offline" => "offline",
+            _ => "unknown",
+        }
+    };
+    (failures, successes, consensus)
+}
+
 async fn select_projects(
     database: &PgPool,
     tenant_id: uuid::Uuid,
@@ -4780,9 +5647,10 @@ type ServiceRow = (
     Option<String>,
     Option<String>,
     Option<i32>,
+    Option<i32>,
 );
 
-fn service_from_row(row: ServiceRow, stale_before: chrono::DateTime<Utc>) -> ServiceResponse {
+fn service_from_row(row: ServiceRow, stale_after_seconds: u32) -> ServiceResponse {
     let (
         id,
         project_id,
@@ -4796,7 +5664,20 @@ fn service_from_row(row: ServiceRow, stale_before: chrono::DateTime<Utc>) -> Ser
         game_kind,
         game_host,
         game_port,
+        scheduled_probe_interval,
     ) = row;
+    // A scheduled probe is deliberately the sole health source for its service. Its snapshot
+    // remains current until two complete probe intervals (plus a small scheduler allowance)
+    // have elapsed, so valid low-frequency checks do not flicker to unknown between runs.
+    let effective_stale_after = scheduled_probe_interval.map_or(stale_after_seconds, |interval| {
+        stale_after_seconds.max(
+            u32::try_from(interval)
+                .unwrap_or_default()
+                .saturating_mul(2)
+                .saturating_add(10),
+        )
+    });
+    let stale_before = Utc::now() - ChronoDuration::seconds(i64::from(effective_stale_after));
     let stale = observed_at.is_some_and(|value| value < stale_before);
     let effective_state = if stale {
         "unknown".to_owned()
@@ -4854,10 +5735,14 @@ async fn select_services(
         "SELECT services.id, services.project_id, services.slug, services.environment, \
            services.created_at, service_snapshots.state, service_snapshots.last_sequence, \
            service_snapshots.observed_at, service_snapshots.updated_at, \
-           services.game_kind, services.game_host, services.game_port \
+           services.game_kind, services.game_host, services.game_port, \
+           CASE WHEN service_probes.enabled THEN service_probes.interval_seconds END \
          FROM services LEFT JOIN service_snapshots \
-           ON service_snapshots.tenant_id = services.tenant_id \
+          ON service_snapshots.tenant_id = services.tenant_id \
           AND service_snapshots.service_id = services.id \
+         LEFT JOIN service_probes \
+           ON service_probes.tenant_id = services.tenant_id \
+          AND service_probes.service_id = services.id \
          WHERE services.tenant_id = $1 AND services.project_id = $2 \
          ORDER BY services.created_at, services.id LIMIT 500",
     )
@@ -4867,10 +5752,9 @@ async fn select_services(
     .await
     .map_err(|_| ())?;
     transaction.commit().await.map_err(|_| ())?;
-    let stale_before = Utc::now() - ChronoDuration::seconds(i64::from(stale_after_seconds));
     Ok(Some(
         rows.into_iter()
-            .map(|row| service_from_row(row, stale_before))
+            .map(|row| service_from_row(row, stale_after_seconds))
             .collect(),
     ))
 }
@@ -7602,6 +8486,7 @@ struct RotatedCredentialResponse {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CredentialWriteError {
     NotFound,
+    Conflict,
     Database,
 }
 
@@ -7651,6 +8536,9 @@ async fn issue_service_credential(
         Err(CredentialWriteError::NotFound) => {
             HttpResponse::NotFound().json(ErrorResponse { code: "not_found" })
         }
+        Err(CredentialWriteError::Conflict) => HttpResponse::Conflict().json(ErrorResponse {
+            code: "service_has_scheduled_probe",
+        }),
         Err(CredentialWriteError::Database) => {
             HttpResponse::ServiceUnavailable().json(ErrorResponse {
                 code: "database_unavailable",
@@ -7723,6 +8611,9 @@ async fn rotate_service_credential(
         Err(CredentialWriteError::NotFound) => {
             HttpResponse::NotFound().json(ErrorResponse { code: "not_found" })
         }
+        Err(CredentialWriteError::Conflict) => {
+            HttpResponse::Conflict().json(ErrorResponse { code: "conflict" })
+        }
         Err(CredentialWriteError::Database) => {
             HttpResponse::ServiceUnavailable().json(ErrorResponse {
                 code: "database_unavailable",
@@ -7765,6 +8656,9 @@ async fn revoke_service_credential(
         Err(CredentialWriteError::NotFound) => {
             HttpResponse::NotFound().json(ErrorResponse { code: "not_found" })
         }
+        Err(CredentialWriteError::Conflict) => {
+            HttpResponse::Conflict().json(ErrorResponse { code: "conflict" })
+        }
         Err(CredentialWriteError::Database) => {
             HttpResponse::ServiceUnavailable().json(ErrorResponse {
                 code: "database_unavailable",
@@ -7780,6 +8674,18 @@ async fn insert_service_credential(
     key: &IssuedServiceKey,
 ) -> Result<(), CredentialWriteError> {
     let mut transaction = begin_tenant_transaction(database, principal.tenant_id).await?;
+    let has_probe = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM service_probes \
+         WHERE tenant_id = $1 AND service_id = $2 AND enabled)",
+    )
+    .bind(principal.tenant_id)
+    .bind(service_id)
+    .fetch_one(&mut *transaction)
+    .await
+    .map_err(|_| CredentialWriteError::Database)?;
+    if has_probe {
+        return Err(CredentialWriteError::Conflict);
+    }
     let inserted = sqlx::query_scalar::<_, uuid::Uuid>(
         "INSERT INTO service_credentials \
          (tenant_id, service_id, id, prefix, password_hash, created_by) \
@@ -8394,11 +9300,35 @@ mod tests {
     use serde_json::Value;
 
     use super::{
-        AppState, AuthenticatedSession, agent_telemetry_snapshot, configure_routes, csrf_is_valid,
-        invitation_token_digest, issue_member_invitation_secret,
+        AppState, AuthenticatedSession, advance_probe_consensus, agent_telemetry_snapshot,
+        configure_routes, csrf_is_valid, invitation_token_digest, issue_member_invitation_secret,
         issue_member_password_reset_secret, parse_member_invitation_secret,
         parse_member_password_reset_secret, worker_runtime_status,
     };
+
+    #[actix_web::test]
+    async fn scheduled_probe_consensus_debounces_failure_and_recovery() {
+        assert_eq!(
+            advance_probe_consensus(false, 0, 0, "unknown", 2, 2),
+            (1, 0, "unknown")
+        );
+        assert_eq!(
+            advance_probe_consensus(false, 1, 0, "unknown", 2, 2),
+            (2, 0, "offline")
+        );
+        assert_eq!(
+            advance_probe_consensus(true, 2, 0, "offline", 2, 2),
+            (0, 1, "offline")
+        );
+        assert_eq!(
+            advance_probe_consensus(true, 0, 1, "offline", 2, 2),
+            (0, 2, "online")
+        );
+        assert_eq!(
+            advance_probe_consensus(false, 0, 4, "online", 2, 2),
+            (1, 0, "online")
+        );
+    }
 
     #[actix_web::test]
     async fn internal_invitation_secret_is_scoped_random_and_strictly_parsed() {

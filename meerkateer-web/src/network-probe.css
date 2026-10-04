@@ -180,6 +180,235 @@
   font-size: 0.77rem;
 }
 
+.network-schedule {
+  margin-top: 18px;
+  padding: 17px;
+  border: 1px solid #d8e5ef;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #f5fbff, #fffdf8);
+}
+
+.network-schedule-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.network-schedule-head .eyebrow {
+  margin: 0 0 4px;
+  color: #2d70aa;
+  font-size: 0.66rem;
+}
+
+.network-schedule-head h4 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.network-schedule-head p:last-child {
+  max-width: 650px;
+  margin: 6px 0 0;
+  color: #68758d;
+  font-size: 0.73rem;
+  line-height: 1.45;
+}
+
+.network-consensus {
+  align-self: flex-start;
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: #65728a;
+  background: #e9eef4;
+  font-size: 0.65rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.consensus-online {
+  color: #087455;
+  background: #dff8ed;
+}
+
+.consensus-offline {
+  color: #a52c3d;
+  background: #ffe3e7;
+}
+
+.network-schedule-settings {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 180px));
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.network-schedule-settings label span {
+  display: block;
+  margin-bottom: 5px;
+  color: #586682;
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.network-schedule-settings select {
+  width: 100%;
+  min-height: 38px;
+  padding: 7px 9px;
+  border: 1px solid #c8d6e5;
+  border-radius: 9px;
+  color: #17264b;
+  background: white;
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.network-schedule-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.network-schedule-facts > span {
+  padding: 10px;
+  border: 1px solid #dce6ef;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 75%);
+}
+
+.network-schedule-facts small,
+.network-schedule-facts strong {
+  display: block;
+}
+
+.network-schedule-facts small {
+  color: #768197;
+  font-size: 0.65rem;
+}
+
+.network-schedule-facts strong {
+  margin-top: 3px;
+  font-size: 0.76rem;
+  text-transform: capitalize;
+}
+
+.network-schedule-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.network-schedule-actions button,
+.network-history-head button {
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid #b9cce0;
+  border-radius: 8px;
+  color: #24517d;
+  background: white;
+  font-size: 0.7rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.network-schedule-actions .schedule-primary {
+  border-color: #1760a8;
+  color: white;
+  background: #1760a8;
+}
+
+.network-schedule-actions .schedule-danger {
+  border-color: #e1b7bd;
+  color: #a52c3d;
+}
+
+.network-schedule-actions button:disabled,
+.network-history-head button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.network-viewer-note {
+  margin: 13px 0 0;
+  color: #6d7890;
+  font-size: 0.72rem;
+}
+
+.network-history {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #dce6ef;
+}
+
+.network-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.network-history-head > strong {
+  font-size: 0.78rem;
+}
+
+.network-history > p {
+  margin: 10px 0 0;
+  color: #748097;
+  font-size: 0.72rem;
+}
+
+.network-history ol {
+  display: grid;
+  gap: 7px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.network-history li {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: start;
+  padding: 8px 0;
+  border-bottom: 1px solid #e4ebf1;
+}
+
+.history-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: #8591a5;
+}
+
+.history-ok {
+  background: #14ae82;
+}
+
+.history-failed {
+  background: #dc5265;
+}
+
+.network-history li strong,
+.network-history li small {
+  display: block;
+}
+
+.network-history li strong {
+  font-size: 0.71rem;
+  text-transform: capitalize;
+}
+
+.network-history li small,
+.network-history time {
+  color: #778298;
+  font-size: 0.65rem;
+}
+
+.network-history li small {
+  margin-top: 2px;
+}
+
 @media (max-width: 1180px) {
   .network-probe-form {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -193,5 +422,22 @@
 
   .network-probe-form button {
     width: 100%;
+  }
+
+  .network-schedule-head {
+    flex-direction: column;
+  }
+
+  .network-schedule-settings,
+  .network-schedule-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .network-history li {
+    grid-template-columns: 8px minmax(0, 1fr);
+  }
+
+  .network-history time {
+    grid-column: 2;
   }
 }

@@ -2,7 +2,7 @@
 
 Last verified: 2026-10-04
 
-Current code version: `0.3.0-alpha.1` Monitoring Alpha prerelease. Current delivery phase:
+Current code version: `0.3.0-alpha.2` Monitoring Alpha prerelease. Current delivery phase:
 `0.3 Monitoring Alpha` (in progress). This prerelease does not close the `0.3.0` exit gate;
 remaining Community Alpha gaps are carried forward. Version scope and exit gates are defined in the
 [roadmap to 1.0](roadmap-to-1.0.md).
@@ -60,14 +60,15 @@ or a release artifact verified on a clean machine.
   integration, the ten-agent stale/recovery fleet, worker retry/DLQ, and the failure lab pass with
   the expanded telemetry. A timed 30-minute disconnect and platform resource benchmark are still
   required before `0.3.0` can close.
-- Monitoring Alpha network diagnostics: every Service detail now offers bounded manual HTTP,
+- Monitoring Alpha network monitoring: every Service detail now offers bounded manual and scheduled HTTP,
   HTTPS, TCP, DNS, and TLS-certificate checks. The server rejects private, loopback, link-local,
   reserved, oversized, and mixed-trust DNS answer sets, pins the validated numeric answers,
   disables redirects, enforces a 250–10,000 ms timeout, and returns bounded status/certificate
-  evidence. Rust hostile-input tests, browser contract tests, CSRF checks, missing-service checks,
-  and cross-company denial cover the slice. Results remain explicitly manual and unretained;
-  scheduling, failure consensus, timeline/incident projection, and probe-isolated Cloud egress are
-  still required before `0.3.0` can close.
+  evidence. A lease scheduler persists a bounded 200-result history, applies configurable
+  failure/recovery consensus, and projects confirmed changes into incidents, alerts, and timeline
+  facts. Active SDK credentials and probes are mutually exclusive per service. Rust hostile-input,
+  consensus, browser contract, CSRF, failure/recovery, migration, and cross-company tests cover the
+  slice. Probe-isolated Cloud egress and resource/load evidence remain before `0.3.0` can close.
 - The authenticated Console now separates daily operational jobs into real deep links with desktop
   and mobile navigation. Its first-signal guide derives company/workspace/connection/fresh-signal
   progress from API data, exposes a simple Machine or Application fork, preserves one-time token
@@ -128,7 +129,7 @@ or a release artifact verified on a clean machine.
 - Commercial C0: new bootstrap requires an owner password, and the old setup-key
   session endpoint returns 404 even with a valid key. Owner password login and
   setup-key recovery pass real API/PostgreSQL E2E.
-- The isolated 0007→0016 migration exercise preserved a seeded service, proved
+- The isolated 0007→0017 migration exercise preserved a seeded service, proved
   workspace/password/operations schema objects exist, and passed twice. Fresh Compose install,
   API, worker, and dead-letter E2E passed. GitHub CI migration connectivity was
   corrected after local verification; the new remote run is pending.
@@ -137,9 +138,9 @@ or a release artifact verified on a clean machine.
   It does not calculate uptime from missing or sparse data.
 
 - Repository policy, MKS/MKA contracts, OpenAPI and secret-shape scan pass.
-- Rust workspace: format, compile, 74 unit tests, and Clippy with warnings
+- Rust workspace: format, compile, 81 unit tests, and Clippy with warnings
   denied pass.
-- Web: 51 Vitest tests, TypeScript build and Vite production build pass.
+- Web: 58 Vitest tests, TypeScript build and Vite production build pass.
 - Python SDK: three unit tests plus real API E2E for authenticated event delivery pass.
 - Rust SDK: three unit tests plus real API E2E for typed, authenticated event delivery pass.
 - Node.js SDK: retry/idempotency and destination policy tests pass locally; CI is configured.
@@ -163,7 +164,7 @@ or a release artifact verified on a clean machine.
   rejection, credential revocation, heartbeat projection, and atomic outbox creation.
 - MKA E2E proved durable normalized batches, exact replay, changed-payload conflict,
   sequence gap evidence, contiguous follow-up, and secret-shaped telemetry rejection.
-- A clean PostgreSQL 18.1/Compose run processed thirteen supported outbox records, scheduled
+- A clean PostgreSQL 18.1/Compose run processed nineteen supported outbox records, scheduled
   one poison record with bounded backoff, dead-lettered one at attempt five, and proved
   the worker login has no direct access to the outbox table.
 - Running API E2E exhausts the node-local authentication budget and verifies a bounded
