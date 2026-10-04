@@ -327,6 +327,75 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/members/invitations": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** @description List recent internal invitations. Invitation secrets are never returned by this endpoint. */
+    get: operations["listMemberInvitations"];
+    put?: never;
+    /** @description Create an internal one-time invitation. No email is sent and the secret is returned once. */
+    post: operations["createMemberInvitation"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/member-invitations/inspect": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** @description Preview one internal invitation before accepting or declining it. The token is sent in the request body so it is not written into request paths. */
+    post: operations["inspectMemberInvitation"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/member-invitations/accept": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** @description Accept one internal invitation, create a local username/password member, and start a browser session. */
+    post: operations["acceptMemberInvitation"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/member-invitations/decline": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** @description Decline an internal invitation without creating an account. */
+    post: operations["declineMemberInvitation"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/members/{user_id}/role": {
     parameters: {
       query?: never;
@@ -818,7 +887,67 @@ export interface components {
       role: "owner" | "admin" | "operator" | "viewer";
       /** Format: email */
       email: string;
+      username?: string | null;
       display_name: string;
+    };
+    MemberResponse: {
+      /** Format: uuid */
+      user_id: string;
+      /** Format: email */
+      email: string;
+      username: string | null;
+      display_name: string;
+      /** @enum {unknown} */
+      role: "owner" | "admin" | "operator" | "viewer";
+      /** Format: date-time */
+      created_at: string;
+    };
+    MemberListResponse: {
+      items: components["schemas"]["MemberResponse"][];
+    };
+    CreateMemberInvitationRequest: {
+      username: string;
+      display_name: string;
+      /** @enum {unknown} */
+      role: "admin" | "operator" | "viewer";
+      expires_in_seconds: number;
+    };
+    MemberInvitationResponse: {
+      /** Format: uuid */
+      id: string;
+      username: string;
+      display_name: string;
+      /** @enum {unknown} */
+      role: "admin" | "operator" | "viewer";
+      /** Format: date-time */
+      expires_at: string;
+      /** @enum {unknown} */
+      status: "pending" | "accepted" | "declined" | "expired";
+      /** Format: date-time */
+      created_at: string;
+    };
+    MemberInvitationListResponse: {
+      items: components["schemas"]["MemberInvitationResponse"][];
+    };
+    IssuedMemberInvitationResponse: {
+      invitation: components["schemas"]["MemberInvitationResponse"];
+      secret: string;
+    };
+    InvitationTokenRequest: {
+      token: string;
+    };
+    AcceptMemberInvitationRequest: {
+      token: string;
+      password: string;
+    };
+    InvitationPreviewResponse: {
+      company: string;
+      username: string;
+      display_name: string;
+      /** @enum {unknown} */
+      role: "admin" | "operator" | "viewer";
+      /** Format: date-time */
+      expires_at: string;
     };
     AgentTelemetryBatch: {
       /** @constant */
@@ -2455,7 +2584,9 @@ export interface operations {
         headers: {
           [name: string]: unknown;
         };
-        content?: never;
+        content: {
+          "application/json": components["schemas"]["MemberListResponse"];
+        };
       };
       /** @description Authentication is required. */
       401: {
@@ -2478,6 +2609,200 @@ export interface operations {
         };
         content?: never;
       };
+    };
+  };
+  listMemberInvitations: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Recent tenant invitations. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemberInvitationListResponse"];
+        };
+      };
+      /** @description Authentication is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Member-management permission is required. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  createMemberInvitation: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateMemberInvitationRequest"];
+      };
+    };
+    responses: {
+      /** @description Invitation created; copy its one-time secret now. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["IssuedMemberInvitationResponse"];
+        };
+      };
+      /** @description Username, display name, role, or expiry is invalid. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication is required. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Permission or CSRF proof is insufficient. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The username already belongs to a member or pending invitation. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  inspectMemberInvitation: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["InvitationTokenRequest"];
+      };
+    };
+    responses: {
+      /** @description Invitation preview. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["InvitationPreviewResponse"];
+        };
+      };
+      /** @description The invitation is invalid, expired, accepted, or declined. */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      429: components["responses"]["RateLimited"];
+    };
+  };
+  acceptMemberInvitation: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AcceptMemberInvitationRequest"];
+      };
+    };
+    responses: {
+      /** @description Invitation accepted and browser session issued. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SessionResponse"];
+        };
+      };
+      /** @description The local password is invalid. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The username is no longer available. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The invitation is invalid, expired, accepted, or declined. */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      429: components["responses"]["RateLimited"];
+    };
+  };
+  declineMemberInvitation: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["InvitationTokenRequest"];
+      };
+    };
+    responses: {
+      /** @description Invitation declined. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The invitation is invalid, expired, accepted, or already declined. */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      429: components["responses"]["RateLimited"];
     };
   };
   updateMemberRole: {

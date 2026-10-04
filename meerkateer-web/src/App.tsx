@@ -7,17 +7,21 @@ import {
   type AlertDeliveryResponse,
   type AlertPolicyResponse,
   type AuditEventResponse,
+  acceptMemberInvitation,
   acknowledgeIncident,
   addIncidentNote,
   assignWorkspaceAgent,
   bootstrapCommunity,
   type CreateMaintenanceWindowRequest,
+  type CreateMemberInvitationRequest,
   type CreateProjectRequest,
   type CreateServiceRequest,
   cancelMaintenanceWindow,
   createMaintenanceWindow,
+  createMemberInvitation,
   createService,
   createWorkspace,
+  declineMemberInvitation,
   fetchAdminSummary,
   fetchAgents,
   fetchAgentTelemetry,
@@ -28,6 +32,8 @@ import {
   fetchIncidentActivity,
   fetchIncidents,
   fetchMaintenanceWindows,
+  fetchMemberInvitations,
+  fetchMembers,
   fetchProjects,
   fetchServices,
   fetchSession,
@@ -36,13 +42,18 @@ import {
   type HealthResponse,
   type IncidentActivityResponse,
   type IncidentResponse,
+  type InvitationPreviewResponse,
   type IssuedCredentialResponse,
   type IssuedEnrollmentTokenResponse,
+  inspectMemberInvitation,
   issueServiceCredential,
   issueWorkspaceEnrollmentToken,
   type MaintenanceWindowResponse,
+  type MemberInvitationResponse,
+  type MemberResponse,
   type ProjectResponse,
   passwordLogin,
+  removeMember,
   replayAlertDelivery,
   type ServiceResponse,
   type SessionResponse,
@@ -54,6 +65,7 @@ import {
   unassignWorkspaceAgent,
   updateAlertPolicy,
   updateIncidentAssignment,
+  updateMemberRole,
 } from "./api";
 import { GameProbePanel } from "./GameProbePanel";
 import { CloudAccessPage, LandingPage, RoadmapPage } from "./LandingPage";
@@ -147,6 +159,8 @@ type DashboardReady = {
   maintenanceWindows: MaintenanceWindowResponse[];
   auditEvents: AuditEventResponse[];
   adminSummary: AdminSummaryResponse | null;
+  members: MemberResponse[];
+  memberInvitations: MemberInvitationResponse[];
 };
 
 type DashboardState =
@@ -168,6 +182,9 @@ type ManagementActions = {
   updateIncidentAssignment: (incidentId: string, assigned: boolean) => Promise<void>;
   addIncidentNote: (incidentId: string, note: string) => Promise<void>;
   replayAlertDelivery: (deliveryId: string) => Promise<void>;
+  createMemberInvitation: (input: CreateMemberInvitationRequest) => Promise<string>;
+  updateMemberRole: (userId: string, role: "admin" | "operator" | "viewer") => Promise<void>;
+  removeMember: (userId: string) => Promise<void>;
 };
 
 function message(error: unknown): string {
@@ -187,6 +204,7 @@ export function App() {
   }
   if (path === "/setup") return <CommunityAccessPage mode="setup" />;
   if (path === "/recover") return <CommunityAccessPage mode="recover" />;
+  if (path === "/join") return <InvitationPage />;
   if (isResourceRoute(path)) {
     return (
       <Suspense fallback={<main className="page-width resource-loading">Loading guide…</main>}>
@@ -202,7 +220,7 @@ export function App() {
 type AccessMode = "login" | "setup" | "recover";
 
 const accessModeHelp = {
-  login: "For normal daily access with your owner email and password.",
+  login: "Use the owner's email or an internal member username and password.",
   setup: "Use once on a new installation to create its company and first owner.",
   recover: "Use only to set or replace the owner's password with the private setup key.",
 } satisfies Record<AccessMode, string>;
@@ -274,6 +292,179 @@ function CommunityAccessPage({
             </p>
           ) : null}
         </div>
+      </main>
+    </div>
+  );
+}
+
+type InvitationPageState =
+  | { phase: "loading" }
+  | { phase: "ready"; preview: InvitationPreviewResponse }
+  | { phase: "declined" }
+  | { phase: "error"; message: string };
+
+function InvitationPage() {
+  const [token] = useState(() => {
+    const encoded = window.location.hash.slice(1);
+    if (!encoded) return "";
+    try {
+      return decodeURIComponent(encoded);
+    } catch {
+      return "";
+    }
+  });
+  const [state, setState] = useState<InvitationPageState>({ phase: "loading" });
+  const [pending, setPending] = useState<"accept" | "decline" | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    window.history.replaceState({}, "", "/join");
+    if (!token) {
+      setState({ phase: "error", message: "This invitation link is incomplete." });
+      return;
+    }
+    inspectMemberInvitation(token)
+      .then((preview) => setState({ phase: "ready", preview }))
+      .catch(() =>
+        setState({
+          phase: "error",
+          message: "This invitation has expired, was already used, or is no longer available.",
+        }),
+      );
+  }, [token]);
+
+  async function accept(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const password = String(form.get("password") ?? "");
+    if (password !== String(form.get("confirm_password") ?? "")) {
+      setFeedback("Passwords do not match.");
+      return;
+    }
+    setPending("accept");
+    setFeedback(null);
+    try {
+      await acceptMemberInvitation(token, password);
+      window.location.assign("/app");
+    } catch (error) {
+      const code = message(error);
+      setFeedback(
+        code === "invalid_password"
+          ? "Use a password of at least 12 characters."
+          : "This invitation has expired, was already used, or is no longer available.",
+      );
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function decline() {
+    setPending("decline");
+    setFeedback(null);
+    try {
+      await declineMemberInvitation(token);
+      setState({ phase: "declined" });
+    } catch {
+      setFeedback("This invitation has expired, was already used, or is no longer available.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  return (
+    <div className="setup-page page-width invitation-page">
+      <header className="setup-header">
+        <a className="brand" href="/" aria-label="Meerkateer home">
+          <img className="brand-mascot" src="/logo.png" alt="" />
+          <span>
+            <img className="brand-wordmark" src="/wordmark.png" alt="Meerkateer" />
+            <small>Server reliability</small>
+          </span>
+        </a>
+        <a href="/login">Sign in instead</a>
+      </header>
+      <main className="invitation-main">
+        <section className="access-panel invitation-card" aria-live="polite">
+          <div className="access-copy">
+            <img className="invitation-mascot" src="/logo.png" alt="" />
+            <p className="eyebrow">Internal invitation</p>
+            {state.phase === "loading" ? <h1>Checking your invitation…</h1> : null}
+            {state.phase === "declined" ? (
+              <>
+                <h1>Invitation declined.</h1>
+                <p>No account was created. You can close this page.</p>
+              </>
+            ) : null}
+            {state.phase === "error" ? (
+              <>
+                <h1>Invitation unavailable.</h1>
+                <p role="alert">{state.message}</p>
+              </>
+            ) : null}
+            {state.phase === "ready" ? (
+              <>
+                <h1>Join {state.preview.company}?</h1>
+                <p>
+                  You were invited as <strong>{state.preview.display_name}</strong> with the{" "}
+                  <strong>{state.preview.role}</strong> role.
+                </p>
+                <dl className="invitation-facts">
+                  <div>
+                    <dt>Username</dt>
+                    <dd>{state.preview.username}</dd>
+                  </div>
+                  <div>
+                    <dt>Valid until</dt>
+                    <dd>{formatMoment(state.preview.expires_at)}</dd>
+                  </div>
+                </dl>
+              </>
+            ) : null}
+          </div>
+          {state.phase === "ready" ? (
+            <form className="access-form" onSubmit={(event) => void accept(event)}>
+              <p>No email is needed. Create a local password for this Meerkateer installation.</p>
+              <label>
+                Password
+                <input
+                  autoComplete="new-password"
+                  minLength={12}
+                  name="password"
+                  required
+                  type="password"
+                />
+              </label>
+              <label>
+                Confirm password
+                <input
+                  autoComplete="new-password"
+                  minLength={12}
+                  name="confirm_password"
+                  required
+                  type="password"
+                />
+              </label>
+              <div className="invitation-actions">
+                <button disabled={pending !== null} type="submit">
+                  {pending === "accept" ? "Joining…" : "Accept invitation"}
+                </button>
+                <button
+                  className="button button-secondary"
+                  disabled={pending !== null}
+                  onClick={() => void decline()}
+                  type="button"
+                >
+                  {pending === "decline" ? "Declining…" : "Decline"}
+                </button>
+              </div>
+              {feedback ? (
+                <p className="access-feedback" role="alert">
+                  {feedback}
+                </p>
+              ) : null}
+            </form>
+          ) : null}
+        </section>
       </main>
     </div>
   );
@@ -465,6 +656,36 @@ function ConsoleApp({ route }: { route: ConsoleRoute }) {
     setDashboard({ ...dashboard, alertDeliveries });
   }
 
+  async function createMemberInvitationAction(input: CreateMemberInvitationRequest) {
+    if (dashboard.phase !== "ready") throw new Error("Dashboard is not ready");
+    const issued = await createMemberInvitation(input);
+    setDashboard({
+      ...dashboard,
+      memberInvitations: [issued.invitation, ...dashboard.memberInvitations],
+    });
+    return `${window.location.origin}/join#${encodeURIComponent(issued.secret)}`;
+  }
+
+  async function updateMemberRoleAction(userId: string, role: "admin" | "operator" | "viewer") {
+    if (dashboard.phase !== "ready") throw new Error("Dashboard is not ready");
+    await updateMemberRole(userId, role);
+    setDashboard({
+      ...dashboard,
+      members: dashboard.members.map((member) =>
+        member.user_id === userId ? { ...member, role } : member,
+      ),
+    });
+  }
+
+  async function removeMemberAction(userId: string) {
+    if (dashboard.phase !== "ready") throw new Error("Dashboard is not ready");
+    await removeMember(userId);
+    setDashboard({
+      ...dashboard,
+      members: dashboard.members.filter((member) => member.user_id !== userId),
+    });
+  }
+
   async function signOutAction() {
     setSignOutState("pending");
     try {
@@ -541,6 +762,9 @@ function ConsoleApp({ route }: { route: ConsoleRoute }) {
             updateIncidentAssignment: updateIncidentAssignmentAction,
             addIncidentNote: addIncidentNoteAction,
             replayAlertDelivery: replayAlertDeliveryAction,
+            createMemberInvitation: createMemberInvitationAction,
+            updateMemberRole: updateMemberRoleAction,
+            removeMember: removeMemberAction,
           }}
         />
       </main>
@@ -1112,12 +1336,225 @@ function MaintenanceBoard({
   );
 }
 
+function MemberAdminPanel({
+  members,
+  invitations,
+  currentUserId,
+  onCreateInvitation,
+  onRole,
+  onRemove,
+}: {
+  members: MemberResponse[];
+  invitations: MemberInvitationResponse[];
+  currentUserId: string;
+  onCreateInvitation: (input: CreateMemberInvitationRequest) => Promise<string>;
+  onRole: (userId: string, role: "admin" | "operator" | "viewer") => Promise<void>;
+  onRemove: (userId: string) => Promise<void>;
+}) {
+  const [issuedLink, setIssuedLink] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [pending, setPending] = useState<string | null>(null);
+
+  async function invite(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    setPending("invite");
+    setFeedback(null);
+    setIssuedLink(null);
+    try {
+      const link = await onCreateInvitation({
+        username: String(data.get("username") ?? "")
+          .trim()
+          .toLowerCase(),
+        display_name: String(data.get("display_name") ?? "").trim(),
+        role: String(data.get("role") ?? "viewer") as "admin" | "operator" | "viewer",
+        expires_in_seconds: 86_400,
+      });
+      setIssuedLink(link);
+      form.reset();
+    } catch (error) {
+      const code = message(error);
+      setFeedback(
+        code.includes("username_unavailable")
+          ? "That username already belongs to a member or pending invitation."
+          : "Could not create the invitation. Check the fields and try again.",
+      );
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function changeRole(userId: string, role: "admin" | "operator" | "viewer") {
+    setPending(userId);
+    setFeedback(null);
+    try {
+      await onRole(userId, role);
+    } catch {
+      setFeedback("The role could not be changed. Refresh and try again.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function remove(user: MemberResponse) {
+    if (!window.confirm(`Remove ${user.display_name} from this company?`)) return;
+    setPending(user.user_id);
+    setFeedback(null);
+    try {
+      await onRemove(user.user_id);
+    } catch {
+      setFeedback("The member could not be removed. Refresh and try again.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  return (
+    <section className="operations-card member-admin">
+      <div className="member-admin-heading">
+        <div>
+          <p className="eyebrow">People</p>
+          <h2>Company members</h2>
+          <p>Create an internal invitation and share its link yourself. No email is sent.</p>
+        </div>
+        <span className="preview-badge">{members.length} members</span>
+      </div>
+      <form className="member-invite-form" onSubmit={(event) => void invite(event)}>
+        <label>
+          Username
+          <input
+            autoComplete="off"
+            maxLength={32}
+            minLength={3}
+            name="username"
+            pattern="[a-z0-9][a-z0-9_-]{2,31}"
+            placeholder="nina_ops"
+            required
+          />
+        </label>
+        <label>
+          Display name
+          <input maxLength={128} name="display_name" placeholder="Nina" required />
+        </label>
+        <label>
+          Role
+          <select defaultValue="viewer" name="role">
+            <option value="viewer">Viewer</option>
+            <option value="operator">Operator</option>
+            <option value="admin">Admin</option>
+          </select>
+        </label>
+        <button disabled={pending !== null} type="submit">
+          {pending === "invite" ? "Creating…" : "Create invitation"}
+        </button>
+      </form>
+      {issuedLink ? (
+        <div className="invitation-secret" role="status">
+          <div>
+            <strong>Copy this link now</strong>
+            <p>It expires in 24 hours and cannot be shown again.</p>
+          </div>
+          <input aria-label="Invitation link" readOnly value={issuedLink} />
+          <button
+            className="button button-secondary"
+            onClick={() => {
+              navigator.clipboard
+                .writeText(issuedLink)
+                .then(() => setFeedback("Invitation link copied."))
+                .catch(() => setFeedback("Select the link and copy it manually."));
+            }}
+            type="button"
+          >
+            Copy link
+          </button>
+        </div>
+      ) : null}
+      {feedback ? (
+        <p className="access-feedback" role="status">
+          {feedback}
+        </p>
+      ) : null}
+      <div className="member-list">
+        {members.map((member) => {
+          const protectedMember = member.role === "owner" || member.user_id === currentUserId;
+          return (
+            <article className="member-row" key={member.user_id}>
+              <div className="member-avatar" aria-hidden="true">
+                {member.display_name.slice(0, 1).toUpperCase()}
+              </div>
+              <div>
+                <strong>{member.display_name}</strong>
+                <p>{member.username ? `@${member.username}` : member.email}</p>
+              </div>
+              {protectedMember ? (
+                <span className="status-pill status-online">{member.role}</span>
+              ) : (
+                <div className="member-row-actions">
+                  <select
+                    aria-label={`Role for ${member.display_name}`}
+                    disabled={pending === member.user_id}
+                    onChange={(event) =>
+                      void changeRole(
+                        member.user_id,
+                        event.target.value as "admin" | "operator" | "viewer",
+                      )
+                    }
+                    value={member.role}
+                  >
+                    <option value="admin">Admin</option>
+                    <option value="operator">Operator</option>
+                    <option value="viewer">Viewer</option>
+                  </select>
+                  <button
+                    className="text-button"
+                    disabled={pending === member.user_id}
+                    onClick={() => void remove(member)}
+                    type="button"
+                  >
+                    Remove
+                  </button>
+                </div>
+              )}
+            </article>
+          );
+        })}
+      </div>
+      {invitations.length > 0 ? (
+        <div className="invitation-history">
+          <h3>Recent invitations</h3>
+          {invitations.slice(0, 8).map((invitation) => (
+            <div className="invitation-history-row" key={invitation.id}>
+              <span>
+                <strong>{`@${invitation.username}`}</strong> · {invitation.role}
+              </span>
+              <span className={`status-pill status-${invitation.status}`}>{invitation.status}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function AdminBoard({
   summary,
   events,
+  members,
+  invitations,
+  currentUserId,
+  onCreateInvitation,
+  onRole,
+  onRemove,
 }: {
   summary: AdminSummaryResponse;
   events: AuditEventResponse[];
+  members: MemberResponse[];
+  invitations: MemberInvitationResponse[];
+  currentUserId: string;
+  onCreateInvitation: (input: CreateMemberInvitationRequest) => Promise<string>;
+  onRole: (userId: string, role: "admin" | "operator" | "viewer") => Promise<void>;
+  onRemove: (userId: string) => Promise<void>;
 }) {
   const workerCopy =
     summary.worker_status === "healthy"
@@ -1195,6 +1632,14 @@ function AdminBoard({
           </article>
         ))}
       </div>
+      <MemberAdminPanel
+        members={members}
+        invitations={invitations}
+        currentUserId={currentUserId}
+        onCreateInvitation={onCreateInvitation}
+        onRole={onRole}
+        onRemove={onRemove}
+      />
       <section className="operations-card">
         <div>
           <p className="eyebrow">Append-only</p>
@@ -1278,9 +1723,14 @@ async function loadDashboard(
       : (services[0]?.id ?? null);
     const timeline = serviceId ? await fetchTimeline(serviceId, signal) : [];
     const canAdmin = session.role === "owner" || session.role === "admin";
-    const [auditEvents, adminSummary] = canAdmin
-      ? await Promise.all([fetchAuditEvents(signal), fetchAdminSummary(signal)])
-      : [[], null];
+    const [auditEvents, adminSummary, members, memberInvitations] = canAdmin
+      ? await Promise.all([
+          fetchAuditEvents(signal),
+          fetchAdminSummary(signal),
+          fetchMembers(signal),
+          fetchMemberInvitations(signal),
+        ])
+      : [[], null, [], []];
     setState({
       phase: "ready",
       session,
@@ -1298,6 +1748,8 @@ async function loadDashboard(
       maintenanceWindows,
       auditEvents,
       adminSummary,
+      members,
+      memberInvitations,
     });
   } catch (error) {
     if (!signal.aborted) setState({ phase: "error", message: message(error) });
@@ -1450,7 +1902,7 @@ function CommunityAccess({
       const code = message(error);
       const messages: Record<string, string> = {
         invalid_credentials:
-          "The email or password is incorrect. If this is an older installation, set an owner password using the setup key.",
+          "The email, username, or password is incorrect. If this is an older installation, set an owner password using the setup key.",
         invalid_admin_token:
           "That setup key does not match this installation. Check MEERKATEER_BOOTSTRAP_TOKEN in its private .env file.",
         invalid_bootstrap_token:
@@ -1484,7 +1936,7 @@ function CommunityAccess({
         </h2>
         <p>
           {mode === "login"
-            ? "Use the owner account on your self-hosted installation."
+            ? "Owners use email; invited internal members use their local username."
             : mode === "setup"
               ? "The setup key is only needed when creating this installation."
               : "The setup key lets you set a new password for the existing owner account."}
@@ -1494,8 +1946,8 @@ function CommunityAccess({
         {mode === "login" ? (
           <>
             <label>
-              Owner email
-              <input autoComplete="email" name="email" required type="email" />
+              Email or username
+              <input autoComplete="username" name="email" required />
             </label>
             <label>
               Password
@@ -1610,7 +2062,7 @@ function Operations({
         <div className="console-sidebar-context">
           <p className="eyebrow">Signed in as</p>
           <strong>{ready.session.display_name}</strong>
-          <small>{ready.session.email}</small>
+          <small>{ready.session.username ?? ready.session.email}</small>
           <span>{ready.session.role}</span>
         </div>
       </aside>
@@ -1766,7 +2218,16 @@ function Operations({
             copy="Tenant-scoped operational totals and the append-only administrative audit trail."
           >
             {ready.adminSummary ? (
-              <AdminBoard summary={ready.adminSummary} events={ready.auditEvents} />
+              <AdminBoard
+                summary={ready.adminSummary}
+                events={ready.auditEvents}
+                members={ready.members}
+                invitations={ready.memberInvitations}
+                currentUserId={ready.session.user_id}
+                onCreateInvitation={management.createMemberInvitation}
+                onRole={management.updateMemberRole}
+                onRemove={management.removeMember}
+              />
             ) : (
               <PermissionNotice />
             )}

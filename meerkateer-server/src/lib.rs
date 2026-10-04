@@ -98,6 +98,7 @@ pub fn configure_routes(config: &mut web::ServiceConfig) {
                 .route("/audit-events", web::get().to(list_audit_events))
                 .route("/admin/summary", web::get().to(admin_summary))
                 .service(member_routes())
+                .service(invitation_routes())
                 .route("/ingest/heartbeat", web::post().to(ingest_heartbeat))
                 .route("/ingest/event", web::post().to(ingest_event))
                 .route("/ingest/deploy", web::post().to(ingest_deploy))
@@ -175,8 +176,17 @@ fn session_routes() -> actix_web::Scope {
 fn member_routes() -> actix_web::Scope {
     web::scope("/members")
         .route("", web::get().to(list_members))
+        .route("/invitations", web::get().to(list_member_invitations))
+        .route("/invitations", web::post().to(create_member_invitation))
         .route("/{user_id}/role", web::put().to(update_member_role))
         .route("/{user_id}", web::delete().to(remove_member))
+}
+
+fn invitation_routes() -> actix_web::Scope {
+    web::scope("/member-invitations")
+        .route("/inspect", web::post().to(inspect_member_invitation))
+        .route("/accept", web::post().to(accept_member_invitation))
+        .route("/decline", web::post().to(decline_member_invitation))
 }
 
 fn incident_routes() -> actix_web::Scope {
@@ -366,6 +376,7 @@ struct SessionResponse {
     user_id: uuid::Uuid,
     role: String,
     email: String,
+    username: Option<String>,
     display_name: String,
 }
 
@@ -657,6 +668,7 @@ struct AdminSummaryResponse {
 struct MemberResponse {
     user_id: uuid::Uuid,
     email: String,
+    username: Option<String>,
     display_name: String,
     role: String,
     created_at: chrono::DateTime<Utc>,
@@ -670,6 +682,51 @@ struct MemberListResponse {
 #[derive(Debug, Deserialize)]
 struct UpdateMemberRoleRequest {
     role: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateMemberInvitationRequest {
+    username: String,
+    display_name: String,
+    role: String,
+    expires_in_seconds: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct InvitationTokenRequest {
+    token: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct AcceptMemberInvitationRequest {
+    token: String,
+    password: String,
+}
+
+#[derive(Debug, Serialize)]
+struct MemberInvitationResponse {
+    id: uuid::Uuid,
+    username: String,
+    display_name: String,
+    role: String,
+    expires_at: chrono::DateTime<Utc>,
+    status: String,
+    created_at: chrono::DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+struct IssuedMemberInvitationResponse {
+    invitation: MemberInvitationResponse,
+    secret: String,
+}
+
+#[derive(Debug, Serialize)]
+struct InvitationPreviewResponse {
+    company: String,
+    username: String,
+    display_name: String,
+    role: String,
+    expires_at: chrono::DateTime<Utc>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -836,6 +893,7 @@ struct AuthenticatedSession {
     principal: Principal,
     csrf_digest: [u8; 32],
     email: String,
+    username: Option<String>,
     display_name: String,
 }
 
@@ -855,6 +913,7 @@ async fn current_session(request: HttpRequest, state: web::Data<AppState>) -> Ht
                 user_id: session.principal.user_id,
                 role: session.principal.role.as_str().to_owned(),
                 email: session.email,
+                username: session.username,
                 display_name: session.display_name,
             }),
         Err(AuthenticationFailure::Unauthorized) => unauthorized(),
@@ -972,7 +1031,8 @@ async fn password_login(
     if state.config.deployment_mode != DeploymentMode::Community {
         return HttpResponse::NotFound().json(ErrorResponse { code: "not_found" });
     }
-    if !valid_email(&body.email.trim().to_ascii_lowercase())
+    let identifier = body.email.trim().to_ascii_lowercase();
+    if !(valid_email(&identifier) || valid_username(&identifier))
         || !valid_local_password(&body.password)
     {
         return HttpResponse::Unauthorized().json(ErrorResponse {
@@ -998,7 +1058,7 @@ async fn password_login(
         return database_unavailable();
     };
     let password = secrecy::SecretString::from(body.password.clone());
-    let password_hash = identity.as_ref().map(|item| item.4.clone());
+    let password_hash = identity.as_ref().map(|item| item.5.clone());
     let known_member = password_hash.is_some();
     let verified = tokio::task::spawn_blocking(move || {
         let _permit = permit;
@@ -1022,7 +1082,7 @@ async fn password_login(
     }
     let session = IssuedSession::issue(tenant_id);
     let expires_at = Utc::now() + ChronoDuration::hours(12);
-    let Some((user_id, role, email, display_name, _)) = identity else {
+    let Some((user_id, role, email, username, display_name, _)) = identity else {
         return HttpResponse::Unauthorized().json(ErrorResponse {
             code: "invalid_credentials",
         });
@@ -1039,7 +1099,7 @@ async fn password_login(
     {
         return database_unavailable();
     }
-    let identity = (user_id, role, email, display_name);
+    let identity = (user_id, role, email, username, display_name);
     authenticated_session_response(&state, &session, identity, expires_at)
 }
 
@@ -1047,18 +1107,18 @@ async fn find_member_password_identity(
     database: &PgPool,
     tenant_id: uuid::Uuid,
     email: &str,
-) -> Result<Option<(uuid::Uuid, String, String, String, String)>, ()> {
+) -> Result<Option<(uuid::Uuid, String, String, Option<String>, String, String)>, ()> {
     let mut transaction = database.begin().await.map_err(|_| ())?;
     sqlx::query("SELECT set_config('meerkateer.tenant_id', $1, true)")
         .bind(tenant_id.to_string())
         .execute(&mut *transaction)
         .await
         .map_err(|_| ())?;
-    let result = sqlx::query_as::<_, (uuid::Uuid, String, String, String, String)>(
-        "SELECT users.id, memberships.role, users.email, users.display_name, \
+    let result = sqlx::query_as::<_, (uuid::Uuid, String, String, Option<String>, String, String)>(
+        "SELECT users.id, memberships.role, users.email, users.username, users.display_name, \
            users.local_password_hash FROM users \
          JOIN memberships ON memberships.user_id = users.id \
-         WHERE memberships.tenant_id = $1 AND users.email = $2 \
+         WHERE memberships.tenant_id = $1 AND (users.email = $2 OR users.username = $2) \
            AND users.disabled_at IS NULL AND users.local_password_hash IS NOT NULL \
          ORDER BY memberships.created_at, users.id LIMIT 1",
     )
@@ -1253,7 +1313,7 @@ async fn insert_local_owner_session(
     session: &IssuedSession,
     expires_at: chrono::DateTime<Utc>,
     audit_action: &'static str,
-) -> Result<Option<(uuid::Uuid, String, String, String)>, ()> {
+) -> Result<Option<(uuid::Uuid, String, String, Option<String>, String)>, ()> {
     let mut transaction = database.begin().await.map_err(|_| ())?;
     sqlx::query("SELECT set_config('meerkateer.tenant_id', $1, true)")
         .bind(tenant_id.to_string())
@@ -1302,14 +1362,15 @@ async fn insert_local_owner_session(
     .await
     .map_err(|_| ())?;
     transaction.commit().await.map_err(|_| ())?;
-    Ok(identity
-        .map(|(user_id, email, display_name)| (user_id, "owner".to_owned(), email, display_name)))
+    Ok(identity.map(|(user_id, email, display_name)| {
+        (user_id, "owner".to_owned(), email, None, display_name)
+    }))
 }
 
 fn authenticated_session_response(
     state: &AppState,
     session: &IssuedSession,
-    identity: (uuid::Uuid, String, String, String),
+    identity: (uuid::Uuid, String, String, Option<String>, String),
     expires_at: chrono::DateTime<Utc>,
 ) -> HttpResponse {
     let max_age = (expires_at - Utc::now()).num_seconds().max(1);
@@ -1342,7 +1403,8 @@ fn authenticated_session_response(
             user_id: identity.0,
             role: identity.1,
             email: identity.2,
-            display_name: identity.3,
+            username: identity.3,
+            display_name: identity.4,
         })
 }
 
@@ -1362,7 +1424,7 @@ async fn authenticate_session(
         return Err(AuthenticationFailure::Database);
     };
     let digest = IssuedSession::digest(&presented);
-    let Some((session_id, user_id, role, email, display_name, csrf_digest)) =
+    let Some((session_id, user_id, role, email, username, display_name, csrf_digest)) =
         find_session(database, tenant_id, &digest)
             .await
             .map_err(|()| AuthenticationFailure::Database)?
@@ -1384,6 +1446,7 @@ async fn authenticate_session(
         },
         csrf_digest,
         email,
+        username,
         display_name,
     })
 }
@@ -1405,6 +1468,7 @@ async fn require_rate_limit(
     );
     let limit = match scope {
         RateLimitScope::Authentication => state.config.authentication_rate_limit_per_minute,
+        RateLimitScope::InvitationAcceptance => 20,
         RateLimitScope::PasswordLogin | RateLimitScope::GameProbe => 10,
         RateLimitScope::Ingestion => state.config.ingestion_rate_limit_per_minute,
     };
@@ -1428,15 +1492,29 @@ async fn find_session(
     database: &PgPool,
     tenant_id: uuid::Uuid,
     digest: &[u8; 32],
-) -> Result<Option<(uuid::Uuid, uuid::Uuid, String, String, String, Vec<u8>)>, ()> {
+) -> Result<
+    Option<(
+        uuid::Uuid,
+        uuid::Uuid,
+        String,
+        String,
+        Option<String>,
+        String,
+        Vec<u8>,
+    )>,
+    (),
+> {
     let mut transaction = database.begin().await.map_err(|_| ())?;
     sqlx::query("SELECT set_config('meerkateer.tenant_id', $1, true)")
         .bind(tenant_id.to_string())
         .execute(&mut *transaction)
         .await
         .map_err(|_| ())?;
-    let session = sqlx::query_as::<_, (uuid::Uuid, uuid::Uuid, String, String, String, Vec<u8>)>(
-        "SELECT sessions.id, sessions.user_id, memberships.role, users.email, users.display_name, \
+    let session = sqlx::query_as::<
+        _,
+        (uuid::Uuid, uuid::Uuid, String, String, Option<String>, String, Vec<u8>),
+    >(
+        "SELECT sessions.id, sessions.user_id, memberships.role, users.email, users.username, users.display_name, \
            sessions.csrf_digest \
          FROM sessions \
          JOIN memberships ON memberships.tenant_id = sessions.tenant_id \
@@ -2787,8 +2865,18 @@ async fn list_members(request: HttpRequest, state: web::Data<AppState>) -> HttpR
     {
         return database_unavailable();
     }
-    let rows = sqlx::query_as::<_, (uuid::Uuid, String, String, String, chrono::DateTime<Utc>)>(
-        "SELECT users.id, users.email, users.display_name, memberships.role, memberships.created_at \
+    let rows = sqlx::query_as::<
+        _,
+        (
+            uuid::Uuid,
+            String,
+            Option<String>,
+            String,
+            String,
+            chrono::DateTime<Utc>,
+        ),
+    >(
+        "SELECT users.id, users.email, users.username, users.display_name, memberships.role, memberships.created_at \
          FROM memberships JOIN users ON users.id = memberships.user_id \
          WHERE memberships.tenant_id = $1 ORDER BY memberships.created_at, users.id",
     )
@@ -2807,12 +2895,671 @@ async fn list_members(request: HttpRequest, state: web::Data<AppState>) -> HttpR
             .map(|row| MemberResponse {
                 user_id: row.0,
                 email: row.1,
-                display_name: row.2,
-                role: row.3,
-                created_at: row.4,
+                username: row.2,
+                display_name: row.3,
+                role: row.4,
+                created_at: row.5,
             })
             .collect(),
     })
+}
+
+async fn list_member_invitations(request: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
+    if state.config.deployment_mode != DeploymentMode::Community {
+        return HttpResponse::NotFound().json(ErrorResponse { code: "not_found" });
+    }
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session
+        .principal
+        .authorize(session.principal.tenant_id, Action::MemberManage)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, session.principal.tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let rows = sqlx::query_as::<
+        _,
+        (
+            uuid::Uuid,
+            String,
+            String,
+            String,
+            chrono::DateTime<Utc>,
+            chrono::DateTime<Utc>,
+            Option<chrono::DateTime<Utc>>,
+            Option<chrono::DateTime<Utc>>,
+        ),
+    >(
+        "SELECT id, username, display_name, role, expires_at, created_at, accepted_at, declined_at \
+         FROM member_invitations WHERE tenant_id = $1 \
+         ORDER BY created_at DESC, id LIMIT 100",
+    )
+    .bind(session.principal.tenant_id)
+    .fetch_all(&mut *transaction)
+    .await;
+    let Ok(rows) = rows else {
+        return database_unavailable();
+    };
+    if transaction.commit().await.is_err() {
+        return database_unavailable();
+    }
+    let now = Utc::now();
+    let items = rows
+        .into_iter()
+        .map(|row| MemberInvitationResponse {
+            id: row.0,
+            username: row.1,
+            display_name: row.2,
+            role: row.3,
+            expires_at: row.4,
+            created_at: row.5,
+            status: if row.6.is_some() {
+                "accepted"
+            } else if row.7.is_some() {
+                "declined"
+            } else if row.4 <= now {
+                "expired"
+            } else {
+                "pending"
+            }
+            .to_owned(),
+        })
+        .collect();
+    HttpResponse::Ok()
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .json(MemberInvitationListResponse { items })
+}
+
+#[derive(Debug, Serialize)]
+struct MemberInvitationListResponse {
+    items: Vec<MemberInvitationResponse>,
+}
+
+async fn create_member_invitation(
+    request: HttpRequest,
+    body: web::Json<CreateMemberInvitationRequest>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    if state.config.deployment_mode != DeploymentMode::Community {
+        return HttpResponse::NotFound().json(ErrorResponse { code: "not_found" });
+    }
+    let session = match authenticate_session(&request, &state).await {
+        Ok(session) => session,
+        Err(failure) => return authentication_error(failure),
+    };
+    if session
+        .principal
+        .authorize(session.principal.tenant_id, Action::MemberManage)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().json(ErrorResponse { code: "forbidden" });
+    }
+    if !csrf_is_valid(&request, &session) {
+        return HttpResponse::Forbidden().json(ErrorResponse {
+            code: "csrf_failed",
+        });
+    }
+    let username = body.username.trim().to_ascii_lowercase();
+    let display_name = body.display_name.trim();
+    if !valid_username(&username)
+        || !valid_display_name(display_name)
+        || !matches!(body.role.as_str(), "admin" | "operator" | "viewer")
+        || !(300..=604_800).contains(&body.expires_in_seconds)
+    {
+        return HttpResponse::BadRequest().json(ErrorResponse {
+            code: "invalid_request",
+        });
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let invitation_id = uuid::Uuid::new_v4();
+    let secret = issue_member_invitation_secret(session.principal.tenant_id);
+    let digest = invitation_token_digest(&secret);
+    let created_at = Utc::now();
+    let expires_at = created_at + ChronoDuration::seconds(i64::from(body.expires_in_seconds));
+    let stored = store_member_invitation(
+        database,
+        session.principal,
+        invitation_id,
+        &username,
+        display_name,
+        &body.role,
+        &digest,
+        created_at,
+        expires_at,
+    )
+    .await;
+    match stored {
+        Ok(()) => {}
+        Err(InvitationStoreError::UsernameUnavailable) => {
+            return HttpResponse::Conflict().json(ErrorResponse {
+                code: "username_unavailable",
+            });
+        }
+        Err(InvitationStoreError::Database) => return database_unavailable(),
+    }
+    HttpResponse::Created()
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .json(IssuedMemberInvitationResponse {
+            invitation: MemberInvitationResponse {
+                id: invitation_id,
+                username,
+                display_name: display_name.to_owned(),
+                role: body.role.clone(),
+                expires_at,
+                status: "pending".to_owned(),
+                created_at,
+            },
+            secret,
+        })
+}
+
+#[derive(Debug, Clone, Copy)]
+enum InvitationStoreError {
+    UsernameUnavailable,
+    Database,
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn store_member_invitation(
+    database: &PgPool,
+    principal: Principal,
+    invitation_id: uuid::Uuid,
+    username: &str,
+    display_name: &str,
+    role: &str,
+    digest: &[u8; 32],
+    created_at: chrono::DateTime<Utc>,
+    expires_at: chrono::DateTime<Utc>,
+) -> Result<(), InvitationStoreError> {
+    let Ok(mut transaction) = database.begin().await else {
+        return Err(InvitationStoreError::Database);
+    };
+    if set_tenant_context(&mut transaction, principal.tenant_id)
+        .await
+        .is_err()
+    {
+        return Err(InvitationStoreError::Database);
+    }
+    let username_taken = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM users WHERE username = $1) OR EXISTS (\
+           SELECT 1 FROM member_invitations WHERE tenant_id = $2 AND username = $1 \
+             AND accepted_at IS NULL AND declined_at IS NULL AND expires_at > now())",
+    )
+    .bind(username)
+    .bind(principal.tenant_id)
+    .fetch_one(&mut *transaction)
+    .await;
+    match username_taken {
+        Ok(true) => {
+            return Err(InvitationStoreError::UsernameUnavailable);
+        }
+        Ok(false) => {}
+        Err(_) => return Err(InvitationStoreError::Database),
+    }
+    if sqlx::query(
+        "INSERT INTO member_invitations \
+         (tenant_id, id, username, display_name, role, token_digest, created_by, created_at, expires_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+    )
+    .bind(principal.tenant_id)
+    .bind(invitation_id)
+    .bind(username)
+    .bind(display_name)
+    .bind(role)
+    .bind(digest.as_slice())
+    .bind(principal.user_id)
+    .bind(created_at)
+    .bind(expires_at)
+    .execute(&mut *transaction)
+    .await
+    .is_err()
+    {
+        return Err(InvitationStoreError::Database);
+    }
+    if sqlx::query(
+        "INSERT INTO audit_events \
+         (tenant_id, actor_type, actor_id, action, target_type, target_id, details) \
+         VALUES ($1, 'user', $2, 'member.invitation_created', 'member_invitation', $3, \
+           jsonb_build_object('username', $4::text, 'role', $5::text))",
+    )
+    .bind(principal.tenant_id)
+    .bind(principal.user_id)
+    .bind(invitation_id)
+    .bind(username)
+    .bind(role)
+    .execute(&mut *transaction)
+    .await
+    .is_err()
+    {
+        return Err(InvitationStoreError::Database);
+    }
+    if transaction.commit().await.is_err() {
+        return Err(InvitationStoreError::Database);
+    }
+    Ok(())
+}
+
+fn issue_member_invitation_secret(tenant_id: uuid::Uuid) -> String {
+    format!(
+        "mki_{}_{}{}",
+        tenant_id.simple(),
+        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::new_v4().simple()
+    )
+}
+
+fn invitation_token_digest(secret: &str) -> [u8; 32] {
+    Sha256::digest(secret.as_bytes()).into()
+}
+
+fn parse_member_invitation_secret(secret: &str) -> Option<(uuid::Uuid, [u8; 32])> {
+    if secret.len() > 160 || !secret.is_ascii() {
+        return None;
+    }
+    let mut parts = secret.split('_');
+    if parts.next()? != "mki" {
+        return None;
+    }
+    let tenant_id = uuid::Uuid::parse_str(parts.next()?).ok()?;
+    let random = parts.next()?;
+    if parts.next().is_some()
+        || random.len() != 64
+        || !random.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return None;
+    }
+    Some((tenant_id, invitation_token_digest(secret)))
+}
+
+async fn inspect_member_invitation(
+    request: HttpRequest,
+    body: web::Json<InvitationTokenRequest>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    if state.config.deployment_mode != DeploymentMode::Community {
+        return HttpResponse::NotFound().json(ErrorResponse { code: "not_found" });
+    }
+    if require_rate_limit(&request, &state, RateLimitScope::Authentication)
+        .await
+        .is_err()
+    {
+        return rate_limited();
+    }
+    let Some((tenant_id, digest)) = parse_member_invitation_secret(&body.token) else {
+        return invalid_invitation();
+    };
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let preview = sqlx::query_as::<_, (String, String, String, String, chrono::DateTime<Utc>)>(
+        "SELECT tenants.display_name, member_invitations.username, \
+           member_invitations.display_name, member_invitations.role, \
+           member_invitations.expires_at \
+         FROM member_invitations JOIN tenants ON tenants.id = member_invitations.tenant_id \
+         WHERE member_invitations.tenant_id = $1 AND member_invitations.token_digest = $2 \
+           AND member_invitations.accepted_at IS NULL \
+           AND member_invitations.declined_at IS NULL \
+           AND member_invitations.expires_at > now()",
+    )
+    .bind(tenant_id)
+    .bind(digest.as_slice())
+    .fetch_optional(&mut *transaction)
+    .await;
+    let Ok(preview) = preview else {
+        return database_unavailable();
+    };
+    if transaction.commit().await.is_err() {
+        return database_unavailable();
+    }
+    let Some(preview) = preview else {
+        return invalid_invitation();
+    };
+    HttpResponse::Ok()
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .json(InvitationPreviewResponse {
+            company: preview.0,
+            username: preview.1,
+            display_name: preview.2,
+            role: preview.3,
+            expires_at: preview.4,
+        })
+}
+
+async fn decline_member_invitation(
+    request: HttpRequest,
+    body: web::Json<InvitationTokenRequest>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    if state.config.deployment_mode != DeploymentMode::Community {
+        return HttpResponse::NotFound().json(ErrorResponse { code: "not_found" });
+    }
+    if require_rate_limit(&request, &state, RateLimitScope::Authentication)
+        .await
+        .is_err()
+    {
+        return rate_limited();
+    }
+    let Some((tenant_id, digest)) = parse_member_invitation_secret(&body.token) else {
+        return invalid_invitation();
+    };
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let invitation_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "UPDATE member_invitations SET declined_at = now() \
+         WHERE tenant_id = $1 AND token_digest = $2 AND accepted_at IS NULL \
+           AND declined_at IS NULL AND expires_at > now() RETURNING id",
+    )
+    .bind(tenant_id)
+    .bind(digest.as_slice())
+    .fetch_optional(&mut *transaction)
+    .await;
+    let invitation_id = match invitation_id {
+        Ok(Some(value)) => value,
+        Ok(None) => return invalid_invitation(),
+        Err(_) => return database_unavailable(),
+    };
+    if insert_system_invitation_audit(
+        &mut transaction,
+        tenant_id,
+        invitation_id,
+        "member.invitation_declined",
+    )
+    .await
+    .is_err()
+    {
+        return database_unavailable();
+    }
+    if transaction.commit().await.is_err() {
+        return database_unavailable();
+    }
+    HttpResponse::NoContent()
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .finish()
+}
+
+async fn accept_member_invitation(
+    request: HttpRequest,
+    body: web::Json<AcceptMemberInvitationRequest>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    let (tenant_id, digest) = match validate_invitation_acceptance(&state, &body) {
+        Ok(value) => value,
+        Err(error) => return invitation_acceptance_error(error),
+    };
+    if require_rate_limit(&request, &state, RateLimitScope::InvitationAcceptance)
+        .await
+        .is_err()
+    {
+        return rate_limited();
+    }
+    let Some(database) = &state.database else {
+        return database_unavailable();
+    };
+    let Ok(password_hash) = hash_owner_password(&state, &body.password).await else {
+        return database_unavailable();
+    };
+    let session = IssuedSession::issue(tenant_id);
+    let expires_at = Utc::now() + ChronoDuration::hours(12);
+    let Ok(mut transaction) = database.begin().await else {
+        return database_unavailable();
+    };
+    if set_tenant_context(&mut transaction, tenant_id)
+        .await
+        .is_err()
+    {
+        return database_unavailable();
+    }
+    let invitation = sqlx::query_as::<_, (uuid::Uuid, String, String, String)>(
+        "SELECT id, username, display_name, role FROM member_invitations \
+         WHERE tenant_id = $1 AND token_digest = $2 AND accepted_at IS NULL \
+           AND declined_at IS NULL AND expires_at > now() FOR UPDATE",
+    )
+    .bind(tenant_id)
+    .bind(digest.as_slice())
+    .fetch_optional(&mut *transaction)
+    .await;
+    let invitation = match invitation {
+        Ok(Some(value)) => value,
+        Ok(None) => return invalid_invitation(),
+        Err(_) => return database_unavailable(),
+    };
+    match member_username_exists(&mut transaction, &invitation.1).await {
+        Ok(true) => {
+            return HttpResponse::Conflict().json(ErrorResponse {
+                code: "username_unavailable",
+            });
+        }
+        Ok(false) => {}
+        Err(()) => return database_unavailable(),
+    }
+    let user_id = uuid::Uuid::new_v4();
+    let internal_email = format!("{}@internal.meerkateer.invalid", user_id.simple());
+    if insert_invited_identity(
+        &mut transaction,
+        tenant_id,
+        user_id,
+        &internal_email,
+        &password_hash,
+        &invitation,
+    )
+    .await
+    .is_err()
+    {
+        return database_unavailable();
+    }
+    if insert_invited_session_and_audit(
+        &mut transaction,
+        tenant_id,
+        user_id,
+        &session,
+        expires_at,
+        &invitation,
+    )
+    .await
+    .is_err()
+    {
+        return database_unavailable();
+    }
+    if transaction.commit().await.is_err() {
+        return database_unavailable();
+    }
+    authenticated_session_response(
+        &state,
+        &session,
+        (
+            user_id,
+            invitation.3,
+            internal_email,
+            Some(invitation.1),
+            invitation.2,
+        ),
+        expires_at,
+    )
+}
+
+#[derive(Debug, Clone, Copy)]
+enum InvitationAcceptanceError {
+    NotFound,
+    InvalidPassword,
+    Unavailable,
+}
+
+fn invitation_acceptance_error(error: InvitationAcceptanceError) -> HttpResponse {
+    match error {
+        InvitationAcceptanceError::NotFound => {
+            HttpResponse::NotFound().json(ErrorResponse { code: "not_found" })
+        }
+        InvitationAcceptanceError::InvalidPassword => {
+            HttpResponse::BadRequest().json(ErrorResponse {
+                code: "invalid_password",
+            })
+        }
+        InvitationAcceptanceError::Unavailable => invalid_invitation(),
+    }
+}
+
+fn validate_invitation_acceptance(
+    state: &AppState,
+    body: &AcceptMemberInvitationRequest,
+) -> Result<(uuid::Uuid, [u8; 32]), InvitationAcceptanceError> {
+    if state.config.deployment_mode != DeploymentMode::Community {
+        return Err(InvitationAcceptanceError::NotFound);
+    }
+    if !valid_local_password(&body.password) {
+        return Err(InvitationAcceptanceError::InvalidPassword);
+    }
+    parse_member_invitation_secret(&body.token).ok_or(InvitationAcceptanceError::Unavailable)
+}
+
+async fn member_username_exists(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    username: &str,
+) -> Result<bool, ()> {
+    sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM users WHERE username = $1)")
+        .bind(username)
+        .fetch_one(&mut **transaction)
+        .await
+        .map_err(|_| ())
+}
+
+async fn insert_invited_identity(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: uuid::Uuid,
+    user_id: uuid::Uuid,
+    internal_email: &str,
+    password_hash: &str,
+    invitation: &(uuid::Uuid, String, String, String),
+) -> Result<(), ()> {
+    sqlx::query(
+        "INSERT INTO users (id, email, username, display_name, local_password_hash) \
+         VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(user_id)
+    .bind(internal_email)
+    .bind(&invitation.1)
+    .bind(&invitation.2)
+    .bind(password_hash)
+    .execute(&mut **transaction)
+    .await
+    .map_err(|_| ())?;
+    sqlx::query("INSERT INTO memberships (tenant_id, user_id, role) VALUES ($1, $2, $3)")
+        .bind(tenant_id)
+        .bind(user_id)
+        .bind(&invitation.3)
+        .execute(&mut **transaction)
+        .await
+        .map_err(|_| ())?;
+    sqlx::query(
+        "UPDATE member_invitations SET accepted_at = now() WHERE tenant_id = $1 AND id = $2",
+    )
+    .bind(tenant_id)
+    .bind(invitation.0)
+    .execute(&mut **transaction)
+    .await
+    .map_err(|_| ())?;
+    Ok(())
+}
+
+async fn insert_invited_session_and_audit(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: uuid::Uuid,
+    user_id: uuid::Uuid,
+    session: &IssuedSession,
+    expires_at: chrono::DateTime<Utc>,
+    invitation: &(uuid::Uuid, String, String, String),
+) -> Result<(), ()> {
+    sqlx::query(
+        "INSERT INTO sessions \
+         (id, tenant_id, user_id, token_digest, csrf_digest, expires_at) \
+         VALUES ($1, $2, $3, $4, $5, $6)",
+    )
+    .bind(session.session_id)
+    .bind(tenant_id)
+    .bind(user_id)
+    .bind(session.digest.as_slice())
+    .bind(session.csrf_digest.as_slice())
+    .bind(expires_at)
+    .execute(&mut **transaction)
+    .await
+    .map_err(|_| ())?;
+    sqlx::query(
+        "INSERT INTO audit_events \
+         (tenant_id, actor_type, actor_id, action, target_type, target_id, details) \
+         VALUES ($1, 'user', $2, 'member.invitation_accepted', 'member_invitation', $3, \
+           jsonb_build_object('username', $4::text, 'role', $5::text))",
+    )
+    .bind(tenant_id)
+    .bind(user_id)
+    .bind(invitation.0)
+    .bind(&invitation.1)
+    .bind(&invitation.3)
+    .execute(&mut **transaction)
+    .await
+    .map_err(|_| ())?;
+    Ok(())
+}
+
+async fn insert_system_invitation_audit(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: uuid::Uuid,
+    invitation_id: uuid::Uuid,
+    action: &'static str,
+) -> Result<(), ()> {
+    sqlx::query(
+        "INSERT INTO audit_events \
+         (tenant_id, actor_type, action, target_type, target_id) \
+         VALUES ($1, 'system', $2, 'member_invitation', $3)",
+    )
+    .bind(tenant_id)
+    .bind(action)
+    .bind(invitation_id)
+    .execute(&mut **transaction)
+    .await
+    .map_err(|_| ())?;
+    Ok(())
+}
+
+fn invalid_invitation() -> HttpResponse {
+    HttpResponse::Gone()
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .json(ErrorResponse {
+            code: "invitation_unavailable",
+        })
 }
 
 async fn update_member_role(
@@ -6673,6 +7420,18 @@ fn valid_display_name(value: &str) -> bool {
     (1..=128).contains(&length) && value.trim() == value
 }
 
+fn valid_username(value: &str) -> bool {
+    (3..=32).contains(&value.len())
+        && value.is_ascii()
+        && value.chars().enumerate().all(|(index, character)| {
+            (character.is_ascii_lowercase()
+                || character.is_ascii_digit()
+                || character == '_'
+                || character == '-')
+                && (index > 0 || character.is_ascii_alphanumeric())
+        })
+}
+
 fn valid_email(value: &str) -> bool {
     (3..=254).contains(&value.len())
         && value == value.to_ascii_lowercase()
@@ -6871,8 +7630,23 @@ mod tests {
 
     use super::{
         AppState, AuthenticatedSession, agent_telemetry_snapshot, configure_routes, csrf_is_valid,
+        invitation_token_digest, issue_member_invitation_secret, parse_member_invitation_secret,
         worker_runtime_status,
     };
+
+    #[actix_web::test]
+    async fn internal_invitation_secret_is_scoped_random_and_strictly_parsed() {
+        let tenant_id = uuid::Uuid::new_v4();
+        let first = issue_member_invitation_secret(tenant_id);
+        let second = issue_member_invitation_secret(tenant_id);
+        assert_ne!(first, second);
+        assert_eq!(
+            parse_member_invitation_secret(&first),
+            Some((tenant_id, invitation_token_digest(&first)))
+        );
+        assert!(parse_member_invitation_secret("mki_bad").is_none());
+        assert!(parse_member_invitation_secret(&(first + "_extra")).is_none());
+    }
 
     #[actix_web::test]
     async fn worker_progress_distinguishes_fresh_stalled_and_missing_cycles() {
@@ -7171,6 +7945,7 @@ mod tests {
             },
             csrf_digest: issued.csrf_digest,
             email: "owner@example.com".to_owned(),
+            username: None,
             display_name: "Owner".to_owned(),
         };
         let value = issued.csrf_secret.expose_secret();

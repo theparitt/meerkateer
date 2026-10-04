@@ -224,16 +224,18 @@ Current evidence: the disposable integration stack now creates two independent c
 tests tenant-scoped lists, direct and nested identifiers, mutations, and an agent credential from
 the other company. It then switches back and proves the protected data is unchanged. Current
 browser logout requires CSRF, revokes the durable session, expires both cookies, rejects replay of
-the old cookie, and records an audit event. This is useful foundation evidence, not completion of
-0.4: invitations/member administration, all-role coverage, replica-wide abuse controls, signed
-desired configuration, platform secret stores, and independent review remain open.
+the old cookie, and records an audit event. Email-free internal invitations and Admin member
+management now cover digest-only one-time links, accept/decline, expiry, replay, concurrent accept,
+username login, role changes/removal, session revocation, and audit. This is useful foundation
+evidence, not completion of 0.4: replica-wide abuse controls, signed desired configuration,
+platform secret stores, optional production OIDC, and independent review remain open.
 Community login now authenticates active owner, admin, operator, and viewer memberships, and the
-integration matrix proves representative allow/deny boundaries for every role. Member creation is
-still test-seeded until the invitation lifecycle and Admin UI are delivered.
+integration matrix proves representative allow/deny boundaries for every role. Member creation now
+uses the same public invitation lifecycle and responsive Admin UI exercised by PostgreSQL E2E.
 
 Required work:
 
-- invitations, member removal, least-privilege roles, session revocation, and optional OIDC;
+- finish non-owner password recovery and optional production OIDC/SSO;
 - cross-tenant read/write/guessed-ID tests for every API, worker, export, and background job;
 - gateway-wide rate limits and abuse protection across replicas;
 - signed desired agent configuration and secure platform credential storage;

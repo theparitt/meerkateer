@@ -273,14 +273,14 @@ describe("App", () => {
     const { container } = render(<App />);
     const form = container.querySelector("form");
     expect(form).toBeTruthy();
-    fireEvent.change(screen.getByLabelText("Owner email"), {
+    fireEvent.change(screen.getByLabelText("Email or username"), {
       target: { value: "Owner@Example.com" },
     });
     fireEvent.change(screen.getByLabelText("Password"), {
       target: { value: "long-test-password" },
     });
     if (form) fireEvent.submit(form);
-    expect(await screen.findByText(/The email or password is incorrect/)).toBeTruthy();
+    expect(await screen.findByText(/The email, username, or password is incorrect/)).toBeTruthy();
     expect(fetch.mock.calls[0][0]).toBe("/v1/session/password-login");
     expect(JSON.parse(fetch.mock.calls[0][1].body)).toMatchObject({
       email: "owner@example.com",
@@ -298,7 +298,7 @@ describe("App", () => {
     );
     render(<App />);
     expect(await screen.findByRole("heading", { name: "Open your company." })).toBeTruthy();
-    expect(screen.getByLabelText("Owner email")).toBeTruthy();
+    expect(screen.getByLabelText("Email or username")).toBeTruthy();
     expect(screen.getByText("After sign in, you will return to the page you opened.")).toBeTruthy();
     expect(screen.queryByText("Control plane")).toBeNull();
   });
@@ -482,6 +482,9 @@ describe("App", () => {
           path.startsWith("/v1/maintenance-windows?") ||
           path.startsWith("/v1/audit-events?")
         ) {
+          return Promise.resolve(json({ items: [] }));
+        }
+        if (path === "/v1/members" || path === "/v1/members/invitations") {
           return Promise.resolve(json({ items: [] }));
         }
         if (path === "/v1/agents/00000000-0000-4000-8000-000000000006/telemetry") {
@@ -703,6 +706,8 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "Administration" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Worker is healthy" })).toBeTruthy();
     expect(screen.getByText(/3 claimed · 2 completed · 1 retried/)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Company members" })).toBeTruthy();
+    expect(screen.getByText(/No email is sent/)).toBeTruthy();
 
     admin.unmount();
     window.history.replaceState({}, "", "/app/integrations");
@@ -729,5 +734,40 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Create process + SDK key" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Rust" }).getAttribute("href")).toBe("/docs/rust-sdk");
     expect(screen.queryByRole("heading", { name: "Test your alert channel" })).toBeNull();
+  });
+
+  it("shows an internal invitation message and lets the recipient decline without email", async () => {
+    window.history.replaceState({}, "", "/join#mki_test_secret");
+    const fetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/v1/member-invitations/inspect") {
+        expect(JSON.parse(String(init?.body))).toEqual({ token: "mki_test_secret" });
+        return Promise.resolve(
+          json({
+            company: "Acme Games",
+            username: "nina_ops",
+            display_name: "Nina",
+            role: "operator",
+            expires_at: "2026-10-05T00:00:00Z",
+          }),
+        );
+      }
+      if (path === "/v1/member-invitations/decline") {
+        expect(JSON.parse(String(init?.body))).toEqual({ token: "mki_test_secret" });
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Join Acme Games?" })).toBeTruthy();
+    expect(window.location.pathname).toBe("/join");
+    expect(window.location.hash).toBe("");
+    expect(screen.getByText("nina_ops")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Accept invitation" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Decline" }));
+    expect(await screen.findByRole("heading", { name: "Invitation declined." })).toBeTruthy();
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 });

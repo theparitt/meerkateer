@@ -353,10 +353,73 @@
         "operationId": "listMembers",
         "security": [{ "sessionCookie": [] }],
         "responses": {
-          "200": { "description": "Tenant members and least-privilege roles." },
+          "200": { "description": "Tenant members and least-privilege roles.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MemberListResponse" } } } },
           "401": { "description": "Authentication is required." },
           "403": { "description": "Member-management permission is required." },
           "503": { "description": "The control database is unavailable." }
+        }
+      }
+    },
+    "/v1/members/invitations": {
+      "get": {
+        "operationId": "listMemberInvitations",
+        "description": "List recent internal invitations. Invitation secrets are never returned by this endpoint.",
+        "security": [{ "sessionCookie": [] }],
+        "responses": {
+          "200": { "description": "Recent tenant invitations.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MemberInvitationListResponse" } } } },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "Member-management permission is required." }
+        }
+      },
+      "post": {
+        "operationId": "createMemberInvitation",
+        "description": "Create an internal one-time invitation. No email is sent and the secret is returned once.",
+        "security": [{ "sessionCookie": [], "csrfHeader": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateMemberInvitationRequest" } } } },
+        "responses": {
+          "201": { "description": "Invitation created; copy its one-time secret now.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IssuedMemberInvitationResponse" } } } },
+          "400": { "description": "Username, display name, role, or expiry is invalid." },
+          "401": { "description": "Authentication is required." },
+          "403": { "description": "Permission or CSRF proof is insufficient." },
+          "409": { "description": "The username already belongs to a member or pending invitation." }
+        }
+      }
+    },
+    "/v1/member-invitations/inspect": {
+      "post": {
+        "operationId": "inspectMemberInvitation",
+        "description": "Preview one internal invitation before accepting or declining it. The token is sent in the request body so it is not written into request paths.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InvitationTokenRequest" } } } },
+        "responses": {
+          "200": { "description": "Invitation preview.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InvitationPreviewResponse" } } } },
+          "410": { "description": "The invitation is invalid, expired, accepted, or declined." },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/v1/member-invitations/accept": {
+      "post": {
+        "operationId": "acceptMemberInvitation",
+        "description": "Accept one internal invitation, create a local username/password member, and start a browser session.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AcceptMemberInvitationRequest" } } } },
+        "responses": {
+          "200": { "description": "Invitation accepted and browser session issued.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SessionResponse" } } } },
+          "400": { "description": "The local password is invalid." },
+          "409": { "description": "The username is no longer available." },
+          "410": { "description": "The invitation is invalid, expired, accepted, or declined." },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/v1/member-invitations/decline": {
+      "post": {
+        "operationId": "declineMemberInvitation",
+        "description": "Decline an internal invitation without creating an account.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InvitationTokenRequest" } } } },
+        "responses": {
+          "204": { "description": "Invitation declined." },
+          "410": { "description": "The invitation is invalid, expired, accepted, or already declined." },
+          "429": { "$ref": "#/components/responses/RateLimited" }
         }
       }
     },
@@ -1183,7 +1246,94 @@
           "user_id": { "type": "string", "format": "uuid" },
           "role": { "enum": ["owner", "admin", "operator", "viewer"] },
           "email": { "type": "string", "format": "email" },
+          "username": { "type": ["string", "null"], "pattern": "^[a-z0-9][a-z0-9_-]{2,31}$" },
           "display_name": { "type": "string" }
+        }
+      },
+      "MemberResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["user_id", "email", "username", "display_name", "role", "created_at"],
+        "properties": {
+          "user_id": { "type": "string", "format": "uuid" },
+          "email": { "type": "string", "format": "email" },
+          "username": { "type": ["string", "null"], "pattern": "^[a-z0-9][a-z0-9_-]{2,31}$" },
+          "display_name": { "type": "string" },
+          "role": { "enum": ["owner", "admin", "operator", "viewer"] },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "MemberListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["items"],
+        "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/MemberResponse" } } }
+      },
+      "CreateMemberInvitationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["username", "display_name", "role", "expires_in_seconds"],
+        "properties": {
+          "username": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{2,31}$" },
+          "display_name": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "role": { "enum": ["admin", "operator", "viewer"] },
+          "expires_in_seconds": { "type": "integer", "minimum": 300, "maximum": 604800 }
+        }
+      },
+      "MemberInvitationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "username", "display_name", "role", "expires_at", "status", "created_at"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "username": { "type": "string" },
+          "display_name": { "type": "string" },
+          "role": { "enum": ["admin", "operator", "viewer"] },
+          "expires_at": { "type": "string", "format": "date-time" },
+          "status": { "enum": ["pending", "accepted", "declined", "expired"] },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "MemberInvitationListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["items"],
+        "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/MemberInvitationResponse" } } }
+      },
+      "IssuedMemberInvitationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["invitation", "secret"],
+        "properties": {
+          "invitation": { "$ref": "#/components/schemas/MemberInvitationResponse" },
+          "secret": { "type": "string", "writeOnly": true }
+        }
+      },
+      "InvitationTokenRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["token"],
+        "properties": { "token": { "type": "string", "minLength": 1, "maxLength": 160, "writeOnly": true } }
+      },
+      "AcceptMemberInvitationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["token", "password"],
+        "properties": {
+          "token": { "type": "string", "minLength": 1, "maxLength": 160, "writeOnly": true },
+          "password": { "type": "string", "minLength": 12, "maxLength": 1024, "writeOnly": true }
+        }
+      },
+      "InvitationPreviewResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["company", "username", "display_name", "role", "expires_at"],
+        "properties": {
+          "company": { "type": "string" },
+          "username": { "type": "string" },
+          "display_name": { "type": "string" },
+          "role": { "enum": ["admin", "operator", "viewer"] },
+          "expires_at": { "type": "string", "format": "date-time" }
         }
       },
       "AgentTelemetryBatch": {

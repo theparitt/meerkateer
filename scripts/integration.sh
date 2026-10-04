@@ -42,6 +42,9 @@ until curl --fail --silent --max-time 2 "http://127.0.0.1:${api_port}/ready" >/d
     sleep 1
 done
 MEERKATEER_E2E_URL="http://127.0.0.1:${api_port}" \
+MEERKATEER_E2E_PROJECT="$project" \
+MEERKATEER_E2E_DB="$POSTGRES_DB" \
+MEERKATEER_E2E_DB_OWNER="$POSTGRES_USER" \
 MEERKATEER_AGENT_BIN="$(pwd)/target/debug/meerkateer-agent" \
 MEERKATEER_RUST_SDK_BIN="$(pwd)/target/debug/examples/send_event" \
 python3 tests/integration/api_e2e.py

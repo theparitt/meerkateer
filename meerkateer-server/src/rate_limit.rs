@@ -13,6 +13,7 @@ const MAX_BUCKETS: usize = 65_536;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum Scope {
     Authentication,
+    InvitationAcceptance,
     PasswordLogin,
     GameProbe,
     Ingestion,

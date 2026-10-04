@@ -10,6 +10,15 @@ or a claim that the `v0.2.0` release gates have passed.
 
 ### Added
 
+- Email-free internal member invitations for Community. Owner/admin users create a one-time,
+  24-hour local invite link from the Admin Console; recipients see the company, username, and role
+  before choosing Accept or Decline and create their own local password only when accepting. Invite
+  tokens stay out of request paths, are stored only as SHA-256 digests, expire, cannot be replayed,
+  and are consumed transactionally so two simultaneous accepts produce one member. The same UI
+  lists members, changes admin/operator/viewer roles, removes non-owner members, and records the
+  invitation lifecycle in the immutable audit stream. PostgreSQL E2E covers invalid inputs,
+  expiry, decline, replay, concurrent acceptance, username login, permissions, and secret absence
+  from list/audit responses.
 - Security Beta foundations: the Docker integration suite now provisions a disposable second
   company and proves tenant isolation across collection, direct-ID, nested-ID, write, and
   machine-credential paths before rechecking the untouched rival data. Browser sign-out now

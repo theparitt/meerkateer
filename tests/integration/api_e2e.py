@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import http.cookiejar
 import json
 import os
@@ -14,6 +15,7 @@ import tempfile
 import urllib.error
 import urllib.request
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
@@ -22,6 +24,9 @@ BASE_URL = os.environ.get("MEERKATEER_E2E_URL", "http://127.0.0.1:6510")
 BOOTSTRAP_TOKEN = os.environ.get("MEERKATEER_BOOTSTRAP_TOKEN")
 AGENT_BIN = os.environ.get("MEERKATEER_AGENT_BIN")
 RUST_SDK_BIN = os.environ.get("MEERKATEER_RUST_SDK_BIN")
+E2E_PROJECT = os.environ.get("MEERKATEER_E2E_PROJECT")
+E2E_DB = os.environ.get("MEERKATEER_E2E_DB")
+E2E_DB_OWNER = os.environ.get("MEERKATEER_E2E_DB_OWNER")
 
 
 @dataclass
@@ -70,6 +75,57 @@ def expect(response: Response, status: int, code: str | None = None) -> Response
     if code is not None:
         assert response.body == {"code": code}, response.body
     return response
+
+
+def isolated_call(method: str, path: str, body: Any) -> Response:
+    payload = json.dumps(body, separators=(",", ":")).encode()
+    request = urllib.request.Request(
+        f"{BASE_URL}{path}",
+        data=payload,
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        method=method,
+    )
+    isolated_client = urllib.request.build_opener()
+    try:
+        response = isolated_client.open(request, timeout=10)
+    except urllib.error.HTTPError as error:
+        response = error
+    raw_body = response.read()
+    parsed = json.loads(raw_body) if raw_body else None
+    return Response(response.status, parsed, response.headers)
+
+
+def force_invitation_expired(secret: str) -> None:
+    assert E2E_PROJECT and E2E_DB and E2E_DB_OWNER, "integration database context is required"
+    digest = hashlib.sha256(secret.encode()).hexdigest()
+    statement = (
+        "UPDATE member_invitations SET created_at = now() - interval '10 minutes', "
+        "expires_at = now() - interval '1 second' "
+        f"WHERE token_digest = decode('{digest}', 'hex');"
+    )
+    subprocess.run(
+        [
+            "docker",
+            "compose",
+            "-p",
+            E2E_PROJECT,
+            "exec",
+            "-T",
+            "postgres",
+            "psql",
+            "-U",
+            E2E_DB_OWNER,
+            "-d",
+            E2E_DB,
+            "-v",
+            "ON_ERROR_STOP=1",
+        ],
+        input=statement,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
 
 
 def utc(offset: dt.timedelta = dt.timedelta()) -> str:
@@ -1365,6 +1421,234 @@ def rate_limit_boundary() -> None:
     assert limited.headers.get("Retry-After") == "60", limited.headers
 
 
+def internal_member_invitations() -> None:
+    expect(
+        call(
+            "POST",
+            "/v1/members/invitations",
+            body={
+                "username": "nina_ops",
+                "display_name": "Nina Operator",
+                "role": "viewer",
+                "expires_in_seconds": 86_400,
+            },
+        ),
+        403,
+        "csrf_failed",
+    )
+    expect(
+        call(
+            "POST",
+            "/v1/members/invitations",
+            body={
+                "username": "Nina Ops",
+                "display_name": "Nina Operator",
+                "role": "owner",
+                "expires_in_seconds": 60,
+            },
+            headers=browser_headers(),
+        ),
+        400,
+        "invalid_request",
+    )
+    issued = expect(
+        call(
+            "POST",
+            "/v1/members/invitations",
+            body={
+                "username": "nina_ops",
+                "display_name": "Nina Operator",
+                "role": "viewer",
+                "expires_in_seconds": 86_400,
+            },
+            headers=browser_headers(),
+        ),
+        201,
+    ).body
+    secret = issued["secret"]
+    assert secret.startswith("mki_") and len(secret) < 160, issued
+    invitations = expect(call("GET", "/v1/members/invitations"), 200).body["items"]
+    assert invitations[0]["username"] == "nina_ops", invitations
+    assert invitations[0]["status"] == "pending", invitations
+    assert secret not in json.dumps(invitations), invitations
+    preview = expect(
+        call("POST", "/v1/member-invitations/inspect", body={"token": secret}), 200
+    ).body
+    assert preview["company"] == "E2E Operator", preview
+    assert preview["username"] == "nina_ops" and preview["role"] == "viewer", preview
+    expect(
+        call(
+            "POST",
+            "/v1/member-invitations/accept",
+            body={"token": secret, "password": "short"},
+        ),
+        400,
+        "invalid_password",
+    )
+    accepted = expect(
+        call(
+            "POST",
+            "/v1/member-invitations/accept",
+            body={"token": secret, "password": "member-test-password-123"},
+        ),
+        200,
+    ).body
+    assert accepted["username"] == "nina_ops" and accepted["role"] == "viewer", accepted
+    assert "internal.meerkateer.invalid" in accepted["email"], accepted
+    expect(
+        call("POST", "/v1/member-invitations/inspect", body={"token": secret}),
+        410,
+        "invitation_unavailable",
+    )
+    expect(
+        call(
+            "POST",
+            "/v1/member-invitations/accept",
+            body={"token": secret, "password": "member-test-password-123"},
+        ),
+        410,
+        "invitation_unavailable",
+    )
+    expect(call("GET", "/v1/members"), 403, "forbidden")
+
+    cookies.clear()
+    expect(
+        call(
+            "POST",
+            "/v1/session/password-login",
+            body={"email": "nina_ops", "password": "member-test-password-123"},
+        ),
+        200,
+    )
+    expect(call("GET", "/v1/members"), 403, "forbidden")
+    cookies.clear()
+    expect(
+        call(
+            "POST",
+            "/v1/session/password-login",
+            body={
+                "email": "e2e-owner@example.com",
+                "password": "new-test-only-password-456",
+            },
+        ),
+        200,
+    )
+
+    concurrent = expect(
+        call(
+            "POST",
+            "/v1/members/invitations",
+            body={
+                "username": "concurrent_user",
+                "display_name": "Concurrent User",
+                "role": "operator",
+                "expires_in_seconds": 300,
+            },
+            headers=browser_headers(),
+        ),
+        201,
+    ).body
+    concurrent_secret = concurrent["secret"]
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(
+                isolated_call,
+                "POST",
+                "/v1/member-invitations/accept",
+                {
+                    "token": concurrent_secret,
+                    "password": "concurrent-password-123",
+                },
+            )
+            for _ in range(2)
+        ]
+        concurrent_results = [future.result() for future in futures]
+    assert sorted(result.status for result in concurrent_results) == [200, 410], (
+        concurrent_results
+    )
+
+    expiring = expect(
+        call(
+            "POST",
+            "/v1/members/invitations",
+            body={
+                "username": "expired_user",
+                "display_name": "Expired User",
+                "role": "viewer",
+                "expires_in_seconds": 300,
+            },
+            headers=browser_headers(),
+        ),
+        201,
+    ).body
+    expired_secret = expiring["secret"]
+    force_invitation_expired(expired_secret)
+    expect(
+        call("POST", "/v1/member-invitations/inspect", body={"token": expired_secret}),
+        410,
+        "invitation_unavailable",
+    )
+    expect(
+        call(
+            "POST",
+            "/v1/member-invitations/accept",
+            body={"token": expired_secret, "password": "expired-password-123"},
+        ),
+        410,
+        "invitation_unavailable",
+    )
+
+    declined = expect(
+        call(
+            "POST",
+            "/v1/members/invitations",
+            body={
+                "username": "declined_user",
+                "display_name": "Declined User",
+                "role": "operator",
+                "expires_in_seconds": 300,
+            },
+            headers=browser_headers(),
+        ),
+        201,
+    ).body
+    declined_secret = declined["secret"]
+    expect(
+        call(
+            "POST", "/v1/member-invitations/decline", body={"token": declined_secret}
+        ),
+        204,
+    )
+    expect(
+        call(
+            "POST", "/v1/member-invitations/decline", body={"token": declined_secret}
+        ),
+        410,
+        "invitation_unavailable",
+    )
+    members = expect(call("GET", "/v1/members"), 200).body["items"]
+    assert any(member["username"] == "nina_ops" for member in members), members
+    assert not any(member["username"] == "declined_user" for member in members), members
+    invitations = expect(call("GET", "/v1/members/invitations"), 200).body["items"]
+    statuses = {item["username"]: item["status"] for item in invitations}
+    assert statuses["nina_ops"] == "accepted", statuses
+    assert statuses["concurrent_user"] == "accepted", statuses
+    assert statuses["expired_user"] == "expired", statuses
+    assert statuses["declined_user"] == "declined", statuses
+    audit = expect(call("GET", "/v1/audit-events?limit=100"), 200).body["items"]
+    serialized_audit = json.dumps(audit)
+    assert all(
+        token not in serialized_audit
+        for token in (secret, concurrent_secret, expired_secret, declined_secret)
+    )
+    actions = {item["action"] for item in audit}
+    assert {
+        "member.invitation_created",
+        "member.invitation_accepted",
+        "member.invitation_declined",
+    } <= actions, actions
+
+
 def session_revocation() -> None:
     active = {cookie.name: cookie.value for cookie in cookies}
     assert "meerkateer_session" in active and "meerkateer_csrf" in active
@@ -1400,6 +1684,7 @@ def main() -> None:
     mks_ingestion(project_id, service_id, credential_id, service_secret)
     agent_id, agent_secret = enroll_agent(project_id)
     mka_ingestion(agent_id, agent_secret)
+    internal_member_invitations()
     session_revocation()
     rate_limit_boundary()
     print("Meerkateer identity, ingestion, and abuse-control E2E passed.")

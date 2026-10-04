@@ -24,6 +24,12 @@ export type CreateMaintenanceWindowRequest =
   components["schemas"]["CreateMaintenanceWindowRequest"];
 export type AuditEventResponse = components["schemas"]["AuditEventResponse"];
 export type AdminSummaryResponse = components["schemas"]["AdminSummaryResponse"];
+export type MemberResponse = components["schemas"]["MemberResponse"];
+export type MemberInvitationResponse = components["schemas"]["MemberInvitationResponse"];
+export type CreateMemberInvitationRequest = components["schemas"]["CreateMemberInvitationRequest"];
+export type IssuedMemberInvitationResponse =
+  components["schemas"]["IssuedMemberInvitationResponse"];
+export type InvitationPreviewResponse = components["schemas"]["InvitationPreviewResponse"];
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -218,6 +224,88 @@ export async function fetchAdminSummary(signal: AbortSignal): Promise<AdminSumma
     throw new Error("Admin summary returned an unsupported contract");
   }
   return body as AdminSummaryResponse;
+}
+
+export async function fetchMembers(signal: AbortSignal): Promise<MemberResponse[]> {
+  const body = await getJson("/v1/members", signal);
+  if (!isObject(body) || !Array.isArray(body.items)) {
+    throw new Error("Member endpoint returned an unsupported contract");
+  }
+  return body.items as MemberResponse[];
+}
+
+export async function fetchMemberInvitations(
+  signal: AbortSignal,
+): Promise<MemberInvitationResponse[]> {
+  const body = await getJson("/v1/members/invitations", signal);
+  if (!isObject(body) || !Array.isArray(body.items)) {
+    throw new Error("Invitation endpoint returned an unsupported contract");
+  }
+  return body.items as MemberInvitationResponse[];
+}
+
+export async function createMemberInvitation(
+  input: CreateMemberInvitationRequest,
+): Promise<IssuedMemberInvitationResponse> {
+  const body = await mutateJson("POST", "/v1/members/invitations", input);
+  if (!isObject(body) || typeof body.secret !== "string" || !isObject(body.invitation)) {
+    throw new Error("Invitation creation returned an unsupported contract");
+  }
+  return body as IssuedMemberInvitationResponse;
+}
+
+export async function updateMemberRole(
+  userId: string,
+  role: "admin" | "operator" | "viewer",
+): Promise<void> {
+  await mutateJson("PUT", `/v1/members/${encodeURIComponent(userId)}/role`, { role });
+}
+
+export async function removeMember(userId: string): Promise<void> {
+  await mutateJson("DELETE", `/v1/members/${encodeURIComponent(userId)}`);
+}
+
+async function invitationMutation(path: string, body: unknown): Promise<unknown> {
+  const response = await fetch(path, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const payload: unknown = await response.json();
+      if (isObject(payload) && typeof payload.code === "string") detail = payload.code;
+    } catch {
+      // Keep the HTTP status if the response was not JSON.
+    }
+    throw new Error(detail);
+  }
+  return response.status === 204 ? null : response.json();
+}
+
+export async function inspectMemberInvitation(token: string): Promise<InvitationPreviewResponse> {
+  const body = await invitationMutation("/v1/member-invitations/inspect", { token });
+  if (!isObject(body) || typeof body.company !== "string") {
+    throw new Error("Invitation preview returned an unsupported contract");
+  }
+  return body as InvitationPreviewResponse;
+}
+
+export async function acceptMemberInvitation(
+  token: string,
+  password: string,
+): Promise<SessionResponse> {
+  const body = await invitationMutation("/v1/member-invitations/accept", { token, password });
+  if (!isObject(body) || typeof body.user_id !== "string") {
+    throw new Error("Invitation acceptance returned an unsupported contract");
+  }
+  return body as SessionResponse;
+}
+
+export async function declineMemberInvitation(token: string): Promise<void> {
+  await invitationMutation("/v1/member-invitations/decline", { token });
 }
 
 export async function fetchHealth(signal: AbortSignal): Promise<HealthResponse> {

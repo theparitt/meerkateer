@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  acceptMemberInvitation,
   assignWorkspaceAgent,
+  createMemberInvitation,
   createService,
   createWorkspace,
+  declineMemberInvitation,
+  inspectMemberInvitation,
   issueServiceCredential,
   issueWorkspaceEnrollmentToken,
   unassignWorkspaceAgent,
@@ -135,5 +139,85 @@ describe("management API", () => {
     expect(process.slug).toBe("game-server-01");
     expect(credential.secret).toBe("mks_sk_once");
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps internal invitation secrets in POST bodies and applies CSRF only to creation", async () => {
+    setDocumentCookie("meerkateer_csrf=csrf-proof");
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/v1/members/invitations") {
+        return Promise.resolve(
+          json(
+            {
+              invitation: {
+                id: "00000000-0000-4000-8000-000000000010",
+                username: "nina_ops",
+                display_name: "Nina",
+                role: "operator",
+                expires_at: "2026-10-05T00:00:00Z",
+                created_at: "2026-10-04T00:00:00Z",
+                status: "pending",
+              },
+              secret: "mki_private_once",
+            },
+            201,
+          ),
+        );
+      }
+      if (path.endsWith("/inspect")) {
+        return Promise.resolve(
+          json(
+            {
+              company: "Acme Games",
+              username: "nina_ops",
+              display_name: "Nina",
+              role: "operator",
+              expires_at: "2026-10-05T00:00:00Z",
+            },
+            200,
+          ),
+        );
+      }
+      if (path.endsWith("/accept")) {
+        return Promise.resolve(
+          json(
+            {
+              tenant_id: "00000000-0000-4000-8000-000000000001",
+              user_id: "00000000-0000-4000-8000-000000000011",
+              role: "operator",
+              email: "internal@internal.meerkateer.invalid",
+              username: "nina_ops",
+              display_name: "Nina",
+            },
+            200,
+          ),
+        );
+      }
+      expect(init?.method).toBe("POST");
+      return Promise.resolve(new Response(null, { status: 204 }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const issued = await createMemberInvitation({
+      username: "nina_ops",
+      display_name: "Nina",
+      role: "operator",
+      expires_in_seconds: 86_400,
+    });
+    const preview = await inspectMemberInvitation(issued.secret);
+    const session = await acceptMemberInvitation(issued.secret, "member-test-password-123");
+    await declineMemberInvitation("mki_second_secret");
+
+    expect(preview.company).toBe("Acme Games");
+    expect(session.username).toBe("nina_ops");
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock.mock.calls[0][1]?.headers).toMatchObject({
+      "X-Meerkateer-CSRF": "csrf-proof",
+    });
+    for (const [path, init] of fetchMock.mock.calls.slice(1)) {
+      expect(String(path)).not.toContain("mki_");
+      expect(String(init?.body)).toContain("mki_");
+      expect(init?.headers).not.toHaveProperty("X-Meerkateer-CSRF");
+    }
   });
 });

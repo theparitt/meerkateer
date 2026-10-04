@@ -21,4 +21,4 @@ COMPOSE_PROJECT_NAME="$project" MEERKATEER_MIGRATION_DB="$database" ./scripts/mi
 preserved="$(docker compose -p "$project" exec -T postgres sh -c \
     'psql -U "$POSTGRES_USER" -d meerkateer_upgrade_test -Atc "SELECT count(*) FROM services WHERE slug = '\''fixture-server'\''"' | tr -d '\r')"
 test "$preserved" = 1
-echo 'Upgrade from 0007 to 0014 preserved seeded service and is repeatable.'
+echo 'Upgrade from 0007 to 0015 preserved seeded service and is repeatable.'

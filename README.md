@@ -131,8 +131,8 @@ GitHub Release has not been published yet. See the canonical
 [roadmap to 1.0](docs/roadmap-to-1.0.md) for milestone scope and measurable exit gates.
 
 > **Status: developer preview.** Phases 0 and 1 are complete. Phase 2 now has the
-> tenant/RLS boundary, bootstrap session, inventory, service-key lifecycle, and agent
-> enrollment/rotation/revocation. Phase 3 has durable MKS/MKA ingestion, first-class incidents with
+> tenant/RLS boundary, bootstrap session, local member invitations and roles, inventory,
+> service-key lifecycle, and agent enrollment/rotation/revocation. Phase 3 has durable MKS/MKA ingestion, first-class incidents with
 > acknowledgement/assignment/notes, audited alert policy/history/cooldown/dead-letter replay,
 > maintenance-window foundations, and visible background-worker progress, but production OIDC,
 > advanced routing/escalation, and the production security gates are
@@ -191,6 +191,9 @@ not sufficient.
 
 Workspace-scoped enrollment tokens attach a newly enrolled machine automatically. Existing
 company machines can also be assigned to or removed from a workspace without revoking them.
+Company owners and admins can create an internal invitation from **Console → Admin**. Meerkateer
+does not send email: copy the one-time link to the person directly. They see the company and role,
+then choose Accept or Decline and create a local username/password account only after accepting.
 
 <a id="quick-start"></a>
 
