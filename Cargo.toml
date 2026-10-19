@@ -21,7 +21,7 @@ repository = "https://github.com/meerkateer/meerkateer"
 authors = ["The Meerkateer Authors"]
 
 [workspace.dependencies]
-actix-web = "=4.15.0"
+actix-web = "=4.17.0"
 anyhow = "=1.0.104"
 argon2 = { version = "=0.5.3", features = ["std"] }
 atomic-write-file = "=0.3.1"
